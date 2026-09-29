@@ -286,3 +286,5 @@
 .react-flow__minimap-node.status-done { fill: var(--status-done); }
 .react-flow__minimap-node.status-idle { fill: var(--status-idle); }
 .react-flow__minimap-node.status-unknown { fill: var(--status-unknown); }
+
+.react-flow__node.selected-pane .pane { box-shadow: 0 0 0 2px var(--foreground); }

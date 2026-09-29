@@ -1,12 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Network, Search, SlidersHorizontal, Sun } from "lucide-react";
+import { Bell, BellOff, Monitor, Moon, Network, Search, SlidersHorizontal, Sun } from "lucide-react";
+import { toast } from "sonner";
 import { STATUSES, type AgentStatus, type Fleet } from "../shared/model.ts";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -18,6 +20,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { notificationPermission, playChime, type AlertSettings } from "./alerts.ts";
 import { LayoutMenu, type LayoutMenuProps } from "./LayoutMenu.tsx";
 import { StatusDot } from "./status.tsx";
 
@@ -35,6 +38,8 @@ interface ToolbarProps {
   agentPanesOnly: boolean;
   onAgentPanesOnly: (v: boolean) => void;
   layoutMenu: LayoutMenuProps;
+  alerts: AlertSettings;
+  onAlerts: (patch: Partial<AlertSettings>) => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -50,6 +55,7 @@ export function Toolbar(props: ToolbarProps) {
       <div className="ml-auto flex items-center gap-1.5">
         <ViewMenu {...props} />
         <LayoutMenu {...props.layoutMenu} />
+        <AlertsMenu settings={props.alerts} onChange={props.onAlerts} />
         <ThemeMenu />
         <Connection fleet={props.fleet} connected={props.connected} error={props.error} />
       </div>
@@ -155,6 +161,63 @@ function ViewMenu({ agentsOnly, onAgentsOnly, agentPanesOnly, onAgentPanesOnly }
         <DropdownMenuCheckboxItem checked={agentsOnly} onCheckedChange={onAgentsOnly}>
           Only workspaces with agents
         </DropdownMenuCheckboxItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function AlertsMenu({ settings, onChange }: { settings: AlertSettings; onChange: (p: Partial<AlertSettings>) => void }) {
+  const on = settings.desktop || settings.sound;
+  const permission = notificationPermission();
+
+  const setDesktop = async (want: boolean) => {
+    if (!want) return onChange({ desktop: false });
+    if (permission === "unsupported") return toast.error("This browser doesn't support notifications");
+    const result = permission === "default" ? await Notification.requestPermission() : permission;
+    if (result === "granted") onChange({ desktop: true });
+    else toast.error("Notifications are blocked", { description: "Allow them for this page in your browser's site settings." });
+  };
+
+  const test = () => {
+    if (settings.sound) playChime("blocked");
+    if (settings.desktop && notificationPermission() === "granted") {
+      new Notification("herdr-map test", { body: "Notifications are working." });
+    }
+  };
+
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Alerts">
+              {on ? <Bell className="size-4" /> : <BellOff className="size-4 text-muted-foreground" />}
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Alerts {on ? "on" : "off"}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Alert me</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem checked={settings.desktop} onCheckedChange={(v) => void setDesktop(v)} onSelect={(e) => e.preventDefault()}>
+          With a desktop notification
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={settings.sound} onCheckedChange={(v) => onChange({ sound: v })} onSelect={(e) => e.preventDefault()}>
+          With a sound
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>When an agent</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem checked={settings.onBlocked} onCheckedChange={(v) => onChange({ onBlocked: v })} onSelect={(e) => e.preventDefault()}>
+          Is blocked on a question
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={settings.onDone} onCheckedChange={(v) => onChange({ onDone: v })} onSelect={(e) => e.preventDefault()}>
+          Finishes its work
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem disabled={!on} onSelect={test}>
+          Send a test alert
+        </DropdownMenuItem>
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">Alerts only fire while this page is in the background.</p>
       </DropdownMenuContent>
     </DropdownMenu>
   );

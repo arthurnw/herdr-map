@@ -46,6 +46,8 @@ import {
   type Located,
 } from "./state.ts";
 import { Toolbar } from "./Toolbar.tsx";
+import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
+import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
@@ -78,7 +80,8 @@ function FleetMap() {
   const [saved, setSaved] = useState<SavedLayout>();
   // Bumped after a drag or reset; the effect below writes the settled layout.
   const [saveTick, setSaveTick] = useState(0);
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const { fitView, zoomIn, zoomOut, getInternalNode, getZoom, setCenter } = useReactFlow();
+  const [alerts, setAlerts] = useAlertSettings();
   const fitted = useRef(false);
   const panels = useDefaultLayout({ id: "herdr-map.panels", storage: safeStorage });
 
@@ -272,6 +275,64 @@ function FleetMap() {
   const pinnedPane = pinned ? panes.get(pinned) : undefined;
   const detailPane = pinnedPane ?? (hovered ? panes.get(hovered) : undefined);
 
+  // Selecting an agent pins its preview and pans the map to it, zooming in only when
+  // it would be too small to read.
+  const select = useCallback(
+    (paneId: string) => {
+      setPinned(paneId);
+      const node = getInternalNode(paneId);
+      if (!node) return;
+      const { x, y } = node.internals.positionAbsolute;
+      setCenter(x + (node.width ?? 0) / 2, y + (node.height ?? 0) / 2, {
+        zoom: Math.max(getZoom(), 0.9),
+        duration: 350,
+      });
+    },
+    [getInternalNode, getZoom, setCenter],
+  );
+
+  useAgentAlerts(panes, alerts, select);
+
+  // Outline the selected agent so it's easy to find after the map pans to it.
+  const shownNodes = useMemo(
+    () =>
+      pinned
+        ? nodes.map((n) => (n.id === pinned ? { ...n, className: [n.className, "selected-pane"].filter(Boolean).join(" ") } : n))
+        : nodes,
+    [nodes, pinned],
+  );
+
+  useEffect(() => {
+    document.title = attention.length ? `(${attention.length}) herdr-map` : "herdr-map";
+  }, [attention.length]);
+
+  // n / shift+n cycle through Needs you, o or Enter opens the selection in the terminal,
+  // r moves to the reply box, and Esc clears the selection.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (target.closest("input, textarea, select, [contenteditable], [role=menu]")) return;
+      const k = e.key;
+      if (k === "n" || k === "N") {
+        if (attention.length === 0) return;
+        const i = attention.findIndex((l) => l.pane.id === pinned);
+        const next = k === "N" ? (i <= 0 ? attention.length - 1 : i - 1) : (i + 1) % attention.length;
+        select(attention[next].pane.id);
+      } else if ((k === "o" || k === "Enter") && pinnedPane) {
+        focusPane(pinnedPane);
+      } else if (k === "r" && pinnedPane?.pane.agent) {
+        window.dispatchEvent(new Event(FOCUS_REPLY_EVENT));
+      } else if (k === "Escape" && (pinned || hovered)) {
+        setPinned(undefined);
+        setHovered(undefined);
+      } else return;
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [attention, pinned, hovered, pinnedPane, select, focusPane]);
+
   return (
     <NowContext.Provider value={now}>
       <div className="flex h-full flex-col">
@@ -289,6 +350,8 @@ function FleetMap() {
           agentPanesOnly={agentPanesOnly}
           onAgentPanesOnly={setAgentPanesOnly}
           layoutMenu={{ currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout }}
+          alerts={alerts}
+          onAlerts={setAlerts}
         />
         {error && (
           <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
@@ -301,7 +364,7 @@ function FleetMap() {
           <ResizablePanel id="canvas" minSize="30">
             <main className={`canvas h-full ${zoomClass(zoom)}`} style={{ "--z": zoom } as React.CSSProperties}>
               <ReactFlow
-                nodes={nodes}
+                nodes={shownNodes}
                 edges={layout.edges}
                 nodeTypes={nodeTypes}
                 nodesConnectable={false}
@@ -339,9 +402,11 @@ function FleetMap() {
               attention={attention}
               detail={detailPane}
               pinned={!!pinnedPane && detailPane === pinnedPane}
+              selectedId={pinned}
               now={now}
               onFocus={focusPane}
               onHover={setHovered}
+              onSelect={select}
               onPin={setPinned}
             />
           </ResizablePanel>

@@ -1,4 +1,6 @@
-import { CircleCheck, MousePointerClick } from "lucide-react";
+import { CircleCheck, MousePointerClick, SquareTerminal } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
@@ -11,13 +13,15 @@ interface Props {
   attention: Located[];
   detail?: Located;
   pinned: boolean;
+  selectedId?: string;
   now: number;
   onFocus: (l: Located) => void;
   onHover: (paneId: string) => void;
+  onSelect: (paneId: string) => void;
   onPin: (paneId: string | undefined) => void;
 }
 
-export function Sidebar({ attention, detail, pinned, now, onFocus, onHover, onPin }: Props) {
+export function Sidebar({ attention, detail, pinned, selectedId, now, onFocus, onHover, onSelect, onPin }: Props) {
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
       <section className="max-h-[40%] shrink-0 overflow-y-auto p-4">
@@ -25,6 +29,11 @@ export function Sidebar({ attention, detail, pinned, now, onFocus, onHover, onPi
           <h2 className="text-sm font-semibold">Needs you</h2>
           {attention.length > 0 && <Badge variant="secondary">{attention.length}</Badge>}
         </div>
+        {attention.length > 0 && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            <Kbd>n</Kbd> next · <Kbd>o</Kbd> open in terminal · <Kbd>r</Kbd> reply · <Kbd>esc</Kbd> clear
+          </p>
+        )}
         {attention.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <CircleCheck className="size-4" />
@@ -35,11 +44,17 @@ export function Sidebar({ attention, detail, pinned, now, onFocus, onHover, onPi
             {attention.map((l) => {
               const agent = l.pane.agent!;
               return (
-                <li key={l.pane.id}>
+                <li
+                  key={l.pane.id}
+                  className={cn(
+                    "group flex items-center rounded-md hover:bg-accent",
+                    selectedId === l.pane.id && "bg-accent",
+                  )}
+                >
                   <button
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
                     onMouseEnter={() => onHover(l.pane.id)}
-                    onClick={(e) => (e.altKey ? onPin(l.pane.id) : onFocus(l))}
+                    onClick={() => onSelect(l.pane.id)}
                   >
                     <StatusDot status={agent.status} />
                     <span className="min-w-0 flex-1 truncate">{agent.name ?? l.workspace.label}</span>
@@ -48,6 +63,16 @@ export function Sidebar({ attention, detail, pinned, now, onFocus, onHover, onPi
                       {agentAge(agent, now)}
                     </span>
                   </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="mr-1 size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    aria-label="Open in terminal"
+                    title="Open in terminal"
+                    onClick={() => onFocus(l)}
+                  >
+                    <SquareTerminal className="size-3.5" />
+                  </Button>
                 </li>
               );
             })}

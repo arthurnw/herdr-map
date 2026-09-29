@@ -10,7 +10,10 @@ herdr stays the host. herdr-map only reads `herdr api snapshot` and runs focus c
 - **Workspaces and tabs.** By default only agent panes are drawn, one full-width row per agent, and tabs without agents are hidden. Turn off **View → Only agent panes** to see each tab's full split layout, including nvim, hunk, and shell panes. **View → Only workspaces with agents** hides the rest. Both are remembered per browser.
 - **Agent panes** colored by status (working, blocked, done, idle), with how long the agent has been in that status and the `summary` pane token when a plugin sets one. Other panes show their terminal title, such as `nvim AGENTS.md` or `hunk`.
 - **Status filter**: click a status chip in the toolbar (for example, `24 idle`) to hide or show agents with that status. Option-click a chip to show only that status, and Option-click it again to show everything. Filtered agents disappear in the agent-panes-only view and fade in the full layout. The **Needs you** list ignores the filter, so blocked agents are never hidden there.
-- **Needs you**: blocked agents first, then finished ones, oldest first.
+- **Needs you**: blocked agents first, then finished ones, oldest first. Clicking a row selects that agent: the map pans to it and its preview stays in the sidebar. The terminal button on the row opens it in your terminal instead.
+- **Reply from the map**: the preview has a reply box. For an idle or finished agent it sends a prompt (`herdr agent prompt`). For a blocked agent, the dialog's numbered choices appear as buttons that press the matching key, arrow, Enter, and Esc buttons drive the dialog by hand, and typed text goes into the dialog followed by Enter.
+- **Alerts**: the bell menu turns on desktop notifications and a sound for agents that become blocked or finish. They fire only while the page is in the background, and clicking a notification selects that agent. The tab title shows how many agents need you.
+- **Keyboard**: `n` / `Shift+n` step through Needs you, `o` or Enter opens the selection in the terminal, `r` jumps to the reply box, `Esc` clears the selection, and `/` focuses the filter box.
 - **Preview sidebar**: hovering a pane shows its visible screen, cwd, and summary. Pin a pane (Option-click it, or press **Pin**) to keep its preview while you move around the map. A pinned preview loads the last 1,000 lines of scrollback and refreshes every 5 seconds; scrolling up pauses refreshes until you scroll back to the bottom. Drag the handle between the map and the sidebar to resize it.
 - **Adaptive zoom**: text grows as you zoom out so names and statuses stay readable, summaries and tab labels drop away, and panes fill with their status color.
 - **Your own arrangement**: drag a workspace to move it, or drag a repo box to move all of its workspaces. Drop a workspace away from its repo to detach it; it then shows the repo name as a tag. Positions are saved to a file and survive reloads. From **Layouts**, you can save the arrangement under a name, restore a saved one, or reset to the automatic layout. Reset and Restore save the arrangement they replace as "Previous layout", so either can be undone.
@@ -57,7 +60,7 @@ Logs go to `~/Library/Logs/herdr-map.log`. The first click that brings your term
 |---|---|---|
 | `--ssh HOST` | unset | Run `herdr` on `HOST` over SSH. |
 | `--herdr BIN` | `herdr` | herdr executable, local or on the SSH host. |
-| `--port`, `--host` | `4747`, `127.0.0.1` | Listen address. The focus endpoint controls herdr, so keep it on loopback unless the network is trusted. |
+| `--port`, `--host` | `4747`, `127.0.0.1` | Listen address. The API can focus panes and type into agents, so keep it on loopback unless the network is trusted. |
 | `--interval MS` | `1500` | Snapshot poll interval. |
 | `--activate APP` | `Ghostty` | macOS app to bring forward after a focus. |
 | `--no-activate` | off | Skip app activation. |
