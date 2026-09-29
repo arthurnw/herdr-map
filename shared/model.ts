@@ -128,20 +128,76 @@ export interface StatusMark {
 }
 
 /** Remembers when each pane's agent entered its current status across polls. */
-export class StatusClock {
-  private marks = new Map<string, StatusMark>();
-  private primed = false;
+/** How long an agent must stay idle after working before its turn counts as finished. */
+export const FINISH_GRACE_MS = 2500;
 
-  observe(agents: { pane_id: string; agent_status: AgentStatus }[], now: number): Map<string, StatusMark> {
-    const next = new Map<string, StatusMark>();
+interface Track {
+  /** The status herdr reported. */
+  raw: AgentStatus;
+  /** When the agent left working or blocked for idle; cleared once the grace period passes. */
+  finishing?: number;
+  /** Finished and not yet looked at. */
+  held: boolean;
+  mark: StatusMark;
+}
+
+/**
+ * Tracks each agent's status across polls and when it entered it.
+ *
+ * herdr turns `done` into `idle` as soon as its server counts the finish as seen, often
+ * within seconds, so a finished agent would fade before you notice it. The clock keeps
+ * reporting `done` from the end of a turn until the pane is next focused, the same rule
+ * herdr-radar uses: a pane counts as looked at when focus moves to it, or when
+ * herdr-map focuses it (`markSeen`).
+ */
+export class StatusClock {
+  private tracks = new Map<string, Track>();
+  private primed = false;
+  private lastFocused?: string;
+  private seen = new Set<string>();
+
+  /** Clears a held `done`, for example after herdr-map focuses the pane. */
+  markSeen(paneId: string) {
+    this.seen.add(paneId);
+  }
+
+  observe(
+    agents: { pane_id: string; agent_status: AgentStatus }[],
+    now: number,
+    focusedPaneId?: string,
+  ): Map<string, StatusMark> {
+    const next = new Map<string, Track>();
     for (const a of agents) {
-      const prev = this.marks.get(a.pane_id);
-      if (prev && prev.status === a.agent_status) next.set(a.pane_id, prev);
-      else next.set(a.pane_id, { status: a.agent_status, since: now, approx: !this.primed });
+      const prev = this.tracks.get(a.pane_id);
+      const raw = a.agent_status;
+      let held = prev?.held ?? false;
+      let finishing = prev?.finishing;
+      if (raw === "working" || raw === "blocked") {
+        held = false;
+        finishing = undefined;
+      } else if (raw === "done") {
+        held = true;
+        finishing = undefined;
+      } else if (raw === "idle" && prev && (prev.raw === "working" || prev.raw === "blocked")) {
+        finishing = now;
+      }
+      // A short idle between steps of one turn doesn't count as finishing.
+      if (finishing !== undefined && raw === "idle" && now - finishing >= FINISH_GRACE_MS) {
+        held = true;
+        finishing = undefined;
+      }
+      const focusedNow = focusedPaneId === a.pane_id && this.lastFocused !== a.pane_id;
+      if (held && (focusedNow || this.seen.has(a.pane_id)) && raw !== "done") held = false;
+
+      const status: AgentStatus = held ? "done" : raw;
+      const mark = prev && prev.mark.status === status ? prev.mark : { status, since: now, approx: !this.primed };
+      next.set(a.pane_id, { raw, finishing, held, mark });
     }
-    this.marks = next;
+    this.tracks = next;
     this.primed = true;
-    return next;
+    this.lastFocused = focusedPaneId;
+    this.seen.clear();
+    return new Map([...next].map(([id, t]) => [id, t.mark]));
   }
 }
 
@@ -207,15 +263,17 @@ export function buildFleet(snap: Snapshot, marks: Map<string, StatusMark>): Flee
         let agent: FleetAgent | undefined;
         if (a) {
           const mark = marks.get(p.pane_id);
+          // The clock's status holds `done` until the pane is looked at; see StatusClock.
+          const status = mark?.status ?? a.agent_status;
           agent = {
             kind: a.agent,
             name: a.name,
-            status: a.agent_status,
+            status,
             since: mark?.since ?? Date.now(),
             sinceApprox: mark?.approx ?? true,
             summary: p.tokens?.summary,
           };
-          counts[a.agent_status] = (counts[a.agent_status] ?? 0) + 1;
+          counts[status] = (counts[status] ?? 0) + 1;
           agentCount++;
         }
         return {

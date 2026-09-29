@@ -25,6 +25,7 @@ export function inputRoutes(ctx: Context): Route[] {
       handle: async (req, res) => {
         const target = (await readBody(req)) as FocusTarget;
         await focus(herdr, target);
+        if (target.kind === "agent") poller.markSeen(target.id);
         if (ctx.activate) await activateApp(ctx.activate);
         void poller.poll();
         return sendJson(res, 200, { ok: true });

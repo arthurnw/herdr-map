@@ -14,6 +14,8 @@ export interface Poller {
   poll(): Promise<void>;
   /** Open `/api/events` responses. */
   clients: Set<ServerResponse>;
+  /** Clears a held `done` for a pane herdr-map just focused. */
+  markSeen(paneId: string): void;
 }
 
 export function createPoller(herdr: HerdrOptions, intervalMs: number): Poller {
@@ -40,7 +42,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number): Poller {
     try {
       const snap = await snapshot(herdr);
       const now = Date.now();
-      state = { fleet: buildFleet(snap, clock.observe(snap.agents, now)), updatedAt: now };
+      state = { fleet: buildFleet(snap, clock.observe(snap.agents, now, snap.focused_pane_id)), updatedAt: now };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -64,5 +66,5 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number): Poller {
     for (const res of clients) res.write(": ping\n\n");
   }, 20_000);
 
-  return { state: () => state, poll, clients };
+  return { state: () => state, poll, clients, markSeen: (paneId) => clock.markSeen(paneId) };
 }

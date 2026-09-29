@@ -278,6 +278,20 @@ test("an agent becoming blocked raises a notification in the background", async 
   }
 });
 
+test("a finished turn stays done until herdr-map focuses the pane", async (page) => {
+  try {
+    writeSnapshot(setStatus(snapshot(), "w1:p1", "idle"));
+    // The server polls every 300 ms here; a turn counts as finished after 2.5 s of idle.
+    await page.waitForTimeout(3500);
+    assert(await card(page, "w1:p1").locator(".pane.status-done").count(), "a finished turn should show as done");
+    await card(page, "w1:p1").click();
+    await page.waitForTimeout(800);
+    assert(await card(page, "w1:p1").locator(".pane.status-idle").count(), "focusing the pane should clear done");
+  } finally {
+    writeSnapshot(snapshot());
+  }
+});
+
 test("the theme picker switches to light", async (page) => {
   await page.getByRole("button", { name: "Theme" }).click();
   await page.getByRole("menuitemradio", { name: "Light" }).click();
