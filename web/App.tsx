@@ -43,6 +43,7 @@ import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
 import { useMeta } from "./hooks/useMeta.ts";
+import type { TintColor } from "../shared/organize.ts";
 import { WorkspaceActions } from "./workspace-actions.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
@@ -72,7 +73,7 @@ function FleetMap() {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
   const [saved, setSaved] = useSavedLayout();
-  const { meta, patchWorkspaces } = useMeta();
+  const { meta, patchWorkspaces, patchGroup } = useMeta();
   const [dragging, setDragging] = useState<ReadonlySet<string>>();
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
@@ -85,7 +86,7 @@ function FleetMap() {
       fleet && saved && meta
         ? layoutFleet(
             fleet,
-            { agentsOnly, agentPanesOnly, hiddenStatuses, dragging, workspaceMeta: meta.workspaces },
+            { agentsOnly, agentPanesOnly, hiddenStatuses, dragging, workspaceMeta: meta.workspaces, groupMeta: meta.groups },
             saved,
           )
         : { nodes: [], edges: [] },
@@ -127,8 +128,10 @@ function FleetMap() {
     () => ({
       setDetached,
       setCollapsed: (ids: string[], collapsed: boolean) => void patchWorkspaces({ ids, collapsed }),
+      setWorkspaceColor: (ids: string[], color: TintColor | null) => void patchWorkspaces({ ids, color }),
+      setGroupColor: (groupKey: string, color: TintColor | null) => void patchGroup({ key: groupKey, color }),
     }),
-    [setDetached, patchWorkspaces],
+    [setDetached, patchWorkspaces, patchGroup],
   );
 
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };

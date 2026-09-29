@@ -2,11 +2,20 @@ import type { Context } from "../context.ts";
 import { readBody, sendJson } from "../http.ts";
 import { isRecordKey, loadStore, updateStore } from "../layout-store.ts";
 import type { Route } from "../router.ts";
-import { applyWorkspacePatch, type MetaState, type WorkspacePatch } from "../../shared/organize.ts";
+import {
+  applyGroupPatch,
+  applyWorkspacePatch,
+  COLORS,
+  isColor,
+  type GroupPatch,
+  type MetaState,
+  type WorkspacePatch,
+} from "../../shared/organize.ts";
 import type { LayoutStore } from "../../shared/layout-types.ts";
 
 const MAX_IDS = 500;
 const MAX_KEY_LENGTH = 512;
+const COLOR_ERROR = `color must be null or one of ${COLORS.join(", ")}`;
 
 type Obj = Record<string, unknown>;
 
@@ -20,7 +29,7 @@ function isKey(value: unknown): value is string {
 /** Checks a workspace change request; returns the patch or an error message. */
 export function parseWorkspacePatch(body: unknown): WorkspacePatch | string {
   if (!isObject(body)) return "expected an object";
-  const { ids, collapsed } = body;
+  const { ids, collapsed, color } = body;
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_IDS || !ids.every(isKey)) {
     return `ids must be 1 to ${MAX_IDS} workspace ids`;
   }
@@ -29,7 +38,19 @@ export function parseWorkspacePatch(body: unknown): WorkspacePatch | string {
     if (typeof collapsed !== "boolean") return "collapsed must be true or false";
     patch.collapsed = collapsed;
   }
+  if (color !== undefined) {
+    if (color !== null && !isColor(color)) return COLOR_ERROR;
+    patch.color = color;
+  }
   return patch;
+}
+
+/** Checks a repo box color request; returns the patch or an error message. */
+export function parseGroupPatch(body: unknown): GroupPatch | string {
+  if (!isObject(body)) return "expected an object";
+  if (!isKey(body.key)) return "key must be a repo box key";
+  if (body.color !== null && !isColor(body.color)) return COLOR_ERROR;
+  return { key: body.key, color: body.color };
 }
 
 const metaOf = (store: LayoutStore): MetaState => ({ workspaces: store.workspaces, groups: store.groups });
@@ -46,6 +67,19 @@ export function metaRoutes(ctx: Context): Route[] {
         if (typeof patch === "string") return sendJson(res, 400, { error: patch });
         const meta = await updateStore(layoutPath, (store) => {
           applyWorkspacePatch(store.workspaces, patch);
+          return metaOf(store);
+        });
+        return sendJson(res, 200, meta);
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/meta/groups",
+      handle: async (req, res) => {
+        const patch = parseGroupPatch(await readBody(req));
+        if (typeof patch === "string") return sendJson(res, 400, { error: patch });
+        const meta = await updateStore(layoutPath, (store) => {
+          applyGroupPatch(store.groups, patch);
           return metaOf(store);
         });
         return sendJson(res, 200, meta);

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { applyWorkspacePatch, type MetaState, type WorkspacePatch } from "../../shared/organize.ts";
+import {
+  applyGroupPatch,
+  applyWorkspacePatch,
+  type GroupPatch,
+  type MetaState,
+  type WorkspacePatch,
+} from "../../shared/organize.ts";
 
 const EMPTY: MetaState = { workspaces: {}, groups: {} };
 
@@ -48,5 +54,10 @@ export function useMeta() {
     [send],
   );
 
-  return { meta, patchWorkspaces };
+  const patchGroup = useCallback(
+    (patch: GroupPatch) => send("/api/meta/groups", patch, (m) => applyGroupPatch(m.groups, patch)),
+    [send],
+  );
+
+  return { meta, patchWorkspaces, patchGroup };
 }

@@ -1,11 +1,14 @@
 import { createContext, memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { ChevronsDownUp, ChevronsUpDown, Ellipsis, FolderGit2, Group, Star, Ungroup } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Ellipsis, FolderGit2, Group, Palette, Star, Ungroup } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkspaceActions } from "./workspace-actions.ts";
@@ -15,24 +18,27 @@ import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { KIND_LABEL } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
-import { StatusCounts } from "./organize.tsx";
+import { ColorItems, GroupColorMenu, StatusCounts, tintClass } from "./organize.tsx";
 
 export const NowContext = createContext(Date.now());
 
 export { agentAge, formatAge } from "./format.ts";
 
 export const GroupNode = memo(({ data }: NodeProps) => {
-  const { group } = data as GroupData;
+  const { group, color } = data as GroupData;
   return (
-    <div className="group-box" title="Drag to move this repo's workspaces">
-      <div className="group-header">{group.label}</div>
+    <div className={`group-box ${tintClass(color)}`} title="Drag to move this repo's workspaces">
+      <div className="group-header">
+        <span className="group-label">{group.label}</span>
+        <GroupColorMenu groupKey={group.key} groupLabel={group.label} color={color} />
+      </div>
     </div>
   );
 });
 
 export const WorkspaceNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, groupLabel, detached, dropHint, collapsed } = data as WorkspaceData;
-  const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`, collapsed && "collapsed"]
+  const { workspace: ws, groupLabel, detached, dropHint, collapsed, color } = data as WorkspaceData;
+  const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`, collapsed && "collapsed", tintClass(color)]
     .filter(Boolean)
     .join(" ");
   return (
@@ -81,6 +87,15 @@ function WorkspaceMenu({ data }: { data: WorkspaceData }) {
           {collapsed ? <ChevronsUpDown aria-hidden /> : <ChevronsDownUp aria-hidden />}
           {collapsed ? "Expand" : "Collapse to header"}
         </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Palette aria-hidden />
+            Color
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent onClick={stop} onPointerDown={stop}>
+            <ColorItems value={data.color} onPick={(c) => actions.setWorkspaceColor([ws.id], c)} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         {detached ? (
           <DropdownMenuItem onSelect={() => actions.setDetached(ws.id, false)}>

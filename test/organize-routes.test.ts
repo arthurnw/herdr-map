@@ -56,3 +56,26 @@ test("rejects bad workspace changes", async (t) => {
   }
   assert.deepEqual((await store()).workspaces, {});
 });
+
+test("colors workspaces and repo boxes from the allowed list", async (t) => {
+  const { call, store } = await serve(t);
+  await call("POST", "/api/meta/workspaces", { ids: ["w1"], color: "teal", collapsed: true });
+  await call("POST", "/api/meta/groups", { key: "/r/api/.git", color: "purple" });
+  assert.deepEqual(await store().then((s) => [s.workspaces, s.groups]), [
+    { w1: { color: "teal", collapsed: true } },
+    { "/r/api/.git": { color: "purple" } },
+  ]);
+  await call("POST", "/api/meta/workspaces", { ids: ["w1"], color: null });
+  const res = await call("POST", "/api/meta/groups", { key: "/r/api/.git", color: null });
+  assert.deepEqual(res.body, { workspaces: { w1: { collapsed: true } }, groups: {} });
+
+  for (const [path, body] of [
+    ["/api/meta/workspaces", { ids: ["w1"], color: "#ff0000" }],
+    ["/api/meta/groups", { key: "/r/api/.git", color: "chartreuse" }],
+    ["/api/meta/groups", { key: "/r/api/.git" }],
+    ["/api/meta/groups", { key: "constructor", color: "red" }],
+    ["/api/meta/groups", { color: "red" }],
+  ] as const) {
+    assert.equal((await call("POST", path, body)).status, 400, JSON.stringify(body));
+  }
+});

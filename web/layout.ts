@@ -41,6 +41,8 @@ export interface LayoutOptions {
   dragging?: ReadonlySet<string>;
   /** Saved metadata keyed by workspace ID; a collapsed workspace is drawn as its header only. */
   workspaceMeta?: Record<string, WorkspaceMeta>;
+  /** Saved metadata keyed by repo group key. */
+  groupMeta?: Record<string, GroupMeta>;
 }
 
 // When only agent panes are drawn, each agent gets a full-width row so names and
@@ -58,7 +60,7 @@ export interface SavedPosition {
 /** Saved workspace positions keyed by workspace ID. Empty means automatic layout. */
 export type SavedLayout = Record<string, SavedPosition>;
 
-export type GroupData = { group: FleetGroup; memberIds: string[] };
+export type GroupData = { group: FleetGroup; memberIds: string[]; color?: string };
 /** What dropping a dragged workspace will do: leave its repo box, or go back into it. */
 export type DropHint = "detach" | "rejoin";
 
@@ -73,6 +75,7 @@ export type WorkspaceData = {
   groupMates: number;
   /** Drawn as its header only, without tabs or panes. */
   collapsed: boolean;
+  color?: string;
 };
 export type TabData = { tab: FleetTab; workspaceId: string };
 export type PaneData = { pane: FleetPane };
@@ -306,7 +309,7 @@ export function layoutFleet(
       width: r.w,
       height: r.h,
       style: { width: r.w, height: r.h },
-      data: { group, memberIds: members.map((m) => m.ws.id) } satisfies GroupData,
+      data: { group, memberIds: members.map((m) => m.ws.id), color: opts.groupMeta?.[group.key]?.color } satisfies GroupData,
       selectable: false,
     });
   }
@@ -323,6 +326,7 @@ export function layoutFleet(
       dropHint: hints.get(p.ws.id),
       groupMates: mates.get(p.ws.id) ?? 0,
       collapsed: isCollapsed(p.ws),
+      color: meta[p.ws.id]?.color,
     };
     nodes.push({
       id: wsNode,

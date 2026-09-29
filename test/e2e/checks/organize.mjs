@@ -34,4 +34,30 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     assert(!store().workspaces?.w2, "expanding clears the saved flag");
     assert((await page.locator('.react-flow__node-pane[data-id="w2:p3"]').count()) === 1, "expanding shows the panes again");
   });
+
+  test("organize: color a repo box and a workspace", async (page) => {
+    const box = page.locator('.react-flow__node-group-box[data-id="group:/repos/api/.git"]');
+    await box.locator(".group-header").hover();
+    await page.getByRole("button", { name: "Color for api" }).click();
+    await page.getByRole("menuitem", { name: "Teal" }).click();
+    await page.waitForTimeout(400);
+    assert(store().groups?.["/repos/api/.git"]?.color === "teal", `the box color should be saved, got ${JSON.stringify(store().groups)}`);
+    assert(await box.locator(".group-box.tint-teal").count(), "the box should be tinted");
+    await page.reload();
+    await page.waitForSelector(".react-flow__node-pane");
+    assert(await box.locator(".group-box.tint-teal").count(), "the tint should survive a reload");
+
+    await menu(page, "w4", "web");
+    await page.getByRole("menuitem", { name: "Color" }).click();
+    await page.getByRole("menuitem", { name: "Pink" }).click();
+    await page.waitForTimeout(400);
+    assert(store().workspaces?.w4?.color === "pink", "the workspace color should be saved");
+    assert(await ws(page, "w4").locator(".workspace.tint-pink").count(), "the workspace should be tinted");
+
+    await box.locator(".group-header").hover();
+    await page.getByRole("button", { name: "Color for api" }).click();
+    await page.getByRole("menuitem", { name: "No color" }).click();
+    await page.waitForTimeout(400);
+    assert(!store().groups?.["/repos/api/.git"], "No color should clear the saved color");
+  });
 };
