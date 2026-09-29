@@ -188,6 +188,10 @@ function parseStore(value: unknown): ReadResult {
       notes: parseList(value.notes, parseNote),
       links: parseList(value.links, parseLink),
       history: Array.isArray(value.history) ? value.history.filter(isObject).map(parseLayout) : [],
+      // Left out when empty, so files written before redo existed read back unchanged.
+      ...(Array.isArray(value.future) && value.future.length > 0
+        ? { future: value.future.filter(isObject).map(parseLayout) }
+        : {}),
     },
     fileVersion: Number.isFinite(value.version) ? (value.version as number) : 1,
   };
@@ -244,4 +248,41 @@ export function updateStore<T>(path: string, fn: (store: LayoutStore) => T): Pro
 export function pushHistory(store: LayoutStore, layout: SavedLayout, limit = HISTORY_LIMIT): void {
   store.history.push(layout);
   if (store.history.length > limit) store.history.splice(0, store.history.length - limit);
+}
+
+/** True when two layouts place the same workspaces at the same spots, in or out of their boxes. */
+export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
+  const ids = Object.keys(a);
+  if (ids.length !== Object.keys(b).length) return false;
+  return ids.every((id) => {
+    const p = a[id];
+    const q = b[id];
+    return q !== undefined && p.x === q.x && p.y === q.y && !!p.detached === !!q.detached;
+  });
+}
+
+/**
+ * Makes `layout` current. A real change records the old layout for undo and drops the redo
+ * list; returns whether anything changed.
+ */
+export function setCurrent(store: LayoutStore, layout: SavedLayout): boolean {
+  if (sameLayout(store.current, layout)) return false;
+  pushHistory(store, store.current);
+  delete store.future;
+  store.current = layout;
+  return true;
+}
+
+/** Steps back to the previous layout, or forward again with `redo`. Returns the new current layout, if any. */
+export function stepHistory(store: LayoutStore, direction: "undo" | "redo"): SavedLayout | undefined {
+  const from = direction === "undo" ? store.history : (store.future ??= []);
+  const to = direction === "undo" ? (store.future ??= []) : store.history;
+  const layout = from.pop();
+  if (layout) {
+    to.push(store.current);
+    if (to.length > HISTORY_LIMIT) to.splice(0, to.length - HISTORY_LIMIT);
+    store.current = layout;
+  }
+  if (store.future?.length === 0) delete store.future;
+  return layout;
 }

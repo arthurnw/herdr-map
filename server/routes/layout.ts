@@ -1,6 +1,6 @@
 import type { Context } from "../context.ts";
 import { readBody, sendJson } from "../http.ts";
-import { isLayoutName, isSavedLayout, loadStore, updateStore } from "../layout-store.ts";
+import { isLayoutName, isSavedLayout, loadStore, setCurrent, updateStore } from "../layout-store.ts";
 import type { Route } from "../router.ts";
 
 export function layoutRoutes(ctx: Context): Route[] {
@@ -13,7 +13,7 @@ export function layoutRoutes(ctx: Context): Route[] {
           const layout = await readBody(req);
           if (!isSavedLayout(layout)) return sendJson(res, 400, { error: "invalid layout" });
           await updateStore(layoutPath, (store) => {
-            store.current = layout;
+            setCurrent(store, layout);
           });
           return sendJson(res, 200, { ok: true });
         }

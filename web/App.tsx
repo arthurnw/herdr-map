@@ -43,6 +43,7 @@ import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
 import { useMeta } from "./hooks/useMeta.ts";
+import { useLayoutUndo } from "./hooks/useUndo.ts";
 import type { TintColor } from "../shared/organize.ts";
 import { WorkspaceActions } from "./workspace-actions.ts";
 import { useSelection } from "./hooks/useSelection.ts";
@@ -141,6 +142,7 @@ function FleetMap() {
   );
 
   const notes = useNotes();
+  useLayoutUndo(setSaved);
   const flowHandlers = notes.withNotes({ onNodesChange, onNodeDragStart, onNodeDragStop });
   const flowNodes = useMemo(() => [...boxSelect.nodes, ...notes.nodes], [boxSelect.nodes, notes.nodes]);
 

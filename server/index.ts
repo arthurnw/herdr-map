@@ -7,6 +7,7 @@ import { defaultLayoutPath } from "./layout-store.ts";
 import { createPoller } from "./poller.ts";
 import { createRouter } from "./router.ts";
 import { fleetRoutes } from "./routes/fleet.ts";
+import { historyRoutes } from "./routes/history.ts";
 import { inputRoutes } from "./routes/input.ts";
 import { layoutRoutes } from "./routes/layout.ts";
 import { metaRoutes } from "./routes/meta.ts";
@@ -50,6 +51,7 @@ const routes = [
   ...fleetRoutes(ctx),
   ...inputRoutes(ctx),
   ...layoutRoutes(ctx),
+  ...historyRoutes(ctx),
   ...metaRoutes(ctx),
   ...notesRoutes(ctx),
   ...readRoutes(ctx),

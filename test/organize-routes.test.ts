@@ -8,6 +8,8 @@ import { test, type TestContext } from "node:test";
 import type { Context } from "../server/context.ts";
 import { loadStore } from "../server/layout-store.ts";
 import { createRouter } from "../server/router.ts";
+import { historyRoutes } from "../server/routes/history.ts";
+import { layoutRoutes } from "../server/routes/layout.ts";
 import { metaRoutes } from "../server/routes/meta.ts";
 import { notesRoutes } from "../server/routes/notes.ts";
 
@@ -15,7 +17,7 @@ import { notesRoutes } from "../server/routes/notes.ts";
 async function serve(t: TestContext) {
   const layoutPath = join(await mkdtemp(join(tmpdir(), "herdr-map-")), "layout.json");
   const ctx = { layoutPath } as Context;
-  const server = createServer(createRouter([...metaRoutes(ctx), ...notesRoutes(ctx)], (_req, res) => res.end()));
+  const server = createServer(createRouter([...layoutRoutes(ctx), ...historyRoutes(ctx), ...metaRoutes(ctx), ...notesRoutes(ctx)], (_req, res) => res.end()));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -131,4 +133,31 @@ test("rejects bad notes", async (t) => {
   assert.equal((await call("PATCH", `/api/notes/${note.id}`, { x: null })).status, 400);
   assert.equal((await call("PUT", `/api/notes/${note.id}`, {})).status, 405);
   assert.deepEqual((await store()).notes.map((n) => n.text), [""]);
+});
+
+test("PUT /api/layout records history, and undo and redo step through it", async (t) => {
+  const { call, store } = await serve(t);
+  const a = { w1: { x: 0, y: 0 } };
+  const b = { w1: { x: 50, y: 0 } };
+  const c = { w1: { x: 50, y: 0, detached: true } };
+  for (const layout of [a, b, b, c]) await call("PUT", "/api/layout", layout);
+  // The repeated b changed nothing, so it isn't an undo step.
+  assert.deepEqual((await store()).history, [{}, a, b]);
+
+  const undone = await call("POST", "/api/layout/undo");
+  assert.deepEqual(undone, { status: 200, body: { layout: b, undo: 2, redo: 1 } });
+  assert.deepEqual((await call("GET", "/api/layout")).body, b);
+  await call("POST", "/api/layout/undo");
+  await call("POST", "/api/layout/undo");
+  assert.deepEqual((await call("GET", "/api/layout")).body, {});
+  const empty = await call("POST", "/api/layout/undo");
+  assert.equal(empty.status, 409);
+  assert.equal(empty.body.redo, 3);
+
+  assert.deepEqual((await call("POST", "/api/layout/redo")).body.layout, a);
+  assert.deepEqual((await call("POST", "/api/layout/redo")).body.layout, b);
+  // A new change after undoing drops what was left to redo.
+  await call("PUT", "/api/layout", { w1: { x: 9, y: 9 } });
+  assert.equal((await call("POST", "/api/layout/redo")).status, 409);
+  assert.equal((await store()).future, undefined);
 });

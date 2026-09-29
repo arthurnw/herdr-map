@@ -91,7 +91,9 @@ function shortcutActions(): Action[] {
         run: () => r.handler(),
       });
     } else {
-      entry.keys!.push(shortcutLabel(r.binding));
+      // "z" and "Z" with Shift both read ⇧⌘Z.
+      const label = shortcutLabel(r.binding);
+      if (!entry.keys!.includes(label)) entry.keys!.push(label);
       if (enabled && !entry.enabled) Object.assign(entry, { enabled, run: () => r.handler() });
     }
   }

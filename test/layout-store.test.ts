@@ -10,6 +10,9 @@ import {
   isSavedLayout,
   loadStore,
   pushHistory,
+  sameLayout,
+  setCurrent,
+  stepHistory,
   updateStore,
 } from "../server/layout-store.ts";
 
@@ -204,4 +207,29 @@ test("backs up an unreadable file before replacing it", async () => {
   assert.equal(backups.length, 1);
   assert.equal(await readFile(join(dir, backups[0]), "utf8"), '{"version": 2, "current": {');
   assert.deepEqual((await loadStore(path)).current, { w1: { x: 1, y: 1 } });
+});
+
+test("sameLayout ignores key order and treats a missing detached flag as false", () => {
+  assert.ok(sameLayout({ a: { x: 1, y: 2 }, b: { x: 0, y: 0, detached: false } }, { b: { x: 0, y: 0 }, a: { x: 1, y: 2 } }));
+  assert.ok(!sameLayout({ a: { x: 1, y: 2 } }, { a: { x: 1, y: 2, detached: true } }));
+  assert.ok(!sameLayout({ a: { x: 1, y: 2 } }, { b: { x: 1, y: 2 } }));
+  assert.ok(!sameLayout({}, { a: { x: 1, y: 2 } }));
+});
+
+test("setCurrent and stepHistory keep undo and redo lists", () => {
+  const store = emptyStore();
+  assert.equal(setCurrent(store, {}), false);
+  assert.equal(setCurrent(store, { a: { x: 1, y: 1 } }), true);
+  setCurrent(store, { a: { x: 2, y: 2 } });
+  assert.deepEqual(stepHistory(store, "undo"), { a: { x: 1, y: 1 } });
+  assert.deepEqual(store.future, [{ a: { x: 2, y: 2 } }]);
+  assert.deepEqual(stepHistory(store, "redo"), { a: { x: 2, y: 2 } });
+  assert.equal(store.future, undefined);
+  assert.equal(stepHistory(store, "redo"), undefined);
+  assert.deepEqual(store.current, { a: { x: 2, y: 2 } });
+});
+
+test("reads and keeps the redo list", async () => {
+  const path = await fileWith({ version: 2, current: {}, history: [], future: [{ w1: { x: 1, y: 1 } }, "junk"] });
+  assert.deepEqual((await loadStore(path)).future, [{ w1: { x: 1, y: 1 } }]);
 });

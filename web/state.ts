@@ -31,12 +31,21 @@ export function paneTarget(pane: FleetPane, tabId: string): FocusTarget {
   return pane.agent ? { kind: "agent", id: pane.id } : { kind: "tab", id: tabId };
 }
 
+let layoutWrite: Promise<unknown> = Promise.resolve();
+
 export async function putLayout(layout: SavedLayout) {
-  await fetch("/api/layout", {
+  const write = fetch("/api/layout", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(layout),
   });
+  layoutWrite = write.catch(() => undefined);
+  await write;
+}
+
+/** Settles once the last layout write has; undo waits on it so it can't overtake a save. */
+export function layoutWritten(): Promise<unknown> {
+  return layoutWrite;
 }
 
 export function useServerState(): [ServerState, boolean] {

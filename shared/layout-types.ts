@@ -64,4 +64,6 @@ export interface LayoutStore {
   links: Link[];
   /** Previous `current` layouts, oldest first, for undo. */
   history: SavedLayout[];
+  /** Undone layouts, most recently undone last, for redo. Any other change to `current` clears it. */
+  future?: SavedLayout[];
 }

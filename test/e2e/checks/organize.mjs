@@ -179,4 +179,44 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     const total = await page.locator(".react-flow__node-workspace").count();
     assert(selected.length === total && selected.every((id) => id.startsWith("ws:")), `expected all ${total} workspaces, got ${selected}`);
   });
+
+  test("organize: ⌘Z undoes layout moves and ⇧⌘Z redoes them", async (page) => {
+    const start = await ws(page, "w4").boundingBox();
+    await page.mouse.move(start.x + 40, start.y + 8);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i++) await page.mouse.move(start.x + 40 + i * 15, start.y + 8 + i * 15);
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    const moved = store().current.w4;
+    assert(moved, "the drag should save positions");
+
+    await page.keyboard.press("Meta+z");
+    await page.waitForTimeout(400);
+    assert(Object.keys(store().current).length === 0, `undo should return to the automatic layout, got ${JSON.stringify(store().current)}`);
+    const back = await ws(page, "w4").boundingBox();
+    assert(Math.abs(back.x - start.x) < 1 && Math.abs(back.y - start.y) < 1, "the workspace should be back where it was");
+
+    await page.keyboard.press("Meta+Shift+z");
+    await page.waitForTimeout(400);
+    assert(JSON.stringify(store().current.w4) === JSON.stringify(moved), "redo should bring the move back");
+
+    await menu(page, "w3", "api-billing");
+    await page.getByRole("menuitem", { name: "Take out of the api box" }).click();
+    await page.waitForTimeout(400);
+    assert(store().current.w3?.detached, "the menu should detach w3");
+    await page.keyboard.press("Control+z");
+    await page.waitForTimeout(400);
+    assert(!store().current.w3?.detached, "Ctrl+Z should undo taking it out of the box");
+    assert((await ws(page, "w3").locator(".ws-repo-tag").count()) === 0, "the map should show it back in the box");
+
+    // In a note, ⌘Z is the text field's own undo.
+    const spot = await emptySpot(page);
+    await page.mouse.dblclick(spot.x, spot.y);
+    await page.locator(".react-flow__node-note textarea").waitFor();
+    const before = JSON.stringify(store().current);
+    await page.keyboard.type("x");
+    await page.keyboard.press("Meta+z");
+    await page.waitForTimeout(400);
+    assert(JSON.stringify(store().current) === before, "⌘Z in a note must not undo the layout");
+  });
 };
