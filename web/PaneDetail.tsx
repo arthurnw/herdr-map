@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { StuckBadge } from "./attention.tsx";
 import { AgentName } from "./rename.tsx";
 import { StarButton } from "./stars.tsx";
+import { ZoetropeButton } from "./zoetrope.tsx";
 import { agentAge, formatAge } from "./format.ts";
 import { ReplyBox } from "./ReplyBox.tsx";
 import { hasDialogHint } from "../shared/dialog.ts";
@@ -158,6 +159,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
           {pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
           {pinned ? "Unpin" : "Pin"}
         </Button>
+        <ZoetropeButton located={located} />
         {pinned && (
           <>
             <Button variant="ghost" size="icon" className="size-8" aria-label="Refresh" onClick={() => void load()}>

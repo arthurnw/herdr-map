@@ -20,6 +20,7 @@ const pane = (id, tabId, title, agent) => ({
   terminal_title_stripped: title,
   ...(agent && { agent: agent.kind, agent_status: agent.status }),
   ...(agent?.tokens && { tokens: agent.tokens }),
+  ...(agent?.session && { agent_session: { source: `herdr:${agent.kind}`, agent: agent.kind, kind: "id", value: agent.session } }),
 });
 
 // Two panes side by side, 60/40.
@@ -34,7 +35,13 @@ const split = (tabId, left, right) => ({
 });
 
 export const AGENTS = {
-  "w1:p1": { kind: "claude", status: "working", name: "lead", tokens: { summary: "Refactor the auth middleware" } },
+  "w1:p1": {
+    kind: "claude",
+    status: "working",
+    name: "lead",
+    tokens: { summary: "Refactor the auth middleware" },
+    session: "1fcd536a-ca43-43bf-8d03-a6ed74098343",
+  },
   "w2:p3": { kind: "pi", status: "blocked", tokens: { summary: "Pick a deploy target" } },
   "w2:p4": { kind: "codex", status: "done", tokens: { summary: "Rewrite the token cache" } },
   "w3:p5": { kind: "codex", status: "idle", tokens: { parent: "w1:p1" } },

@@ -166,4 +166,40 @@ export default function attentionChecks({ test, assert, openPage, card, needsYou
       rmSync(errorFile, { force: true });
     }
   });
+
+  test("the session graph button is hidden while zoetrope's plugin isn't installed", async (page) => {
+    await card(page, "w1:p1").click({ modifiers: ["Alt"] });
+    await page.getByRole("button", { name: "Unpin" }).waitFor();
+    await page.waitForTimeout(300);
+    assert((await page.getByRole("button", { name: "Session graph" }).count()) === 0, "no plugin, no button");
+  });
+
+  test("with zoetrope installed, the session graph button focuses the agent and runs the plugin", async () => {
+    const pluginsFile = join(stubDir, "plugins.json");
+    writeFileSync(pluginsFile, JSON.stringify({ result: { plugins: [{ plugin_id: "furkankly.zoetrope", enabled: true }] } }));
+    const page = await openPage();
+    try {
+      // Pi agents have no session zoetrope can read.
+      await card(page, "w5:p9").click({ modifiers: ["Alt"] });
+      await page.getByRole("button", { name: "Unpin" }).waitFor();
+      await page.waitForTimeout(300);
+      assert((await page.getByRole("button", { name: "Session graph" }).count()) === 0, "no button for a Pi agent");
+      await card(page, "w1:p1").click({ modifiers: ["Alt"] });
+      clearActions();
+      await page.getByRole("button", { name: "Session graph" }).click();
+      await page.waitForTimeout(400);
+      const log = actions();
+      assert(
+        log.join("|") === "agent focus w1:p1|plugin action invoke open --plugin furkankly.zoetrope",
+        `expected focus then the plugin action, got ${log}`,
+      );
+      const refused = await page.evaluate(async () =>
+        (await fetch("/api/zoetrope", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pane: "w5:p9" }) })).status,
+      );
+      assert(refused === 400, `a pane without a session should be refused, got ${refused}`);
+    } finally {
+      rmSync(pluginsFile, { force: true });
+      await page.context().close();
+    }
+  });
 }

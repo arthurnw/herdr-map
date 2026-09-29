@@ -113,6 +113,26 @@ export async function renameAgent(opts: HerdrOptions, paneId: string, name: stri
   }
 }
 
+// Plugin and action IDs look like `furkankly.zoetrope` and `open-tab`.
+const PLUGIN_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+
+function assertPluginName(name: string): string {
+  if (!PLUGIN_NAME.test(name)) throw new Error(`invalid plugin or action id: ${name}`);
+  return name;
+}
+
+/** Whether a herdr plugin is installed and enabled. */
+export async function pluginEnabled(opts: HerdrOptions, pluginId: string): Promise<boolean> {
+  const out = JSON.parse(await run(opts, ["plugin", "list", "--json", "--plugin", assertPluginName(pluginId)]));
+  const plugins: { plugin_id?: string; enabled?: boolean }[] = out.result?.plugins ?? [];
+  return plugins.some((p) => p.plugin_id === pluginId && p.enabled);
+}
+
+/** Runs a plugin action. Actions act on the pane herdr has focused. */
+export async function invokePluginAction(opts: HerdrOptions, pluginId: string, actionId: string): Promise<void> {
+  await run(opts, ["plugin", "action", "invoke", assertPluginName(actionId), "--plugin", assertPluginName(pluginId)]);
+}
+
 const APP_NAME = /^[\w .-]{1,64}$/;
 
 /** Brings the terminal app that shows herdr to the front (macOS only). */

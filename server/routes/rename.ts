@@ -1,3 +1,4 @@
+import { fleetPanes } from "../../shared/model.ts";
 import { agentNameError } from "../../shared/names.ts";
 import type { Context } from "../context.ts";
 import { assertId, renameAgent } from "../herdr.ts";
@@ -5,12 +6,7 @@ import { readBody, sendJson } from "../http.ts";
 import type { Route } from "../router.ts";
 
 function otherNames(ctx: Context, paneId: string): string[] {
-  const names: string[] = [];
-  for (const g of ctx.poller.state().fleet?.groups ?? [])
-    for (const ws of g.workspaces)
-      for (const tab of ws.tabs)
-        for (const pane of tab.panes) if (pane.id !== paneId && pane.agent?.name) names.push(pane.agent.name);
-  return names;
+  return fleetPanes(ctx.poller.state().fleet).flatMap((p) => (p.id !== paneId && p.agent?.name ? [p.agent.name] : []));
 }
 
 export function renameRoutes(ctx: Context): Route[] {

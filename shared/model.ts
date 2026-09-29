@@ -39,6 +39,8 @@ export interface SnapPane {
   agent_status?: AgentStatus;
   terminal_title_stripped?: string;
   tokens?: Tokens;
+  /** The agent's own session, reported by herdr's Claude Code and Codex integrations. */
+  agent_session?: { source: string; agent: string; kind: string; value: string };
 }
 
 export interface SnapAgent {
@@ -77,6 +79,8 @@ export interface FleetAgent {
   summary?: string;
   /** Set while a working agent looks stuck: no screen change for a while, or a limit or error banner. */
   stuck?: { reason: StuckReason; since: number };
+  /** The agent's native session ID, when herdr knows it. */
+  sessionId?: string;
 }
 
 export type StuckReason = "no-output" | "rate-limit" | "error";
@@ -276,6 +280,7 @@ export function buildFleet(snap: Snapshot, marks: Map<string, StatusMark>): Flee
             since: mark?.since ?? Date.now(),
             sinceApprox: mark?.approx ?? true,
             summary: p.tokens?.summary,
+            sessionId: p.agent_session?.kind === "id" ? p.agent_session.value : undefined,
           };
           counts[status] = (counts[status] ?? 0) + 1;
           agentCount++;
@@ -321,4 +326,9 @@ export function buildFleet(snap: Snapshot, marks: Map<string, StatusMark>): Flee
   });
 
   return { version: snap.version, groups: ordered, counts, focusedPaneId: snap.focused_pane_id };
+}
+
+/** Every pane in the fleet, in workspace and tab order. */
+export function fleetPanes(fleet: Fleet | undefined): FleetPane[] {
+  return (fleet?.groups ?? []).flatMap((g) => g.workspaces.flatMap((ws) => ws.tabs.flatMap((t) => t.panes)));
 }

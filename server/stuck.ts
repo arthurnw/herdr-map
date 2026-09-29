@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Fleet, FleetAgent } from "../shared/model.ts";
+import { fleetPanes, type Fleet, type FleetAgent } from "../shared/model.ts";
 import { detectBanner, screenFingerprint } from "../shared/stuck.ts";
 import { readPane, type HerdrOptions } from "./herdr.ts";
 
@@ -49,22 +49,17 @@ export class StuckTracker {
 /** Sets `stuck` on working agents in `fleet` that the watcher flagged. */
 export function markStuck(fleet: Fleet, stuck: Map<string, Stuck>): Fleet {
   if (stuck.size === 0) return fleet;
-  for (const g of fleet.groups)
-    for (const ws of g.workspaces)
-      for (const tab of ws.tabs)
-        for (const pane of tab.panes) {
-          const s = stuck.get(pane.id);
-          if (s && pane.agent?.status === "working") pane.agent.stuck = s;
-        }
+  for (const pane of fleetPanes(fleet)) {
+    const s = stuck.get(pane.id);
+    if (s && pane.agent?.status === "working") pane.agent.stuck = s;
+  }
   return fleet;
 }
 
 export function workingPanes(fleet: Fleet | undefined): string[] {
-  const out: string[] = [];
-  for (const g of fleet?.groups ?? [])
-    for (const ws of g.workspaces)
-      for (const tab of ws.tabs) for (const pane of tab.panes) if (pane.agent?.status === "working") out.push(pane.id);
-  return out;
+  return fleetPanes(fleet)
+    .filter((p) => p.agent?.status === "working")
+    .map((p) => p.id);
 }
 
 export interface StuckWatcherOptions {

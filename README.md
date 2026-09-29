@@ -2,7 +2,7 @@
 
 A zoomable canvas of every agent in a [herdr](https://herdr.dev) session. Click an agent to focus it in herdr and bring your terminal to the front.
 
-herdr stays the host. herdr-map reads `herdr api snapshot` and uses herdr's own commands to focus, prompt, answer, and rename agents, so workspaces, tabs, panes, the `herdr` CLI, and the tools you open next to an agent (nvim, hunk, tuicr) work as before.
+herdr stays the host. herdr-map reads `herdr api snapshot` and uses herdr's own commands to focus, prompt, answer, and rename agents and to run plugin actions, so workspaces, tabs, panes, the `herdr` CLI, and the tools you open next to an agent (nvim, hunk, tuicr) work as before.
 
 ## What it shows
 
@@ -15,6 +15,7 @@ herdr stays the host. herdr-map reads `herdr api snapshot` and uses herdr's own 
 - **Needs you**: blocked agents first, then stuck ones, then finished ones, oldest first. Clicking a row selects that agent: the map pans to it and its preview stays in the sidebar. The terminal button on the row opens it in your terminal instead.
 - **Starred agents**: press `s` or the star button in the preview to star the selected agent. Starred agents get a star on their card and are listed under **Starred** at the top of the sidebar whatever their status; `g` moves to the next one. Stars are remembered per browser.
 - **Rename agents**: the pencil next to an agent's name in the preview opens an input. Enter renames it with `herdr agent rename`, and Esc cancels. Names follow herdr's rules (up to 32 lowercase letters, digits, `-`, or `_`, starting with a letter, and not used by another agent).
+- **Session graph**: when [zoetrope](https://github.com/furkankly/zoetrope)'s herdr plugin is installed and enabled, the preview of a Claude Code or Codex agent whose session herdr knows has a **Session graph** button. It focuses the agent and runs the plugin's `open` action, which draws the session as a live flow graph over the agent's pane (press `q` there to close it). herdr-map checks for the plugin once per page load.
 - **Reply from the map**: the preview has a reply box. For an idle or finished agent it sends a prompt (`herdr agent prompt`). For a blocked agent, the dialog's numbered choices appear as buttons that press the matching key (the server re-reads the dialog first and refuses the key if that choice is gone), arrow, Enter, and Esc buttons drive the dialog by hand, and typed text goes into the dialog followed by Enter.
 - **Alerts**: the bell menu turns on desktop notifications and a sound for agents that become blocked, finish, or look stuck. They fire only while the page is in the background, and clicking a notification selects that agent. The tab title shows how many agents need you.
 - **Command palette**: press `⌘K` (or `Ctrl+K`), or click **Go to** in the toolbar, to search every agent and workspace. Narrow the list with `s:` for status (`s:blocked`), `a:` for agent kind (`a:codex`), and `w:` for workspace (`w:auth`), and add words to match names, workspace labels, and summaries. Enter selects an agent as a Needs you row does, or shows a workspace on the map; `⌘Enter` opens it in the terminal. The **Commands** group lists the keyboard shortcuts and view, theme, and layout toggles, and runs them.
@@ -96,7 +97,7 @@ herdr drops pane tokens when its server restarts.
 
 ## Development
 
-`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, key, and rename it would have sent, and refuses anything else. It never reaches a real herdr session.
+`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, key, rename, and plugin action it would have sent, and refuses anything else. It never reaches a real herdr session.
 
 The UI uses [shadcn/ui](https://ui.shadcn.com) components (in `web/components/ui`, added with `npx shadcn@latest add <name>`) on Tailwind CSS v4. Canvas node styles and the zoom-adaptive text rules live in `web/canvas.css`.
 
