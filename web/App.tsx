@@ -40,6 +40,7 @@ import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
+import { CommandPalette } from "./CommandPalette.tsx";
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
@@ -104,6 +105,8 @@ function FleetMap() {
     saved,
     setSaved,
   );
+
+  const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
 
   useEffect(() => {
     if (!fitted.current && layout.nodes.length > 0) {
@@ -199,9 +202,20 @@ function FleetMap() {
           onAgentsOnly={setAgentsOnly}
           agentPanesOnly={agentPanesOnly}
           onAgentPanesOnly={setAgentPanesOnly}
-          layoutMenu={{ currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout }}
+          layoutMenu={layoutMenu}
           alerts={alerts}
           onAlerts={setAlerts}
+        />
+        <CommandPalette
+          fleet={fleet}
+          onSelect={select}
+          onOpen={focusPane}
+          onFocus={(target) => void focus(target)}
+          agentsOnly={agentsOnly}
+          onAgentsOnly={setAgentsOnly}
+          agentPanesOnly={agentPanesOnly}
+          onAgentPanesOnly={setAgentPanesOnly}
+          layoutMenu={layoutMenu}
         />
         {error && (
           <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">

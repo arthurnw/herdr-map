@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { notificationPermission, playChime, type AlertSettings } from "./alerts.ts";
+import { PaletteButton } from "./CommandPalette.tsx";
 import { useShortcut } from "./hooks/useShortcut.ts";
 import { LayoutMenu, type LayoutMenuProps } from "./LayoutMenu.tsx";
 import { StatusDot } from "./status.tsx";
@@ -54,6 +55,7 @@ export function Toolbar(props: ToolbarProps) {
       <StatusFilter fleet={props.fleet} hidden={props.hiddenStatuses} onToggle={props.onToggleStatus} />
       <SearchBox query={props.query} onQuery={props.onQuery} onEnter={props.onSearchEnter} />
       <div className="ml-auto flex items-center gap-1.5">
+        <PaletteButton />
         <ViewMenu {...props} />
         <LayoutMenu {...props.layoutMenu} />
         <AlertsMenu settings={props.alerts} onChange={props.onAlerts} />

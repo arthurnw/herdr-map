@@ -18,7 +18,7 @@ export const PREVIOUS = "Previous layout";
 
 const url = (name: string) => `/api/layouts/${encodeURIComponent(name)}`;
 
-async function saveNamed(name: string, layout: SavedLayout) {
+export async function saveNamed(name: string, layout: SavedLayout) {
   const res = await fetch(url(name), {
     method: "PUT",
     headers: { "content-type": "application/json" },

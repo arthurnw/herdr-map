@@ -14,6 +14,11 @@ export function activeShortcuts(): Shortcut[] {
   return [...registrations].map((r) => r.binding);
 }
 
+/** The mounted bindings with their handlers, for running a shortcut from a list. */
+export function activeRegistrations(): Registration[] {
+  return [...registrations];
+}
+
 /**
  * Registers a keyboard shortcut while the calling component is mounted. The binding and
  * handler are read at key time, so they can close over current state without re-registering.
