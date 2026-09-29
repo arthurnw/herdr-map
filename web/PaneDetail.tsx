@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { FleetPane, FleetWorkspace } from "../shared/model.ts";
+import { Pin, PinOff, RefreshCw, SquareTerminal } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { cn } from "@/lib/utils";
 import { agentAge, formatAge } from "./nodes.tsx";
-
-export interface Located {
-  pane: FleetPane;
-  tabId: string;
-  tabLabel: string;
-  workspace: FleetWorkspace;
-}
+import type { Located } from "./state.ts";
+import { KIND_LABEL, StatusDot } from "./status.tsx";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
@@ -90,46 +89,74 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
     if (pre.current && stickToBottom.current) pre.current.scrollTop = pre.current.scrollHeight;
   }, [screen]);
 
+  const agent = pane.agent;
   return (
-    <section className={`detail-panel${pinned ? " pinned" : ""}`}>
-      <h2>
-        {workspace.label} › {tabLabel}
-      </h2>
-      <p>
-        {pane.agent ? (
-          <>
-            <span className={`dot status-${pane.agent.status}`} /> {pane.agent.name ?? pane.agent.kind} ·{" "}
-            {pane.agent.status} for {agentAge(pane.agent, now)}
-          </>
-        ) : (
-          pane.title
+    <section className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          {pinned && <Pin className="size-3.5 shrink-0 text-muted-foreground" />}
+          <h2 className="truncate text-sm font-semibold">
+            {workspace.label}
+            <span className="font-normal text-muted-foreground"> / {tabLabel}</span>
+          </h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {agent ? (
+            <>
+              <StatusDot status={agent.status} />
+              <span className="font-medium">{agent.name ?? KIND_LABEL[agent.kind] ?? agent.kind}</span>
+              {agent.name && <Badge variant="secondary">{KIND_LABEL[agent.kind] ?? agent.kind}</Badge>}
+              <span className="text-muted-foreground">
+                {agent.status} for {agentAge(agent, now)}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{pane.title}</span>
+          )}
+        </div>
+        {pane.cwd && (
+          <p className="truncate font-mono text-xs text-muted-foreground" title={pane.cwd}>
+            {pane.cwd}
+          </p>
         )}
-      </p>
-      {pane.cwd && <p className="muted mono">{pane.cwd}</p>}
-      {pane.agent?.summary && <p>{pane.agent.summary}</p>}
-      <div className="detail-actions">
-        <button className="primary" onClick={onOpen}>
+        {agent?.summary && <p className="text-sm leading-snug">{agent.summary}</p>}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" className="gap-1.5" onClick={onOpen}>
+          <SquareTerminal className="size-3.5" />
           Open in terminal
-        </button>
-        <button className="plain" onClick={onTogglePin} aria-pressed={pinned}>
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={onTogglePin} aria-pressed={pinned}>
+          {pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
           {pinned ? "Unpin" : "Pin"}
-        </button>
+        </Button>
         {pinned && (
           <>
-            <button className="plain" onClick={() => void load()}>
-              Refresh
-            </button>
-            <span className="muted">
-              {following ? "live" : "paused"}
-              {readAt ? ` · ${formatAge(now - readAt)} ago` : ""}
-            </span>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Refresh" onClick={() => void load()}>
+              <RefreshCw className="size-3.5" />
+            </Button>
+            <Badge variant="outline" className="gap-1.5 font-normal">
+              <span className={cn("size-1.5 rounded-full", following ? "bg-status-done" : "bg-status-idle")} />
+              {following ? "Live" : "Paused"}
+              {readAt ? <span className="text-muted-foreground">· {formatAge(now - readAt)} ago</span> : null}
+            </Badge>
           </>
         )}
       </div>
-      {!pinned && <p className="muted hint">Option-click a pane, or press Pin, to keep this preview and scroll its history.</p>}
+
+      {!pinned && (
+        <p className="text-xs text-muted-foreground">
+          <Kbd>⌥</Kbd> click a pane, or press Pin, to keep this preview and scroll its history.
+        </p>
+      )}
+
       <pre
         ref={pre}
-        className="screen"
+        className={cn(
+          "min-h-40 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-snug whitespace-pre",
+          pinned ? "flex-1" : "max-h-[55vh]",
+        )}
         onScroll={(e) => {
           if (!pinned) return;
           const atBottom = isAtBottom(e.currentTarget);
@@ -138,7 +165,7 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
           setFollowing(atBottom);
         }}
       >
-        {screen ?? "Loading screen…"}
+        {screen ?? <span className="text-muted-foreground">Loading screen…</span>}
       </pre>
     </section>
   );

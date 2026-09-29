@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { LayoutDashboard, RotateCcw, Save, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import type { SavedLayout } from "./layout.ts";
 import { formatAge } from "./nodes.tsx";
 
@@ -12,7 +18,7 @@ export const PREVIOUS = "Previous layout";
 
 const url = (name: string) => `/api/layouts/${encodeURIComponent(name)}`;
 
-export async function saveNamed(name: string, layout: SavedLayout) {
+async function saveNamed(name: string, layout: SavedLayout) {
   const res = await fetch(url(name), {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -21,67 +27,57 @@ export async function saveNamed(name: string, layout: SavedLayout) {
   if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
 }
 
-interface Props {
+export interface LayoutMenuProps {
   /** Positions of every visible workspace as currently drawn. */
   currentPositions: () => SavedLayout;
   isCustom: boolean;
   onApply: (layout: SavedLayout) => void;
-  onError: (message: string) => void;
 }
 
-export function LayoutMenu({ currentPositions, isCustom, onApply, onError }: Props) {
+export function LayoutMenu({ currentPositions, isCustom, onApply }: LayoutMenuProps) {
   const [open, setOpen] = useState(false);
   const [named, setNamed] = useState<Record<string, NamedLayout>>({});
   const [name, setName] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setNamed(await (await fetch("/api/layouts")).json());
+      const res = await fetch("/api/layouts");
+      if (!res.ok) throw new Error("the server doesn't support saved layouts yet; restart it");
+      setNamed(await res.json());
     } catch (err) {
-      onError((err as Error).message);
+      toast.error("Couldn't load layouts", { description: (err as Error).message });
     }
-  }, [onError]);
+  }, []);
 
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, success?: string) => {
     try {
       await fn();
       await refresh();
+      if (success) toast.success(success);
     } catch (err) {
-      onError((err as Error).message);
+      toast.error("Layout change failed", { description: (err as Error).message });
     }
   };
 
   // Replacing the arrangement first stashes the current one as the previous layout.
-  const replaceWith = (layout: SavedLayout) =>
+  const replaceWith = (layout: SavedLayout, success: string) =>
     run(async () => {
       if (isCustom) await saveNamed(PREVIOUS, currentPositions());
       onApply(layout);
-    });
+    }, success);
 
-  const save = () =>
-    run(async () => {
-      const trimmed = name.trim();
-      if (!trimmed) return;
+  const save = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    void run(async () => {
       await saveNamed(trimmed, currentPositions());
       setName("");
-    });
+    }, `Saved “${trimmed}”`);
+  };
 
   const remove = (n: string) =>
     run(async () => {
@@ -94,53 +90,88 @@ export function LayoutMenu({ currentPositions, isCustom, onApply, onError }: Pro
   );
 
   return (
-    <div className="layout-menu" ref={ref}>
-      <button className="plain" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        Layouts ▾
-      </button>
-      {open && (
-        <div className="layout-panel">
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5">
+          <LayoutDashboard className="size-3.5" />
+          Layouts
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-0">
+        <div className="p-3">
+          <div className="mb-2 text-sm font-medium">Save current arrangement</div>
           <form
-            className="layout-save"
+            className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              void save();
+              save();
             }}
           >
-            <input
-              placeholder="Name this layout"
+            <Input
+              placeholder="Layout name"
               value={name}
               maxLength={64}
               onChange={(e) => setName(e.target.value)}
+              className="h-8"
               autoFocus
             />
-            <button className="plain" type="submit" disabled={!name.trim()}>
+            <Button type="submit" size="sm" className="h-8 gap-1.5" disabled={!name.trim()}>
+              <Save className="size-3.5" />
               Save
-            </button>
+            </Button>
           </form>
-          {entries.length === 0 && <p className="muted">No saved layouts yet.</p>}
-          <ul className="layout-list">
-            {entries.map(([n, entry]) => (
-              <li key={n}>
-                <span className="layout-name" title={n}>
-                  {n}
-                </span>
-                <span className="muted">{formatAge(Date.now() - entry.savedAt)} ago</span>
-                <button className="plain" onClick={() => void replaceWith(entry.layout)}>
-                  Restore
-                </button>
-                <button className="plain" onClick={() => void remove(n)} aria-label={`Delete ${n}`}>
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button className="plain reset" onClick={() => void replaceWith({})} disabled={!isCustom}>
-            Reset to automatic layout
-          </button>
-          <p className="muted hint">Reset and Restore save the layout they replace as “{PREVIOUS}”.</p>
         </div>
-      )}
-    </div>
+        <Separator />
+        <div className="max-h-64 overflow-y-auto p-1.5">
+          {entries.length === 0 ? (
+            <p className="px-2 py-3 text-center text-sm text-muted-foreground">No saved layouts yet.</p>
+          ) : (
+            entries.map(([n, entry]) => (
+              <div key={n} className="group flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm" title={n}>
+                    {n}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{formatAge(Date.now() - entry.savedAt)} ago</div>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => void replaceWith(entry.layout, `Restored “${n}”`)}
+                >
+                  Restore
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 text-muted-foreground hover:text-destructive"
+                  aria-label={`Delete ${n}`}
+                  onClick={() => void remove(n)}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+        <Separator />
+        <div className="p-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-1.5"
+            disabled={!isCustom}
+            onClick={() => void replaceWith({}, "Reset to the automatic layout")}
+          >
+            <RotateCcw className="size-3.5" />
+            Reset to automatic layout
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Reset and Restore save the arrangement they replace as “{PREVIOUS}”.
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

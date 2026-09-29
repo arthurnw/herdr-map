@@ -1,0 +1,299 @@
+/* Canvas nodes. React Flow sets each node's size from layout.ts.
+   The canvas sets --z to the current zoom; --inv scales text up as the map zooms out
+   so labels keep a readable on-screen size, clamped to what fits in each box. */
+
+.canvas {
+  --inv: calc(1 / var(--z, 1));
+}
+
+.canvas .react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-background-pattern-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+  --xy-minimap-background-color: var(--card);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--canvas) 70%, transparent);
+  --xy-minimap-mask-stroke-color: var(--border);
+  --xy-edge-stroke: var(--muted-foreground);
+  --xy-node-border-radius: 0;
+  font-family: var(--font-sans);
+}
+
+.react-flow__node { cursor: pointer; }
+.react-flow__node.dim { opacity: 0.15; }
+.react-flow__node.status-filtered { opacity: 0.25; }
+.react-flow__node-workspace,
+.react-flow__node-group-box { cursor: grab; }
+.react-flow__node-workspace.dragging,
+.react-flow__node-group-box.dragging { cursor: grabbing; }
+.react-flow__node-ws-label { pointer-events: none !important; }
+.react-flow__handle { opacity: 0; pointer-events: none; }
+
+/* Repo group */
+.group-box {
+  width: 100%;
+  height: 100%;
+  background: var(--group);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 8px);
+}
+
+.group-header {
+  padding: 12px 16px;
+  font-size: clamp(15px, calc(14px * var(--inv)), 44px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Workspace */
+.workspace {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  transition: box-shadow 120ms;
+}
+
+.react-flow__node-workspace:hover .workspace { box-shadow: 0 4px 14px rgb(0 0 0 / 0.08); }
+.workspace.focused { box-shadow: 0 0 0 2px var(--ring); }
+
+.ws-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ws-number {
+  color: var(--muted-foreground);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-label { overflow: hidden; text-overflow: ellipsis; }
+
+.ws-tag {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.ws-count {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* Floating workspace name, shown instead of the header when zoomed out. */
+.ws-label-float {
+  display: none;
+  padding: 5px 12px 7px;
+  font-size: clamp(13px, calc(12px * var(--inv)), 64px);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--card) 90%, transparent);
+  border-radius: calc(var(--radius) + 4px) calc(var(--radius) + 4px) 0 0;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Tab */
+.tab {
+  width: 100%;
+  height: 100%;
+  background: var(--tab);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.tab.focused { border-color: var(--ring); }
+
+.tab-header {
+  height: 22px;
+  padding: 4px 9px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Panes */
+.pane {
+  width: 100%;
+  height: 100%;
+  padding: 7px 9px;
+  border-radius: calc(var(--radius) - 3px);
+  overflow: hidden;
+  font-size: clamp(11px, calc(10px * var(--inv)), 36px);
+  line-height: 1.25;
+  transition: transform 120ms, box-shadow 120ms;
+}
+
+.react-flow__node-pane:hover .pane { box-shadow: 0 0 0 1px var(--ring); }
+.pane.focused { box-shadow: 0 0 0 2px var(--ring); }
+
+.pane.tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted-foreground);
+}
+
+.tool-title {
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.pane.agent {
+  --c: var(--status-idle);
+  position: relative;
+  background: color-mix(in oklab, var(--c) 9%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--c) 35%, var(--border));
+  padding-left: 13px;
+}
+
+/* Status bar on the left edge. */
+.pane.agent::before {
+  content: "";
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--c);
+}
+
+.pane.agent.status-working { --c: var(--status-working); }
+.pane.agent.status-blocked { --c: var(--status-blocked); }
+.pane.agent.status-done { --c: var(--status-done); }
+.pane.agent.status-idle { --c: var(--status-idle); }
+.pane.agent.status-unknown { --c: var(--status-unknown); }
+
+.pane.agent.status-blocked { animation: pulse-blocked 1.6s ease-in-out infinite; }
+
+@keyframes pulse-blocked {
+  50% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--status-blocked) 30%, transparent); }
+}
+
+.agent-line {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.agent-kind {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 0.9em;
+}
+
+.agent-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.agent-dot {
+  width: 0.55em;
+  height: 0.55em;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.agent-summary {
+  margin-top: 4px;
+  color: var(--foreground);
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Semantic zoom. Mid: drop summaries and tab labels, let names wrap, and swap the
+   workspace header for the floating label. Far: fill panes with their status color. */
+.zoom-mid .agent-summary,
+.zoom-far .agent-summary { display: none; }
+.zoom-mid .tab-header,
+.zoom-far .tab-header,
+.zoom-mid .ws-header,
+.zoom-far .ws-header { visibility: hidden; }
+.zoom-mid .ws-label-float,
+.zoom-far .ws-label-float { display: -webkit-box; }
+.zoom-far .agent-line { display: block; white-space: normal; overflow-wrap: anywhere; }
+.zoom-far .agent-name { display: block; }
+
+/* The floating workspace label covers the top of each pane, so pane text sits at the bottom. */
+.zoom-mid .pane.agent,
+.zoom-far .pane.agent {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.zoom-mid .pane.tool,
+.zoom-far .pane.tool { align-items: flex-end; }
+.zoom-mid .pane.agent { background: color-mix(in oklab, var(--c) 22%, var(--card)); }
+.zoom-far .pane.agent {
+  background: var(--c);
+  border-color: transparent;
+}
+.zoom-far .pane.agent::before,
+.zoom-far .agent-dot { display: none; }
+.zoom-far .pane.agent .agent-name,
+.zoom-far .pane.agent .agent-kind,
+.zoom-far .pane.agent .agent-status { color: #fff; }
+.zoom-far .pane.agent .agent-kind,
+.zoom-far .pane.agent .agent-status { opacity: 0.85; }
+/* The name says more than the kind when both can't fit. */
+.zoom-mid .pane.agent:has(.agent-kind) .agent-kind,
+.zoom-far .pane.agent:has(.agent-kind) .agent-kind { display: none; }
+
+/* Minimap */
+.react-flow__minimap-node.mm-hidden { display: none; }
+.react-flow__minimap-node.mm-container { fill: transparent; stroke: var(--border); }
+.react-flow__minimap-node.mm-pane.tool { fill: var(--border); }
+.react-flow__minimap-node.status-working { fill: var(--status-working); }
+.react-flow__minimap-node.status-blocked { fill: var(--status-blocked); }
+.react-flow__minimap-node.status-done { fill: var(--status-done); }
+.react-flow__minimap-node.status-idle { fill: var(--status-idle); }
+.react-flow__minimap-node.status-unknown { fill: var(--status-unknown); }

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
-  Controls,
+  BackgroundVariant,
   MiniMap,
+  Panel,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -10,7 +11,14 @@ import {
   type NodeChange,
   type Viewport,
 } from "@xyflow/react";
-import { STATUSES, type AgentStatus, type Fleet, type FleetPane, type FleetWorkspace } from "../shared/model.ts";
+import { useTheme } from "next-themes";
+import { useDefaultLayout } from "react-resizable-panels";
+import { Maximize, Minus, Plus, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   isDetachedDrop,
   layoutFleet,
@@ -21,77 +29,23 @@ import {
   type TabData,
   type WorkspaceData,
 } from "./layout.ts";
-import { LayoutMenu } from "./LayoutMenu.tsx";
-import { PaneDetail, type Located } from "./PaneDetail.tsx";
-import { NowContext, agentAge, nodeTypes } from "./nodes.tsx";
-
-interface ServerState {
-  fleet?: Fleet;
-  error?: string;
-}
-
-type FocusTarget = { kind: "agent" | "tab" | "workspace"; id: string };
-
-async function requestFocus(target: FocusTarget) {
-  const res = await fetch("/api/focus", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(target),
-  });
-  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-}
-
-function paneTarget(pane: FleetPane, tabId: string): FocusTarget {
-  // herdr can focus an agent by pane ID; other panes are reached through their tab.
-  return pane.agent ? { kind: "agent", id: pane.id } : { kind: "tab", id: tabId };
-}
-
-function useServerState(): [ServerState, boolean] {
-  const [state, setState] = useState<ServerState>({});
-  const [connected, setConnected] = useState(false);
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
-    source.onmessage = (event) => setState(JSON.parse(event.data));
-    return () => source.close();
-  }, []);
-  return [state, connected];
-}
-
-function useNow(intervalMs: number) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
-
-function workspaceMatches(ws: FleetWorkspace, query: string): boolean {
-  const q = query.toLowerCase();
-  if (ws.label.toLowerCase().includes(q)) return true;
-  return ws.tabs.some(
-    (t) =>
-      t.label.toLowerCase().includes(q) ||
-      t.panes.some(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.agent?.name?.toLowerCase().includes(q) ||
-          p.agent?.summary?.toLowerCase().includes(q),
-      ),
-  );
-}
-
-
-function indexPanes(fleet: Fleet | undefined): Map<string, Located> {
-  const out = new Map<string, Located>();
-  for (const g of fleet?.groups ?? [])
-    for (const ws of g.workspaces)
-      for (const tab of ws.tabs)
-        for (const pane of tab.panes) out.set(pane.id, { pane, tabId: tab.id, tabLabel: tab.label, workspace: ws });
-  return out;
-}
+import { NowContext, nodeTypes } from "./nodes.tsx";
+import { Sidebar } from "./Sidebar.tsx";
+import {
+  indexPanes,
+  paneTarget,
+  putLayout,
+  requestFocus,
+  safeStorage,
+  useHiddenStatuses,
+  useNow,
+  usePersistedFlag,
+  useServerState,
+  workspaceMatches,
+  type FocusTarget,
+  type Located,
+} from "./state.ts";
+import { Toolbar } from "./Toolbar.tsx";
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
@@ -99,133 +53,21 @@ function zoomClass(zoom: number) {
   return "zoom-near";
 }
 
-/** A boolean view setting remembered per browser. */
-function usePersistedFlag(key: string, initial: boolean): [boolean, (v: boolean) => void] {
-  const [value, setValue] = useState(() => {
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved === "true" || saved === "false") return saved === "true";
-    } catch {}
-    return initial;
-  });
-  const set = useCallback(
-    (v: boolean) => {
-      setValue(v);
-      try {
-        localStorage.setItem(key, String(v));
-      } catch {}
-    },
-    [key],
-  );
-  return [value, set];
-}
-
-/**
- * Agent statuses hidden from the map, remembered per browser. Clicking a status toggles it;
- * Option-clicking shows only that status, or everything again if it was already alone.
- */
-function useHiddenStatuses(): [AgentStatus[], (s: AgentStatus, solo: boolean) => void] {
-  const key = "herdr-map.hidden-statuses";
-  const [hidden, setHidden] = useState<AgentStatus[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(key) ?? "[]");
-      if (Array.isArray(saved)) return saved.filter((s): s is AgentStatus => STATUSES.includes(s));
-    } catch {}
-    return [];
-  });
-  const toggle = useCallback((status: AgentStatus, solo: boolean) => {
-    setHidden((prev) => {
-      const others = STATUSES.filter((s) => s !== status);
-      const isAlone = !prev.includes(status) && others.every((s) => prev.includes(s));
-      const next = solo
-        ? isAlone
-          ? []
-          : others
-        : prev.includes(status)
-          ? prev.filter((s) => s !== status)
-          : [...prev, status];
-      try {
-        localStorage.setItem(key, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  }, []);
-  return [hidden, toggle];
-}
-
-const SIDEBAR_MIN = 260;
-const SIDEBAR_KEY = "herdr-map.sidebar-width";
-
-/** Sidebar width, adjustable by dragging its left edge and remembered per browser. */
-function useSidebarWidth(): [number, (e: React.PointerEvent) => void] {
-  const [width, setWidth] = useState(() => {
-    try {
-      const saved = Number(localStorage.getItem(SIDEBAR_KEY));
-      if (saved >= SIDEBAR_MIN) return saved;
-    } catch {}
-    return 380;
-  });
-  const start = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    const handle = e.currentTarget as HTMLElement;
-    handle.setPointerCapture(e.pointerId);
-    document.body.classList.add("resizing");
-    let last = 0;
-    const move = (ev: PointerEvent) => {
-      last = Math.round(Math.min(window.innerWidth * 0.8, Math.max(SIDEBAR_MIN, window.innerWidth - ev.clientX)));
-      setWidth(last);
-    };
-    const up = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", up);
-      document.body.classList.remove("resizing");
-      try {
-        if (last) localStorage.setItem(SIDEBAR_KEY, String(last));
-      } catch {}
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", up);
-  }, []);
-  return [width, start];
-}
-
-type Theme = "system" | "light" | "dark";
-
-function readTheme(): Theme {
-  try {
-    const saved = localStorage.getItem("herdr-map.theme");
-    if (saved === "light" || saved === "dark") return saved;
-  } catch {}
-  return "system";
-}
-
-function useTheme(): [Theme, (t: Theme) => void] {
-  const [theme, setTheme] = useState<Theme>(readTheme);
-  useEffect(() => {
-    if (theme === "system") document.documentElement.removeAttribute("data-theme");
-    else document.documentElement.setAttribute("data-theme", theme);
-    try {
-      localStorage.setItem("herdr-map.theme", theme);
-    } catch {}
-  }, [theme]);
-  return [theme, setTheme];
-}
-
-async function putLayout(layout: SavedLayout) {
-  await fetch("/api/layout", {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(layout),
-  });
-}
-
 function nodeRect(n: Node): Rect {
   return { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
+}
+
+function minimapClass(node: Node): string {
+  if (node.type === "ws-label") return "mm-hidden";
+  if (node.type !== "pane") return "mm-container";
+  const status = (node.data as PaneData).pane.agent?.status;
+  return status ? `mm-pane status-${status}` : "mm-pane tool";
 }
 
 function FleetMap() {
   const [{ fleet, error }, connected] = useServerState();
   const now = useNow(5000);
+  const { resolvedTheme } = useTheme();
   const [agentsOnly, setAgentsOnly] = usePersistedFlag("herdr-map.agents-only", true);
   const [agentPanesOnly, setAgentPanesOnly] = usePersistedFlag("herdr-map.agent-panes-only", true);
   const [hiddenStatuses, toggleStatus] = useHiddenStatuses();
@@ -233,14 +75,12 @@ function FleetMap() {
   const [zoom, setZoom] = useState(1);
   const [hovered, setHovered] = useState<string>();
   const [pinned, setPinned] = useState<string>();
-  const [sidebarW, startResize] = useSidebarWidth();
-  const [focusError, setFocusError] = useState<string>();
-  const [theme, setTheme] = useTheme();
   const [saved, setSaved] = useState<SavedLayout>();
   // Bumped after a drag or reset; the effect below writes the settled layout.
   const [saveTick, setSaveTick] = useState(0);
-  const { fitView } = useReactFlow();
+  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const fitted = useRef(false);
+  const panels = useDefaultLayout({ id: "herdr-map.panels", storage: safeStorage });
 
   useEffect(() => {
     fetch("/api/layout")
@@ -289,12 +129,13 @@ function FleetMap() {
 
   const focus = useCallback(async (target: FocusTarget) => {
     try {
-      setFocusError(undefined);
       await requestFocus(target);
     } catch (err) {
-      setFocusError((err as Error).message);
+      toast.error("Couldn't focus in herdr", { description: (err as Error).message });
     }
   }, []);
+
+  const focusPane = useCallback((l: Located) => void focus(paneTarget(l.pane, l.tabId)), [focus]);
 
   const onNodeClick = useCallback(
     (event: React.MouseEvent, node: Node) => {
@@ -305,11 +146,11 @@ function FleetMap() {
       }
       if (node.type === "pane") {
         const loc = panes.get(node.id);
-        if (loc) void focus(paneTarget(loc.pane, loc.tabId));
+        if (loc) focusPane(loc);
       } else if (node.type === "tab") void focus({ kind: "tab", id: (node.data as TabData).tab.id });
       else if (node.type === "workspace") void focus({ kind: "workspace", id: (node.data as WorkspaceData).workspace.id });
     },
-    [panes, focus],
+    [panes, focus, focusPane],
   );
 
   // Dragging a workspace moves it; dragging a group box moves its attached workspaces.
@@ -420,10 +261,11 @@ function FleetMap() {
     [panes],
   );
 
-  const onSearchKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter" || !query.trim()) return;
-    const hit = [...panes.values()].find((l) => l.pane.agent && workspaceMatches(l.workspace, query.trim()));
-    if (hit) void focus(paneTarget(hit.pane, hit.tabId));
+  const onSearchEnter = () => {
+    const q = query.trim();
+    if (!q) return;
+    const hit = [...panes.values()].find((l) => l.pane.agent && workspaceMatches(l.workspace, q));
+    if (hit) focusPane(hit);
   };
 
   // A pinned pane holds the preview until unpinned or closed; otherwise it follows the pointer.
@@ -432,123 +274,94 @@ function FleetMap() {
 
   return (
     <NowContext.Provider value={now}>
-      <div className="app" style={{ "--sidebar-w": `${sidebarW}px` } as React.CSSProperties}>
-        <header className="toolbar">
-          <strong>herdr-map</strong>
-          <div className="counts">
-            {/* A filtered-out status keeps its chip, struck through, whenever it has agents. */}
-            {STATUSES.filter((s) => fleet?.counts[s]).map((s) => {
-              const hidden = hiddenStatuses.includes(s);
-              return (
-                <button
-                  key={s}
-                  className={`chip status-${s}${hidden ? " off" : ""}`}
-                  aria-pressed={!hidden}
-                  title={`${hidden ? "Show" : "Hide"} ${s} agents. Option-click to show only ${s}.`}
-                  onClick={(e) => toggleStatus(s, e.altKey)}
-                >
-                  {fleet?.counts[s] ?? 0} {s}
-                </button>
-              );
-            })}
-          </div>
-          <input
-            className="search"
-            placeholder="Filter workspaces, agents, summaries (Enter focuses first match)"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onSearchKey}
-          />
-          <label className="toggle">
-            <input type="checkbox" checked={agentsOnly} onChange={(e) => setAgentsOnly(e.target.checked)} />
-            Workspaces with agents only
-          </label>
-          <label className="toggle">
-            <input type="checkbox" checked={agentPanesOnly} onChange={(e) => setAgentPanesOnly(e.target.checked)} />
-            Agent panes only
-          </label>
-          <LayoutMenu
-            currentPositions={currentPositions}
-            isCustom={!!saved && Object.keys(saved).length > 0}
-            onApply={applyLayout}
-            onError={setFocusError}
-          />
-          <select className="theme" value={theme} onChange={(e) => setTheme(e.target.value as Theme)} aria-label="Theme">
-            <option value="system">System theme</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-          <span className={`conn ${connected && !error ? "ok" : "bad"}`}>
-            {!connected ? "disconnected" : error ? "herdr error" : `herdr ${fleet?.version ?? ""}`}
-          </span>
-        </header>
-        {(error || focusError) && <div className="banner">{focusError ?? error}</div>}
-        <main className={`canvas ${zoomClass(zoom)}`} style={{ "--z": zoom } as React.CSSProperties}>
-          <ReactFlow
-            nodes={nodes}
-            edges={layout.edges}
-            nodeTypes={nodeTypes}
-            nodesConnectable={false}
-            elementsSelectable={false}
-            onNodesChange={onNodesChange}
-            onNodeDragStart={onNodeDragStart}
-            onNodeDragStop={onNodeDragStop}
-            onNodeClick={onNodeClick}
-            onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
-            onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
-            minZoom={0.05}
-            maxZoom={2.5}
-            colorMode={theme}
-            proOptions={{ hideAttribution: true }}
-          >
-            <Background gap={40} />
-            <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeClassName={minimapClass} />
-          </ReactFlow>
-        </main>
-        <div className="sidebar-resizer" onPointerDown={startResize} title="Drag to resize the sidebar" />
-        <aside className="inspector">
-          <section>
-            <h2>Needs you ({attention.length})</h2>
-            {attention.length === 0 && <p className="muted">No blocked or finished agents.</p>}
-            <ul className="attention">
-              {attention.map((l) => (
-                <li key={l.pane.id} onMouseEnter={() => setHovered(l.pane.id)}>
-                  <button
-                    onClick={(e) =>
-                      e.altKey ? setPinned(l.pane.id) : void focus(paneTarget(l.pane, l.tabId))
-                    }
-                  >
-                    <span className={`dot status-${l.pane.agent!.status}`} />
-                    <span className="attention-name">
-                      {l.pane.agent!.name ?? l.workspace.label} <span className="muted">{l.pane.agent!.kind}</span>
-                    </span>
-                    <span className="muted">{agentAge(l.pane.agent!, now)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-          {detailPane && (
-            <PaneDetail
-              located={detailPane}
-              pinned={detailPane === pinnedPane}
+      <div className="flex h-full flex-col">
+        <Toolbar
+          fleet={fleet}
+          connected={connected}
+          error={error}
+          hiddenStatuses={hiddenStatuses}
+          onToggleStatus={toggleStatus}
+          query={query}
+          onQuery={setQuery}
+          onSearchEnter={onSearchEnter}
+          agentsOnly={agentsOnly}
+          onAgentsOnly={setAgentsOnly}
+          agentPanesOnly={agentPanesOnly}
+          onAgentPanesOnly={setAgentPanesOnly}
+          layoutMenu={{ currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout }}
+        />
+        {error && (
+          <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
+            <TriangleAlert />
+            <AlertTitle>Can't read herdr</AlertTitle>
+            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+          </Alert>
+        )}
+        <ResizablePanelGroup className="min-h-0 flex-1" {...panels}>
+          <ResizablePanel id="canvas" minSize="30">
+            <main className={`canvas h-full ${zoomClass(zoom)}`} style={{ "--z": zoom } as React.CSSProperties}>
+              <ReactFlow
+                nodes={nodes}
+                edges={layout.edges}
+                nodeTypes={nodeTypes}
+                nodesConnectable={false}
+                elementsSelectable={false}
+                onNodesChange={onNodesChange}
+                onNodeDragStart={onNodeDragStart}
+                onNodeDragStop={onNodeDragStop}
+                onNodeClick={onNodeClick}
+                onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
+                onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
+                minZoom={0.05}
+                maxZoom={2.5}
+                colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+                proOptions={{ hideAttribution: true }}
+              >
+                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
+                <Panel position="bottom-left" className="flex flex-col gap-1">
+                  <CanvasButton label="Zoom in" onClick={() => zoomIn()}>
+                    <Plus />
+                  </CanvasButton>
+                  <CanvasButton label="Zoom out" onClick={() => zoomOut()}>
+                    <Minus />
+                  </CanvasButton>
+                  <CanvasButton label="Fit everything" onClick={() => fitView({ padding: 0.05, duration: 300 })}>
+                    <Maximize />
+                  </CanvasButton>
+                </Panel>
+                <MiniMap pannable zoomable nodeClassName={minimapClass} className="overflow-hidden rounded-lg border shadow-sm" />
+              </ReactFlow>
+            </main>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel id="sidebar" defaultSize="26" minSize="18" maxSize="60">
+            <Sidebar
+              attention={attention}
+              detail={detailPane}
+              pinned={!!pinnedPane && detailPane === pinnedPane}
               now={now}
-              onOpen={() => void focus(paneTarget(detailPane.pane, detailPane.tabId))}
-              onTogglePin={() => setPinned((p) => (p === detailPane.pane.id ? undefined : detailPane.pane.id))}
+              onFocus={focusPane}
+              onHover={setHovered}
+              onPin={setPinned}
             />
-          )}
-        </aside>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </NowContext.Provider>
   );
 }
 
-function minimapClass(node: Node): string {
-  if (node.type === "ws-label") return "mm-hidden";
-  if (node.type !== "pane") return "mm-container";
-  const status = (node.data as PaneData).pane.agent?.status;
-  return status ? `mm-pane status-${status}` : "mm-pane tool";
+function CanvasButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="outline" size="icon" className="size-8 bg-card shadow-sm" aria-label={label} onClick={onClick}>
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function App() {

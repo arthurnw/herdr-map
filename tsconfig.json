@@ -1,17 +1,7 @@
 {
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
   "compilerOptions": {
-    "target": "es2024",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "lib": ["es2024", "dom", "dom.iterable"],
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true,
-    "skipLibCheck": true,
-    "types": ["node", "vite/client"]
-  },
-  "include": ["server", "shared", "web", "test", "vite.config.ts"]
+    "paths": { "@/*": ["./web/*"] }
+  }
 }

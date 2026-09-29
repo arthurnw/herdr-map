@@ -2,6 +2,7 @@ import { createContext, memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { FleetAgent } from "../shared/model.ts";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
+import { KIND_LABEL } from "./status.tsx";
 
 export const NowContext = createContext(Date.now());
 
@@ -18,8 +19,6 @@ export function formatAge(ms: number): string {
 export function agentAge(agent: FleetAgent, now: number): string {
   return `${formatAge(now - agent.since)}${agent.sinceApprox ? "+" : ""}`;
 }
-
-const KIND_LABEL: Record<string, string> = { claude: "claude", pi: "π pi", codex: "codex" };
 
 export const GroupNode = memo(({ data }: NodeProps) => {
   const { group } = data as GroupData;
@@ -83,17 +82,19 @@ export const PaneNode = memo(({ data }: NodeProps) => {
     );
   }
   const { agent } = pane;
+  const kind = KIND_LABEL[agent.kind] ?? agent.kind;
   return (
     <div className={`pane agent status-${agent.status}${pane.focused ? " focused" : ""}`}>
       {handles}
       <div className="agent-line">
-        <span className="agent-kind">{KIND_LABEL[agent.kind] ?? agent.kind}</span>
-        {agent.name && <span className="agent-name detail">{agent.name}</span>}
+        <span className="agent-name">{agent.name ?? kind}</span>
+        {agent.name && <span className="agent-kind">{kind}</span>}
       </div>
-      <div className="agent-status detail">
+      <div className="agent-status">
+        <span className="agent-dot" />
         {agent.status} · {agentAge(agent, now)}
       </div>
-      {agent.summary && <div className="agent-summary detail">{agent.summary}</div>}
+      {agent.summary && <div className="agent-summary">{agent.summary}</div>}
     </div>
   );
 });

@@ -7,17 +7,17 @@ herdr stays the host. herdr-map only reads `herdr api snapshot` and runs focus c
 ## What it shows
 
 - **Repo groups** built from herdr's worktree metadata. Linked worktrees are tagged. Workspaces outside a repo go under "Other workspaces".
-- **Workspaces and tabs.** By default only agent panes are drawn, one full-width row per agent, and tabs without agents are hidden. Turn off **Agent panes only** to see each tab's full split layout, including nvim, hunk, and shell panes. Both toolbar filters are remembered per browser.
+- **Workspaces and tabs.** By default only agent panes are drawn, one full-width row per agent, and tabs without agents are hidden. Turn off **View → Only agent panes** to see each tab's full split layout, including nvim, hunk, and shell panes. **View → Only workspaces with agents** hides the rest. Both are remembered per browser.
 - **Agent panes** colored by status (working, blocked, done, idle), with how long the agent has been in that status and the `summary` pane token when a plugin sets one. Other panes show their terminal title, such as `nvim AGENTS.md` or `hunk`.
 - **Status filter**: click a status chip in the toolbar (for example, `24 idle`) to hide or show agents with that status. Option-click a chip to show only that status, and Option-click it again to show everything. Filtered agents disappear in the agent-panes-only view and fade in the full layout. The **Needs you** list ignores the filter, so blocked agents are never hidden there.
 - **Needs you**: blocked agents first, then finished ones, oldest first.
-- **Preview sidebar**: hovering a pane shows its visible screen, cwd, and summary. Pin a pane (Option-click it, or press **Pin**) to keep its preview while you move around the map. A pinned preview loads the last 1,000 lines of scrollback and refreshes every 5 seconds; scrolling up pauses refreshes until you scroll back to the bottom. Drag the sidebar's left edge to resize it.
+- **Preview sidebar**: hovering a pane shows its visible screen, cwd, and summary. Pin a pane (Option-click it, or press **Pin**) to keep its preview while you move around the map. A pinned preview loads the last 1,000 lines of scrollback and refreshes every 5 seconds; scrolling up pauses refreshes until you scroll back to the bottom. Drag the handle between the map and the sidebar to resize it.
 - **Adaptive zoom**: text grows as you zoom out so names and statuses stay readable, summaries and tab labels drop away, and panes fill with their status color.
 - **Your own arrangement**: drag a workspace to move it, or drag a repo box to move all of its workspaces. Drop a workspace away from its repo to detach it; it then shows the repo name as a tag. Positions are saved to a file and survive reloads. From **Layouts**, you can save the arrangement under a name, restore a saved one, or reset to the automatic layout. Reset and Restore save the arrangement they replace as "Previous layout", so either can be undone.
 - **Light, dark, or system theme**, picked from the toolbar.
 - **Lineage edges** from a `parent` pane token, when present (see below).
 
-Clicking an agent runs `herdr agent focus <pane>`. Clicking any other pane focuses its tab, and clicking a workspace focuses the workspace. On macOS the server then activates the terminal app (Ghostty by default). Typing in the filter box dims non-matching workspaces, and Enter focuses the first matching agent.
+Clicking an agent runs `herdr agent focus <pane>`. Clicking any other pane focuses its tab, and clicking a workspace focuses the workspace. On macOS the server then activates the terminal app (Ghostty by default). Typing in the filter box (press `/` to jump to it) dims non-matching workspaces, and Enter focuses the first matching agent.
 
 ## Requirements
 
@@ -78,6 +78,9 @@ herdr agent start worker --kind claude --pane "$child"
 herdr drops pane tokens when its server restarts.
 
 ## Development
+
+The UI uses [shadcn/ui](https://ui.shadcn.com) components (in `web/components/ui`, added with `npx shadcn@latest add <name>`) on Tailwind CSS v4. Canvas node styles and the zoom-adaptive text rules live in `web/canvas.css`.
+
 
 ```sh
 npm run dev:server   # API on :4747 with --watch

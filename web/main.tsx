@@ -1,11 +1,20 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { ThemeProvider } from "next-themes";
 import "@xyflow/react/dist/style.css";
-import "./styles.css";
+import "./index.css";
+import "./canvas.css";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { App } from "./App.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="herdr-map.theme" disableTransitionOnChange>
+      <TooltipProvider delayDuration={300}>
+        <App />
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
