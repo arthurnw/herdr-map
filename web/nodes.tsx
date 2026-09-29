@@ -1,6 +1,13 @@
 import { createContext, memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Star } from "lucide-react";
+import { Ellipsis, FolderGit2, Group, Star, Ungroup } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { WorkspaceActions } from "./workspace-actions.ts";
 import { DoneMarker, StuckMarker } from "./attention.tsx";
 import { agentAge } from "./format.ts";
 import { useStarsContext } from "./stars.tsx";
@@ -21,26 +28,71 @@ export const GroupNode = memo(({ data }: NodeProps) => {
 });
 
 export const WorkspaceNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, groupLabel, detached } = data as WorkspaceData;
+  const { workspace: ws, groupLabel, detached, dropHint } = data as WorkspaceData;
+  const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`].filter(Boolean).join(" ");
   return (
-    <div className={`workspace${ws.focused ? " focused" : ""}`}>
+    <div className={classes}>
+      {dropHint && (
+        <div className="ws-drop-hint">
+          {dropHint === "detach" ? `Drop to take out of the ${groupLabel} box` : `Drop to put back in the ${groupLabel} box`}
+        </div>
+      )}
       <div className="ws-header" title="Click to focus, drag to move">
         <span className="ws-number">{ws.number}</span>
         <span className="ws-label">{ws.label}</span>
-        {detached && <span className="ws-tag">{groupLabel}</span>}
+        {detached && (
+          <span className="ws-tag ws-repo-tag" title={`In ${groupLabel}, outside its box`}>
+            <FolderGit2 aria-hidden />
+            {groupLabel}
+          </span>
+        )}
         {ws.linkedWorktree && <span className="ws-tag">worktree</span>}
         <DoneMarker workspace={ws} />
         <span className="ws-count">{ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}</span>
+        <WorkspaceMenu data={data as WorkspaceData} />
       </div>
     </div>
   );
 });
 
+// Stops clicks from reaching React Flow, which would focus the workspace in herdr; menu
+// content renders in a portal, but React still bubbles its events through the node.
+const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+
+function WorkspaceMenu({ data }: { data: WorkspaceData }) {
+  const actions = useContext(WorkspaceActions);
+  const { workspace: ws, groupLabel, detached, groupMates } = data;
+  if (!actions) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="ws-menu nodrag nopan" aria-label={`Actions for ${ws.label}`} onClick={stop} onPointerDown={stop}>
+          <Ellipsis aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={stop} onPointerDown={stop}>
+        {detached ? (
+          <DropdownMenuItem onSelect={() => actions.setDetached(ws.id, false)}>
+            <Group aria-hidden />
+            Put back in the {groupLabel} box
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem disabled={groupMates === 0} onSelect={() => actions.setDetached(ws.id, true)}>
+            <Ungroup aria-hidden />
+            {groupMates === 0 ? `Only workspace in the ${groupLabel} box` : `Take out of the ${groupLabel} box`}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export const WorkspaceLabelNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws } = data as WorkspaceData;
+  const { workspace: ws, detached, groupLabel } = data as WorkspaceData;
   return (
     <div className="ws-label-float">
-      <span className="ws-number">{ws.number}</span> {ws.label}
+      <span className="ws-number">{ws.number}</span> {detached && <span className="ws-label-repo">{groupLabel} / </span>}
+      {ws.label}
       <DoneMarker workspace={ws} />
     </div>
   );

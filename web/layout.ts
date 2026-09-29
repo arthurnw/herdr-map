@@ -33,6 +33,11 @@ export interface LayoutOptions {
    * and dimmed in the full layout, and they don't count toward `agentsOnly`.
    */
   hiddenStatuses?: AgentStatus[];
+  /**
+   * Workspace IDs being dragged. Their repo box is drawn around the other members only,
+   * so it no longer stretches to follow the drag, and each gets a drop hint.
+   */
+  dragging?: ReadonlySet<string>;
 }
 
 // When only agent panes are drawn, each agent gets a full-width row so names and
@@ -51,7 +56,19 @@ export interface SavedPosition {
 export type SavedLayout = Record<string, SavedPosition>;
 
 export type GroupData = { group: FleetGroup; memberIds: string[] };
-export type WorkspaceData = { workspace: FleetWorkspace; groupKey: string; groupLabel: string; detached: boolean };
+/** What dropping a dragged workspace will do: leave its repo box, or go back into it. */
+export type DropHint = "detach" | "rejoin";
+
+export type WorkspaceData = {
+  workspace: FleetWorkspace;
+  groupKey: string;
+  groupLabel: string;
+  detached: boolean;
+  /** Set only while the workspace is being dragged and the drop would change its box. */
+  dropHint?: DropHint;
+  /** Other workspaces still in this repo's box; a lone workspace can't leave its own box. */
+  groupMates: number;
+};
 export type TabData = { tab: FleetTab; workspaceId: string };
 export type PaneData = { pane: FleetPane };
 
@@ -214,6 +231,12 @@ function groupRect(members: Rect[]): Rect {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+function boundsOf(rects: Rect[]): Rect {
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
+}
+
 function overlaps(a: Rect, b: Rect, margin: number): boolean {
   return a.x < b.x + b.w + margin && a.x + a.w > b.x - margin && a.y < b.y + b.h + margin && a.y + a.h > b.y - margin;
 }
@@ -237,9 +260,27 @@ export function layoutFleet(
   const { filtered } = statusFilter(opts);
   const nodes: Node[] = [];
 
+  const dragging = opts.dragging ?? new Set<string>();
+  const hints = new Map<string, DropHint>();
+  const mates = new Map<string, number>();
+
   // Group boxes go first so they render beneath their workspaces.
   for (const group of groups) {
-    const members = placed.filter((p) => p.group.key === group.key && !p.detached);
+    const inGroup = placed.filter((p) => p.group.key === group.key);
+    const attached = inGroup.filter((p) => !p.detached);
+    for (const p of inGroup) mates.set(p.ws.id, attached.filter((q) => q.ws.id !== p.ws.id).length);
+    // While workspaces are dragged, the box is drawn around the members staying put, and the
+    // dragged ones learn whether dropping here would take them out of the box or back in.
+    const moving = inGroup.filter((p) => dragging.has(p.ws.id));
+    const staying = attached.filter((p) => !dragging.has(p.ws.id));
+    if (moving.length > 0 && staying.length > 0) {
+      const leaving = isDetachedDrop(boundsOf(moving), staying);
+      for (const p of moving) {
+        if (leaving && !p.detached) hints.set(p.ws.id, "detach");
+        if (!leaving && p.detached) hints.set(p.ws.id, "rejoin");
+      }
+    }
+    const members = staying.length > 0 ? staying : attached;
     if (members.length === 0) continue;
     const r = groupRect(members);
     nodes.push({
@@ -257,6 +298,15 @@ export function layoutFleet(
   const paneIds = new Set<string>();
   for (const p of placed) {
     const wsNode = `ws:${p.ws.id}`;
+    // Shared by the workspace node and its zoomed-out label.
+    const wsData: WorkspaceData = {
+      workspace: p.ws,
+      groupKey: p.group.key,
+      groupLabel: p.group.label,
+      detached: p.detached,
+      dropHint: hints.get(p.ws.id),
+      groupMates: mates.get(p.ws.id) ?? 0,
+    };
     nodes.push({
       id: wsNode,
       type: "workspace",
@@ -264,7 +314,7 @@ export function layoutFleet(
       width: p.w,
       height: p.h,
       style: { width: p.w, height: p.h },
-      data: { workspace: p.ws, groupKey: p.group.key, groupLabel: p.group.label, detached: p.detached } satisfies WorkspaceData,
+      data: wsData,
     });
     // A label that sits above the workspace's panes, shown when zoomed out. A high zIndex
     // keeps it over the tab and pane nodes, which React Flow stacks above their parents.
@@ -279,7 +329,7 @@ export function layoutFleet(
       draggable: false,
       selectable: false,
       focusable: false,
-      data: { workspace: p.ws, groupKey: p.group.key, groupLabel: p.group.label, detached: p.detached } satisfies WorkspaceData,
+      data: wsData,
     });
 
     let tabX = PAD;

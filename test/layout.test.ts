@@ -103,3 +103,26 @@ test("hiddenStatuses removes those agents, and agentsOnly ignores them", () => {
   assert.equal(full.nodes.find((n) => n.id === "w2:p1")?.className, "status-filtered");
   assert.equal(full.nodes.find((n) => n.id === "w1:p1")?.className, undefined);
 });
+
+test("while dragging, the repo box ignores the dragged workspace and the drag gets a drop hint", () => {
+  // w1 and w2 share the api repo; w2 is dragged far away.
+  const saved = { w1: { x: 0, y: 100 }, w2: { x: 4000, y: 4000 } };
+  const { nodes } = layoutFleet(fleet(), { agentsOnly: true, dragging: new Set(["w2"]) }, saved);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const group = byId.get("group:/r/api/.git")!;
+  assert.ok(group.position.x + group.width! < 4000, "the box should not stretch to the dragged workspace");
+  assert.equal((byId.get("ws:w2")!.data as { dropHint?: string }).dropHint, "detach");
+  // Dropped back next to w1, the hint says it stays in (no hint for an attached workspace).
+  const near = layoutFleet(fleet(), { agentsOnly: true, dragging: new Set(["w2"]) }, { w1: { x: 0, y: 100 }, w2: { x: 340, y: 100 } });
+  assert.equal((near.nodes.find((n) => n.id === "ws:w2")!.data as { dropHint?: string }).dropHint, undefined);
+  // A detached workspace dragged back over the box gets the rejoin hint.
+  const back = layoutFleet(fleet(), { agentsOnly: true, dragging: new Set(["w2"]) }, { w1: { x: 0, y: 100 }, w2: { x: 340, y: 100, detached: true } });
+  assert.equal((back.nodes.find((n) => n.id === "ws:w2")!.data as { dropHint?: string }).dropHint, "rejoin");
+});
+
+test("workspaces know how many others share their repo box", () => {
+  const { nodes } = layoutFleet(fleet(), { agentsOnly: true }, {});
+  const mates = (id: string) => (nodes.find((n) => n.id === id)!.data as { groupMates: number }).groupMates;
+  assert.equal(mates("ws:w1"), 1);
+  assert.equal(mates("ws:w2"), 1);
+});

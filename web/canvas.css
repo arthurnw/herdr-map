@@ -301,3 +301,47 @@
   outline: 2px dashed var(--foreground);
   outline-offset: 3px;
 }
+
+/* Repo box membership: the detached tag, the header menu, and drop hints while dragging. */
+.ws-repo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--foreground);
+  border-style: dashed;
+}
+.ws-repo-tag svg { width: 10px; height: 10px; }
+.ws-label-repo { color: var(--muted-foreground); font-weight: 500; }
+
+.ws-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+}
+.ws-menu svg { width: 14px; height: 14px; }
+.react-flow__node-workspace:hover .ws-menu,
+.ws-menu[data-state="open"] { opacity: 1; }
+.ws-menu:hover { background: var(--accent); color: var(--foreground); }
+
+.ws-drop-hint {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.workspace.drop-detach { outline: 2px dashed var(--muted-foreground); outline-offset: 3px; }
+.workspace.drop-rejoin { outline: 2px solid var(--ring); outline-offset: 3px; }

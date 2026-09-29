@@ -42,6 +42,7 @@ import { StarsProvider, starredAgents, useStarsContext, useStarShortcuts } from 
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
+import { WorkspaceActions } from "./workspace-actions.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
 import { useSpatialNav } from "./hooks/useSpatialNav.ts";
@@ -70,6 +71,7 @@ function FleetMap() {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
   const [saved, setSaved] = useSavedLayout();
+  const [dragging, setDragging] = useState<ReadonlySet<string>>();
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
   const fitted = useRef(false);
@@ -78,8 +80,10 @@ function FleetMap() {
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
   const layout = useMemo(
     () =>
-      fleet && saved ? layoutFleet(fleet, { agentsOnly, agentPanesOnly, hiddenStatuses }, saved) : { nodes: [], edges: [] },
-    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, saved],
+      fleet && saved
+        ? layoutFleet(fleet, { agentsOnly, agentPanesOnly, hiddenStatuses, dragging }, saved)
+        : { nodes: [], edges: [] },
+    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, dragging, saved],
   );
 
   const nodes = useMemo(() => {
@@ -106,12 +110,14 @@ function FleetMap() {
     nodes,
   );
   const boxSelect = useBoxSelect(shownNodes);
-  const { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout } = useLayoutDrag(
+  const { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout, setDetached } = useLayoutDrag(
     layout.nodes,
     saved,
     setSaved,
     boxSelect.selected,
+    setDragging,
   );
+  const workspaceActions = useMemo(() => ({ setDetached }), [setDetached]);
 
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
 
@@ -190,6 +196,7 @@ function FleetMap() {
 
   return (
     <NowContext.Provider value={now}>
+      <WorkspaceActions.Provider value={workspaceActions}>
       <div className="flex h-full flex-col">
         <Toolbar
           fleet={fleet}
@@ -291,6 +298,7 @@ function FleetMap() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      </WorkspaceActions.Provider>
     </NowContext.Provider>
   );
 }

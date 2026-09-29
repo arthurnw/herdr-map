@@ -39,6 +39,8 @@ export function useLayoutDrag(
   saved: SavedLayout | undefined,
   setSaved: Dispatch<SetStateAction<SavedLayout | undefined>>,
   selected: ReadonlySet<string> = NONE,
+  /** Told which workspace IDs a drag is moving, and `undefined` when it ends. */
+  setDragging: (ids: ReadonlySet<string> | undefined) => void = () => {},
 ) {
   // Bumped after a drag or reset; the effect below writes the settled layout.
   const [saveTick, setSaveTick] = useState(0);
@@ -67,6 +69,11 @@ export function useLayoutDrag(
         }
         bulkDrag.current = { id: node.id, origin: { ...node.position }, members };
       }
+      if (node.type === "workspace") {
+        const ids = new Set([(node.data as WorkspaceData).workspace.id]);
+        if (bulkDrag.current?.id === node.id) for (const id of Object.keys(bulkDrag.current.members)) ids.add(id);
+        setDragging(ids);
+      }
       if (node.type !== "group-box") return;
       const members: SavedLayout = {};
       for (const n of nodes) {
@@ -76,7 +83,7 @@ export function useLayoutDrag(
       }
       groupDrag.current = { id: node.id, origin: { ...node.position }, members };
     },
-    [nodes, selected],
+    [nodes, selected, setDragging],
   );
 
   const onNodesChange = useCallback(
@@ -149,9 +156,44 @@ export function useLayoutDrag(
       });
       groupDrag.current = undefined;
       bulkDrag.current = undefined;
+      setDragging(undefined);
       setSaveTick((t) => t + 1);
     },
-    [nodes, setSaved, selected],
+    [nodes, setSaved, selected, setDragging],
+  );
+
+  // Takes a workspace out of its repo box, or puts it back, without dragging. A removed
+  // workspace goes just right of the box; a returned one goes where a new member would.
+  const setDetached = useCallback(
+    (wsId: string, detach: boolean) => {
+      const id = (n: Node) => (n.data as WorkspaceData).workspace.id;
+      const node = nodes.find((n) => n.type === "workspace" && id(n) === wsId);
+      if (!node) return;
+      const { groupKey } = node.data as WorkspaceData;
+      const others = nodes.filter(
+        (n) =>
+          n.type === "workspace" &&
+          n !== node &&
+          (n.data as WorkspaceData).groupKey === groupKey &&
+          !(n.data as WorkspaceData).detached,
+      );
+      if (detach && others.length === 0) return;
+      setSaved((prev) => {
+        const next: SavedLayout = { ...prev };
+        if (Object.keys(next).length === 0) {
+          for (const n of nodes) if (n.type === "workspace") next[id(n)] = { ...n.position };
+        }
+        if (detach) {
+          const box = bounds(others.map(nodeRect));
+          next[wsId] = { x: box.x + box.w + 120, y: box.y, detached: true };
+        } else {
+          delete next[wsId];
+        }
+        return next;
+      });
+      setSaveTick((t) => t + 1);
+    },
+    [nodes, setSaved],
   );
 
   // Saved positions for hidden workspaces are kept alongside the ones on screen.
@@ -174,5 +216,5 @@ export function useLayoutDrag(
     [setSaved, fitView],
   );
 
-  return { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout };
+  return { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout, setDetached };
 }
