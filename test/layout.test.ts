@@ -67,7 +67,7 @@ test("isDetachedDrop detaches only when clear of the other members", () => {
   assert.equal(isDetachedDrop({ x: 2000, y: 0, w: 300, h: 200 }, []), false);
 });
 
-test("agentPanesOnly keeps only agent panes, as equal columns, and drops agentless tabs", () => {
+test("agentPanesOnly keeps only agent panes, as equal rows, and drops agentless tabs", () => {
   const f = fleet();
   // Give the lead tab a second agent to the left of the first one.
   const tab = f.groups[0].workspaces[0].tabs[0];
@@ -85,7 +85,9 @@ test("agentPanesOnly keeps only agent panes, as equal columns, and drops agentle
     panes.map((n) => n.id),
     ["w1:p3", "w1:p1"],
   );
+  assert.equal(panes[0].height, panes[1].height);
   assert.equal(panes[0].width, panes[1].width);
+  assert.ok(panes[1].position.y > panes[0].position.y, "the second agent sits below the first");
   assert.ok(!nodes.some((n) => n.id === "w1:p2"), "the hunk pane is hidden");
   assert.ok(!nodes.some((n) => n.id === "ws:w3"), "a workspace with no agents has nothing to draw");
 });

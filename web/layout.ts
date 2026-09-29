@@ -26,14 +26,15 @@ const MAP_ASPECT = 1.5;
 export interface LayoutOptions {
   /** Hide workspaces that have no agents. */
   agentsOnly: boolean;
-  /** Draw only agent panes, one column per agent, instead of each tab's full split layout. */
+  /** Draw only agent panes, one row per agent, instead of each tab's full split layout. */
   agentPanesOnly?: boolean;
 }
 
-// Size of one agent column when only agent panes are drawn.
-const COMPACT_PANE_W = 180;
+// When only agent panes are drawn, each agent gets a full-width row so names and
+// statuses have room for long lines.
+const COMPACT_TAB_W = 280;
+const COMPACT_ROW_H = 76;
 const COMPACT_BODY_H = 120;
-const COMPACT_MIN_W = 220;
 
 export interface SavedPosition {
   x: number;
@@ -62,11 +63,13 @@ interface Placed extends Rect {
   detached: boolean;
 }
 
-/** A tab as drawn. Compact tabs hold only agent panes, laid out as equal columns. */
+/** A tab as drawn. Compact tabs hold only agent panes, stacked as equal-height rows. */
 type ViewTab = FleetTab & { compact?: boolean };
 
 function tabSize(tab: ViewTab) {
-  if (tab.compact) return { w: Math.max(COMPACT_MIN_W, COMPACT_PANE_W * tab.panes.length), h: TAB_HEADER + COMPACT_BODY_H };
+  if (tab.compact) {
+    return { w: COMPACT_TAB_W, h: TAB_HEADER + Math.max(COMPACT_BODY_H, COMPACT_ROW_H * tab.panes.length) };
+  }
   const body = Math.min(TAB_MAX_H, Math.max(TAB_MIN_H, TAB_W / tab.aspect));
   return { w: TAB_W, h: TAB_HEADER + body };
 }
@@ -77,7 +80,7 @@ export function workspaceSize(ws: FleetWorkspace) {
   const minTabH = compact ? TAB_HEADER + COMPACT_BODY_H : TAB_MIN_H;
   const w = tabs.reduce((sum, t) => sum + t.w, 0) + GAP * Math.max(0, tabs.length - 1) + PAD * 2;
   const h = WS_HEADER + Math.max(minTabH, ...tabs.map((t) => t.h)) + PAD;
-  return { w: Math.max(w, (compact ? COMPACT_MIN_W : TAB_W) + PAD * 2), h };
+  return { w: Math.max(w, (compact ? COMPACT_TAB_W : TAB_W) + PAD * 2), h };
 }
 
 /** Keeps a tab's agent panes in their on-screen order (left to right, then top to bottom). */
@@ -90,7 +93,7 @@ function compactTab(tab: FleetTab): ViewTab | undefined {
   return {
     ...tab,
     compact: true,
-    panes: agents.map((p, i) => ({ ...p, rect: { x: i / n, y: 0, w: 1 / n, h: 1 } })),
+    panes: agents.map((p, i) => ({ ...p, rect: { x: 0, y: i / n, w: 1, h: 1 / n } })),
   };
 }
 
