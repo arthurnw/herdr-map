@@ -71,4 +71,15 @@ export default function attentionChecks({ test, assert, openPage, card, actions,
     await item.click();
     assert((await item.getAttribute("aria-checked")) === "false", "clicking should turn it off");
   });
+
+  test("workspaces with finished agents show a count, and done panes are outlined on the minimap", async (page) => {
+    const marker = (ws) => page.locator(`.react-flow__node-workspace[data-id="ws:${ws}"] .ws-done`);
+    assert((await marker("w2").textContent()).trim() === "1", "api-auth has one finished agent");
+    assert((await marker("w4").textContent()).trim() === "1", "web has one finished agent");
+    assert((await marker("w1").count()) === 0, "api has no finished agents");
+    const strokes = await page.locator(".react-flow__minimap-node.status-done").evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).stroke),
+    );
+    assert(strokes.length >= 2 && strokes.every((s) => s && s !== "none"), `done panes should have a stroke, got ${strokes}`);
+  });
 }

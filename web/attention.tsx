@@ -1,6 +1,6 @@
 // Agents that need you: blocked, stuck, or finished.
 import { TriangleAlert } from "lucide-react";
-import type { FleetAgent } from "../shared/model.ts";
+import type { FleetAgent, FleetWorkspace } from "../shared/model.ts";
 import { Badge } from "@/components/ui/badge";
 import { formatAge } from "./format.ts";
 import type { Located } from "./state.ts";
@@ -54,5 +54,21 @@ export function StuckBadge({ stuck, now }: { stuck: Stuck; now: number }) {
       <TriangleAlert className="size-3" aria-hidden />
       {stuckLabel(stuck, now)}
     </Badge>
+  );
+}
+
+export function doneCount(ws: FleetWorkspace): number {
+  return ws.tabs.reduce((n, t) => n + t.panes.filter((p) => p.agent?.status === "done").length, 0);
+}
+
+/** A dot and count on a workspace header while it has finished agents you haven't looked at. */
+export function DoneMarker({ workspace }: { workspace: FleetWorkspace }) {
+  const n = doneCount(workspace);
+  if (n === 0) return null;
+  return (
+    <span className="ws-done" title={`${n} finished agent${n > 1 ? "s" : ""}`}>
+      <span className="ws-done-dot" aria-hidden />
+      {n}
+    </span>
   );
 }

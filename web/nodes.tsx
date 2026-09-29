@@ -1,6 +1,6 @@
 import { createContext, memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { StuckMarker } from "./attention.tsx";
+import { DoneMarker, StuckMarker } from "./attention.tsx";
 import { agentAge } from "./format.ts";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { KIND_LABEL } from "./status.tsx";
@@ -27,6 +27,7 @@ export const WorkspaceNode = memo(({ data }: NodeProps) => {
         <span className="ws-label">{ws.label}</span>
         {detached && <span className="ws-tag">{groupLabel}</span>}
         {ws.linkedWorktree && <span className="ws-tag">worktree</span>}
+        <DoneMarker workspace={ws} />
         <span className="ws-count">{ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}</span>
       </div>
     </div>
@@ -38,6 +39,7 @@ export const WorkspaceLabelNode = memo(({ data }: NodeProps) => {
   return (
     <div className="ws-label-float">
       <span className="ws-number">{ws.number}</span> {ws.label}
+      <DoneMarker workspace={ws} />
     </div>
   );
 });
