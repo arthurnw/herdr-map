@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { parseArgs } from "node:util";
+import { parseDialogOptions } from "../shared/dialog.ts";
 import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
 import {
   activateApp,
@@ -102,6 +103,9 @@ const MIME: Record<string, string> = {
   ".js": "text/javascript",
   ".css": "text/css",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".woff2": "font/woff2",
+  ".webmanifest": "application/manifest+json",
 };
 
 async function serveStatic(path: string, res: ServerResponse) {
@@ -177,8 +181,22 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, { text });
     }
     if (req.method === "POST" && ["/api/prompt", "/api/keys", "/api/text"].includes(url.pathname)) {
-      const body = (await readBody(req)) as { pane?: string; text?: unknown; keys?: unknown };
+      const body = (await readBody(req)) as {
+        pane?: string;
+        text?: unknown;
+        keys?: unknown;
+        expect?: { key?: unknown; label?: unknown };
+      };
       const pane = body.pane ?? "";
+      // A dialog answer names the option it means. Re-read the screen first so a button
+      // drawn from an older screen can't answer a different prompt.
+      if (url.pathname === "/api/keys" && body.expect) {
+        const options = parseDialogOptions(await readPane(herdr, pane, "visible", 60));
+        const match = options.find((o) => o.key === body.expect!.key);
+        if (!match || match.label !== body.expect.label) {
+          return sendJson(res, 409, { error: "The dialog changed since it was shown. Check the new prompt and try again." });
+        }
+      }
       if (url.pathname === "/api/prompt") await promptAgent(herdr, pane, body.text);
       else if (url.pathname === "/api/keys") await sendKeys(herdr, pane, body.keys);
       else await sendText(herdr, pane, body.text);

@@ -50,15 +50,19 @@ export function ReplyBox({ located, screen, onSent }: Props) {
     setBusy(true);
     try {
       await fn();
-      onSent();
     } catch (err) {
       toast.error(`Couldn't send ${what}`, { description: (err as Error).message });
     } finally {
       setBusy(false);
+      // Re-read the screen either way, so a refused answer shows the dialog that replaced it.
+      onSent();
     }
   };
 
   const keys = (k: string[]) => run("keys", () => post("/api/keys", { pane: pane.id, keys: k }));
+  // The server re-reads the dialog and refuses the key if this option is no longer there.
+  const choose = (o: { key: string; label: string }) =>
+    run("your answer", () => post("/api/keys", { pane: pane.id, keys: [o.key], expect: { key: o.key, label: o.label } }));
 
   const send = () => {
     const value = text.trim();
@@ -88,7 +92,7 @@ export function ReplyBox({ located, screen, onSent }: Props) {
               size="sm"
               disabled={busy}
               className="h-auto justify-start gap-2 py-1.5 text-left whitespace-normal"
-              onClick={() => void keys([o.key])}
+              onClick={() => void choose(o)}
             >
               <Kbd>{o.key}</Kbd>
               <span className="min-w-0">{o.label}</span>
