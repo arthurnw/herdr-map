@@ -99,6 +99,27 @@ function zoomClass(zoom: number) {
   return "zoom-near";
 }
 
+/** A boolean view setting remembered per browser. */
+function usePersistedFlag(key: string, initial: boolean): [boolean, (v: boolean) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved === "true" || saved === "false") return saved === "true";
+    } catch {}
+    return initial;
+  });
+  const set = useCallback(
+    (v: boolean) => {
+      setValue(v);
+      try {
+        localStorage.setItem(key, String(v));
+      } catch {}
+    },
+    [key],
+  );
+  return [value, set];
+}
+
 const SIDEBAR_MIN = 260;
 const SIDEBAR_KEY = "herdr-map.sidebar-width";
 
@@ -172,7 +193,8 @@ function nodeRect(n: Node): Rect {
 function FleetMap() {
   const [{ fleet, error }, connected] = useServerState();
   const now = useNow(5000);
-  const [agentsOnly, setAgentsOnly] = useState(true);
+  const [agentsOnly, setAgentsOnly] = usePersistedFlag("herdr-map.agents-only", true);
+  const [agentPanesOnly, setAgentPanesOnly] = usePersistedFlag("herdr-map.agent-panes-only", true);
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
   const [hovered, setHovered] = useState<string>();
@@ -200,8 +222,8 @@ function FleetMap() {
 
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
   const layout = useMemo(
-    () => (fleet && saved ? layoutFleet(fleet, { agentsOnly }, saved) : { nodes: [], edges: [] }),
-    [fleet, agentsOnly, saved],
+    () => (fleet && saved ? layoutFleet(fleet, { agentsOnly, agentPanesOnly }, saved) : { nodes: [], edges: [] }),
+    [fleet, agentsOnly, agentPanesOnly, saved],
   );
 
   const nodes = useMemo(() => {
@@ -395,6 +417,10 @@ function FleetMap() {
           <label className="toggle">
             <input type="checkbox" checked={agentsOnly} onChange={(e) => setAgentsOnly(e.target.checked)} />
             Workspaces with agents only
+          </label>
+          <label className="toggle">
+            <input type="checkbox" checked={agentPanesOnly} onChange={(e) => setAgentPanesOnly(e.target.checked)} />
+            Agent panes only
           </label>
           <LayoutMenu
             currentPositions={currentPositions}

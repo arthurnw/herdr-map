@@ -66,3 +66,26 @@ test("isDetachedDrop detaches only when clear of the other members", () => {
   assert.equal(isDetachedDrop({ x: 2000, y: 0, w: 300, h: 200 }, [member]), true);
   assert.equal(isDetachedDrop({ x: 2000, y: 0, w: 300, h: 200 }, []), false);
 });
+
+test("agentPanesOnly keeps only agent panes, as equal columns, and drops agentless tabs", () => {
+  const f = fleet();
+  // Give the lead tab a second agent to the left of the first one.
+  const tab = f.groups[0].workspaces[0].tabs[0];
+  tab.panes[0].rect = { x: 0.2, y: 0, w: 0.4, h: 1 };
+  tab.panes.push({
+    id: "w1:p3",
+    rect: { x: 0, y: 0, w: 0.2, h: 1 },
+    title: "codex",
+    focused: false,
+    agent: { kind: "codex", status: "idle", since: 0, sinceApprox: false },
+  });
+  const { nodes } = layoutFleet(f, { agentsOnly: false, agentPanesOnly: true });
+  const panes = nodes.filter((n) => n.type === "pane" && n.parentId === "tab:w1:t1");
+  assert.deepEqual(
+    panes.map((n) => n.id),
+    ["w1:p3", "w1:p1"],
+  );
+  assert.equal(panes[0].width, panes[1].width);
+  assert.ok(!nodes.some((n) => n.id === "w1:p2"), "the hunk pane is hidden");
+  assert.ok(!nodes.some((n) => n.id === "ws:w3"), "a workspace with no agents has nothing to draw");
+});

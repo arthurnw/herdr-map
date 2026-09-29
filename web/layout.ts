@@ -24,8 +24,16 @@ const ROW_MAX_W = 2400;
 const MAP_ASPECT = 1.5;
 
 export interface LayoutOptions {
+  /** Hide workspaces that have no agents. */
   agentsOnly: boolean;
+  /** Draw only agent panes, one column per agent, instead of each tab's full split layout. */
+  agentPanesOnly?: boolean;
 }
+
+// Size of one agent column when only agent panes are drawn.
+const COMPACT_PANE_W = 180;
+const COMPACT_BODY_H = 120;
+const COMPACT_MIN_W = 220;
 
 export interface SavedPosition {
   x: number;
@@ -54,21 +62,52 @@ interface Placed extends Rect {
   detached: boolean;
 }
 
-function tabSize(tab: FleetTab) {
+/** A tab as drawn. Compact tabs hold only agent panes, laid out as equal columns. */
+type ViewTab = FleetTab & { compact?: boolean };
+
+function tabSize(tab: ViewTab) {
+  if (tab.compact) return { w: Math.max(COMPACT_MIN_W, COMPACT_PANE_W * tab.panes.length), h: TAB_HEADER + COMPACT_BODY_H };
   const body = Math.min(TAB_MAX_H, Math.max(TAB_MIN_H, TAB_W / tab.aspect));
   return { w: TAB_W, h: TAB_HEADER + body };
 }
 
 export function workspaceSize(ws: FleetWorkspace) {
   const tabs = ws.tabs.map(tabSize);
+  const compact = ws.tabs.length > 0 && ws.tabs.every((t: ViewTab) => t.compact);
+  const minTabH = compact ? TAB_HEADER + COMPACT_BODY_H : TAB_MIN_H;
   const w = tabs.reduce((sum, t) => sum + t.w, 0) + GAP * Math.max(0, tabs.length - 1) + PAD * 2;
-  const h = WS_HEADER + Math.max(TAB_MIN_H, ...tabs.map((t) => t.h)) + PAD;
-  return { w: Math.max(w, TAB_W + PAD * 2), h };
+  const h = WS_HEADER + Math.max(minTabH, ...tabs.map((t) => t.h)) + PAD;
+  return { w: Math.max(w, (compact ? COMPACT_MIN_W : TAB_W) + PAD * 2), h };
+}
+
+/** Keeps a tab's agent panes in their on-screen order (left to right, then top to bottom). */
+function compactTab(tab: FleetTab): ViewTab | undefined {
+  const agents = tab.panes
+    .filter((p) => p.agent)
+    .sort((a, b) => a.rect.x - b.rect.x || a.rect.y - b.rect.y);
+  if (agents.length === 0) return undefined;
+  const n = agents.length;
+  return {
+    ...tab,
+    compact: true,
+    panes: agents.map((p, i) => ({ ...p, rect: { x: i / n, y: 0, w: 1 / n, h: 1 } })),
+  };
 }
 
 function visibleGroups(fleet: Fleet, opts: LayoutOptions): FleetGroup[] {
   return fleet.groups
-    .map((g) => ({ ...g, workspaces: g.workspaces.filter((ws) => !opts.agentsOnly || ws.agentCount > 0) }))
+    .map((g) => ({
+      ...g,
+      workspaces: g.workspaces
+        .filter((ws) => !opts.agentsOnly || ws.agentCount > 0)
+        .map((ws) =>
+          opts.agentPanesOnly
+            ? { ...ws, tabs: ws.tabs.map(compactTab).filter((t): t is ViewTab => t !== undefined) }
+            : ws,
+        )
+        // With agent panes only, a workspace with no agents has nothing left to draw.
+        .filter((ws) => ws.tabs.length > 0 || !opts.agentPanesOnly),
+    }))
     .filter((g) => g.workspaces.length > 0);
 }
 
