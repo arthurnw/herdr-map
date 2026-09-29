@@ -4,7 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
-import { agentAge, formatAge } from "./nodes.tsx";
+import { StuckBadge } from "./attention.tsx";
+import { agentAge, formatAge } from "./format.ts";
 import { ReplyBox } from "./ReplyBox.tsx";
 import { hasDialogHint } from "../shared/dialog.ts";
 import type { Located } from "./state.ts";
@@ -129,6 +130,7 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
               <span className="text-muted-foreground">
                 {agent.status} for {agentAge(agent, now)}
               </span>
+              {agent.stuck && <StuckBadge stuck={agent.stuck} now={now} />}
             </>
           ) : (
             <span className="text-muted-foreground">{pane.title}</span>

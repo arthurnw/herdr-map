@@ -18,6 +18,7 @@ const { values: args } = parseArgs({
     host: { type: "string", default: "127.0.0.1" },
     port: { type: "string", default: "4747" },
     interval: { type: "string", default: "1500" },
+    "stuck-minutes": { type: "string", default: "5" },
     activate: { type: "string", default: "Ghostty" },
     "no-activate": { type: "boolean", default: false },
     layout: { type: "string", default: defaultLayoutPath() },
@@ -30,7 +31,7 @@ const ctx: Context = {
   herdr,
   layoutPath: args.layout!,
   activate: args["no-activate"] ? undefined : args.activate,
-  poller: createPoller(herdr, intervalMs),
+  poller: createPoller(herdr, intervalMs, Number(args["stuck-minutes"]) * 60_000),
 };
 
 const routes = [...fleetRoutes(ctx), ...inputRoutes(ctx), ...layoutRoutes(ctx), ...readRoutes(ctx)];

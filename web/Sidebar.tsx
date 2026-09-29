@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
-import { agentAge } from "./nodes.tsx";
+import { StuckBadge } from "./attention.tsx";
+import { agentAge } from "./format.ts";
 import { PaneDetail } from "./PaneDetail.tsx";
 import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
@@ -37,7 +38,7 @@ export function Sidebar({ attention, detail, pinned, selectedId, now, onFocus, o
         {attention.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <CircleCheck className="size-4" />
-            No blocked or finished agents.
+            No blocked, stuck, or finished agents.
           </p>
         ) : (
           <ul className="-mx-2 space-y-0.5">
@@ -58,6 +59,7 @@ export function Sidebar({ attention, detail, pinned, selectedId, now, onFocus, o
                   >
                     <StatusDot status={agent.status} />
                     <span className="min-w-0 flex-1 truncate">{agent.name ?? l.workspace.label}</span>
+                    {agent.stuck && <StuckBadge stuck={agent.stuck} now={now} />}
                     <span className="text-xs text-muted-foreground">{KIND_LABEL[agent.kind] ?? agent.kind}</span>
                     <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
                       {agentAge(agent, now)}

@@ -1,0 +1,23 @@
+/* Stuck agents, finish markers, and starred agents on the canvas. */
+
+:root { --stuck: oklch(0.62 0.16 75); }
+.dark { --stuck: oklch(0.8 0.15 85); }
+
+/* A working agent that looks stuck keeps its status color, with a dashed warning outline. */
+.pane.agent.stuck { outline: 2px dashed var(--stuck); outline-offset: -2px; }
+
+.agent-stuck {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--stuck);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.agent-stuck-icon { width: 1em; height: 1em; flex-shrink: 0; }
+
+.zoom-far .pane.agent .agent-stuck { color: #fff; }
+.zoom-far .pane.agent.stuck { outline-color: #fff; }

@@ -36,6 +36,7 @@ import {
 } from "./state.ts";
 import { Toolbar } from "./Toolbar.tsx";
 import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
+import { needsYou } from "./attention.tsx";
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
@@ -145,17 +146,7 @@ function FleetMap() {
     [panes, focus, focusPane],
   );
 
-  const attention = useMemo(
-    () =>
-      [...panes.values()]
-        .filter((l) => l.pane.agent && (l.pane.agent.status === "blocked" || l.pane.agent.status === "done"))
-        .sort((a, b) => {
-          // Blocked agents first, then the longest-waiting.
-          const rank = (l: Located) => (l.pane.agent!.status === "blocked" ? 0 : 1);
-          return rank(a) - rank(b) || a.pane.agent!.since - b.pane.agent!.since;
-        }),
-    [panes],
-  );
+  const attention = useMemo(() => needsYou(panes), [panes]);
 
   const onSearchEnter = () => {
     const q = query.trim();

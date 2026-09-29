@@ -1,0 +1,58 @@
+// Agents that need you: blocked, stuck, or finished.
+import { TriangleAlert } from "lucide-react";
+import type { FleetAgent } from "../shared/model.ts";
+import { Badge } from "@/components/ui/badge";
+import { formatAge } from "./format.ts";
+import type { Located } from "./state.ts";
+
+type Stuck = NonNullable<FleetAgent["stuck"]>;
+
+export function stuckLabel(stuck: Stuck, now: number): string {
+  if (stuck.reason === "rate-limit") return "rate limited";
+  if (stuck.reason === "error") return "API error";
+  return `stuck ${formatAge(now - stuck.since)}`;
+}
+
+export function stuckDescription(stuck: Stuck, now: number): string {
+  if (stuck.reason === "rate-limit") return `Rate-limit or usage-limit message on screen for ${formatAge(now - stuck.since)}`;
+  if (stuck.reason === "error") return `API error on screen for ${formatAge(now - stuck.since)}`;
+  return `Working, but the screen hasn't changed for ${formatAge(now - stuck.since)}`;
+}
+
+/** Order in Needs you: blocked, then stuck, then finished, each oldest first. */
+function rank(agent: FleetAgent): number | undefined {
+  if (agent.status === "blocked") return 0;
+  if (agent.stuck) return 1;
+  if (agent.status === "done") return 2;
+  return undefined;
+}
+
+function waitingSince(agent: FleetAgent): number {
+  return agent.stuck?.since ?? agent.since;
+}
+
+export function needsYou(panes: Map<string, Located>): Located[] {
+  return [...panes.values()]
+    .filter((l) => l.pane.agent && rank(l.pane.agent) !== undefined)
+    .sort((a, b) => rank(a.pane.agent!)! - rank(b.pane.agent!)! || waitingSince(a.pane.agent!) - waitingSince(b.pane.agent!));
+}
+
+/** The line on a map card. */
+export function StuckMarker({ stuck, now }: { stuck: Stuck; now: number }) {
+  return (
+    <div className="agent-stuck" title={stuckDescription(stuck, now)}>
+      <TriangleAlert className="agent-stuck-icon" aria-hidden />
+      {stuckLabel(stuck, now)}
+    </div>
+  );
+}
+
+/** The badge in the sidebar. */
+export function StuckBadge({ stuck, now }: { stuck: Stuck; now: number }) {
+  return (
+    <Badge variant="outline" className="gap-1 border-(--stuck) text-(--stuck)" title={stuckDescription(stuck, now)}>
+      <TriangleAlert className="size-3" aria-hidden />
+      {stuckLabel(stuck, now)}
+    </Badge>
+  );
+}

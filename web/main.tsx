@@ -4,6 +4,7 @@ import { ThemeProvider } from "next-themes";
 import "@xyflow/react/dist/style.css";
 import "./index.css";
 import "./canvas.css";
+import "./attention.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { App } from "./App.tsx";

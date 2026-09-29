@@ -111,3 +111,10 @@ export const SCREENS = {
     "  enter select · esc back",
   ].join("\n"),
 };
+
+// Screens that checks write on demand, so the default session stays as it is.
+export const RATE_LIMIT_SCREEN = [
+  "✻ Refactoring the auth middleware",
+  "  ⎿ API Error: 429 Too Many Requests · Retrying in 8 seconds… (attempt 3/10)",
+  "✳ Waiting… (2m 10s · esc to interrupt)",
+].join("\n");

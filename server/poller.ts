@@ -1,6 +1,7 @@
 import type { ServerResponse } from "node:http";
 import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
+import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
 
 export interface State {
   fleet?: Fleet;
@@ -18,7 +19,11 @@ export interface Poller {
   markSeen(paneId: string): void;
 }
 
-export function createPoller(herdr: HerdrOptions, intervalMs: number): Poller {
+// Screen reads for stuck detection cost a herdr call per working agent, so they run
+// once every this many snapshot polls.
+const STUCK_POLLS = 10;
+
+export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: number): Poller {
   const clock = new StatusClock();
   const clients = new Set<ServerResponse>();
   let state: State = {};
@@ -42,7 +47,8 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number): Poller {
     try {
       const snap = await snapshot(herdr);
       const now = Date.now();
-      state = { fleet: buildFleet(snap, clock.observe(snap.agents, now, snap.focused_pane_id)), updatedAt: now };
+      const fleet = buildFleet(snap, clock.observe(snap.agents, now, snap.focused_pane_id));
+      state = { fleet: markStuck(fleet, watcher.stuck()), updatedAt: now };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -60,6 +66,14 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number): Poller {
     }
     pollTimer = setTimeout(poll, intervalMs);
   }
+
+  const watcher = createStuckWatcher({
+    herdr,
+    intervalMs: intervalMs * STUCK_POLLS,
+    stuckMs,
+    panes: () => workingPanes(state.fleet),
+    onChange: () => void poll(),
+  });
 
   // SSE proxies and browsers drop idle streams; a comment line keeps them open.
   setInterval(() => {

@@ -75,7 +75,11 @@ export interface FleetAgent {
   /** True when the status predates the first poll, so `since` is a lower bound. */
   sinceApprox: boolean;
   summary?: string;
+  /** Set while a working agent looks stuck: no screen change for a while, or a limit or error banner. */
+  stuck?: { reason: StuckReason; since: number };
 }
+
+export type StuckReason = "no-output" | "rate-limit" | "error";
 
 export interface FleetPane {
   id: string;

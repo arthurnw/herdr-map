@@ -207,6 +207,9 @@ function AlertsMenu({ settings, onChange }: { settings: AlertSettings; onChange:
         <DropdownMenuCheckboxItem checked={settings.onDone} onCheckedChange={(v) => onChange({ onDone: v })} onSelect={(e) => e.preventDefault()}>
           Finishes its work
         </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem checked={settings.onStuck} onCheckedChange={(v) => onChange({ onStuck: v })} onSelect={(e) => e.preventDefault()}>
+          Looks stuck
+        </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={!on} onSelect={test}>
           Send a test alert
