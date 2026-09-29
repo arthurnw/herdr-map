@@ -1,9 +1,9 @@
 // Workspace and repo box header pieces for collapsing, tagging, and coloring.
-import { useContext } from "react";
-import { Check, Palette } from "lucide-react";
+import { useContext, useEffect, useRef, useState } from "react";
+import { Check, Palette, Tag, X } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { STATUSES, type AgentStatus, type FleetWorkspace } from "../shared/model.ts";
-import { COLORS, isColor, type TintColor } from "../shared/organize.ts";
+import { COLORS, isColor, normalizeTag, type TintColor } from "../shared/organize.ts";
 import { WorkspaceActions } from "./workspace-actions.ts";
 
 /** Agent counts by status, for a collapsed header. Done agents already have their own marker. */
@@ -55,6 +55,67 @@ export function ColorItems({ value, onPick }: { value?: string; onPick: (color: 
 // Keeps clicks on header menus from reaching React Flow, which would start a drag or
 // focus in herdr; menu content renders in a portal, but React still bubbles through the node.
 export const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+
+export function TagChips({ tags }: { tags: string[] }) {
+  return tags.map((t) => (
+    <span key={t} className="ws-tag ws-user-tag">
+      {t}
+    </span>
+  ));
+}
+
+/** The workspace menu's tag items: add one, or remove any it has. */
+export function TagMenuItems({ tags, onAdd, onRemove }: { tags: string[]; onAdd: () => void; onRemove: (tag: string) => void }) {
+  return (
+    <>
+      <DropdownMenuItem onSelect={onAdd}>
+        <Tag aria-hidden />
+        Add tag…
+      </DropdownMenuItem>
+      {tags.map((t) => (
+        <DropdownMenuItem key={t} onSelect={() => onRemove(t)}>
+          <X aria-hidden />
+          Remove tag “{t}”
+        </DropdownMenuItem>
+      ))}
+    </>
+  );
+}
+
+/**
+ * A small input that turns typed text into a tag. Enter adds it, Esc or leaving the field
+ * closes it. `onClose` runs after either.
+ */
+export function TagInput({ onAdd, onClose, className }: { onAdd: (tag: string) => void; onClose: () => void; className?: string }) {
+  const [text, setText] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  const tag = normalizeTag(text);
+  useEffect(() => input.current?.focus(), []);
+  return (
+    <input
+      ref={input}
+      className={`tag-input nodrag nopan ${className ?? ""}`}
+      aria-label="New tag"
+      placeholder="tag"
+      aria-invalid={text !== "" && !tag}
+      title={text && !tag ? "Letters, digits, “.”, “_”, or “-”, up to 24" : undefined}
+      value={text}
+      maxLength={40}
+      onChange={(e) => setText(e.target.value)}
+      onClick={stop}
+      onPointerDown={stop}
+      onBlur={onClose}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter" && tag) {
+          onAdd(tag);
+          onClose();
+        }
+        if (e.key === "Escape") onClose();
+      }}
+    />
+  );
+}
 
 /** The color button on a repo box header. */
 export function GroupColorMenu({ groupKey, groupLabel, color }: { groupKey: string; groupLabel: string; color?: string }) {

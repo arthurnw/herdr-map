@@ -7,6 +7,8 @@ export interface WorkspaceActionsValue {
   setCollapsed(workspaceIds: string[], collapsed: boolean): void;
   setWorkspaceColor(workspaceIds: string[], color: TintColor | null): void;
   setGroupColor(groupKey: string, color: TintColor | null): void;
+  addTag(workspaceIds: string[], tag: string): void;
+  removeTag(workspaceIds: string[], tag: string): void;
 }
 
 export const WorkspaceActions = createContext<WorkspaceActionsValue | undefined>(undefined);

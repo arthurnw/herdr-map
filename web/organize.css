@@ -3,6 +3,9 @@
 /* A collapsed workspace is its header alone. */
 .workspace.collapsed { overflow: hidden; }
 .workspace.collapsed .ws-header { height: 100%; }
+/* The status counts stand in for the agent count, leaving room for the name. */
+.workspace.collapsed .ws-count { visibility: hidden; flex-shrink: 1; min-width: 0; }
+.workspace.collapsed .ws-label { flex-shrink: 0; max-width: 60%; }
 
 .ws-status-counts { display: inline-flex; gap: 6px; }
 .ws-status-count {
@@ -82,3 +85,24 @@
 .react-flow__node-group-box:hover .group-menu,
 .group-menu[data-state="open"] { opacity: 1; }
 .group-menu:hover { background: var(--accent); color: var(--foreground); }
+
+/* Tags on a workspace header, and the input that adds one. */
+.ws-user-tag {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--foreground);
+}
+.tag-input {
+  width: 90px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--ring);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 500;
+  outline: none;
+  cursor: text;
+}
+.tag-input[aria-invalid="true"] { border-color: var(--destructive); }

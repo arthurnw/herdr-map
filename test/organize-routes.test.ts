@@ -79,3 +79,16 @@ test("colors workspaces and repo boxes from the allowed list", async (t) => {
     assert.equal((await call("POST", path, body)).status, 400, JSON.stringify(body));
   }
 });
+
+test("adds and removes tags, keeping each once", async (t) => {
+  const { call, store } = await serve(t);
+  await call("POST", "/api/meta/workspaces", { ids: ["w1", "w2"], addTags: ["infra", "urgent"] });
+  await call("POST", "/api/meta/workspaces", { ids: ["w1"], addTags: ["infra", "v2.1"], removeTags: ["urgent"] });
+  assert.deepEqual((await store()).workspaces, { w1: { tags: ["infra", "v2.1"] }, w2: { tags: ["infra", "urgent"] } });
+  await call("POST", "/api/meta/workspaces", { ids: ["w2"], removeTags: ["infra", "urgent"] });
+  assert.deepEqual((await store()).workspaces, { w1: { tags: ["infra", "v2.1"] } });
+
+  for (const addTags of [["Infra"], ["has space"], ["-dash"], ["x".repeat(25)], "infra", [3], Array(13).fill("a")]) {
+    assert.equal((await call("POST", "/api/meta/workspaces", { ids: ["w1"], addTags })).status, 400, JSON.stringify(addTags));
+  }
+});

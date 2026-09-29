@@ -60,4 +60,37 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     await page.waitForTimeout(400);
     assert(!store().groups?.["/repos/api/.git"], "No color should clear the saved color");
   });
+
+  test("organize: tag a workspace, then find it by tag in the filter and the palette", async (page) => {
+    await menu(page, "w5", "web-redesign");
+    await page.getByRole("menuitem", { name: "Add tag…" }).click();
+    const input = ws(page, "w5").getByRole("textbox", { name: "New tag" });
+    await input.waitFor();
+    assert(await input.evaluate((el) => el === document.activeElement), "the tag input should take focus");
+    await page.keyboard.type("Needs Review");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+    assert(JSON.stringify(store().workspaces?.w5?.tags) === '["needs-review"]', `tag should be saved, got ${JSON.stringify(store().workspaces)}`);
+    assert((await ws(page, "w5").locator(".ws-user-tag").textContent()) === "needs-review", "the header should show the tag");
+
+    await page.getByPlaceholder("Filter workspaces, agents, summaries").fill("needs-rev");
+    await page.waitForTimeout(200);
+    const undimmed = await page.locator(".react-flow__node-workspace:not(.dim)").evaluateAll((els) => els.map((e) => e.dataset.id));
+    assert(JSON.stringify(undimmed) === '["ws:w5"]', `the filter should match the tag, got ${undimmed}`);
+    await page.getByPlaceholder("Filter workspaces, agents, summaries").fill("");
+
+    await page.keyboard.press("Meta+k");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await palette.waitFor();
+    await page.keyboard.type("t:needs");
+    await page.waitForTimeout(150);
+    const rows = await palette.locator("[cmdk-item]").allTextContents();
+    assert(rows.length === 2 && rows.every((r) => r.includes("web-redesign")), `t:needs should list the agent and workspace, got ${rows}`);
+    await page.keyboard.press("Escape");
+
+    await menu(page, "w5", "web-redesign");
+    await page.getByRole("menuitem", { name: "Remove tag “needs-review”" }).click();
+    await page.waitForTimeout(400);
+    assert(!store().workspaces?.w5, "removing the last tag clears the metadata");
+  });
 };

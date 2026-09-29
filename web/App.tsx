@@ -74,6 +74,7 @@ function FleetMap() {
   const [zoom, setZoom] = useState(1);
   const [saved, setSaved] = useSavedLayout();
   const { meta, patchWorkspaces, patchGroup } = useMeta();
+  const tagsOf = useCallback((wsId: string) => meta?.workspaces[wsId]?.tags ?? [], [meta]);
   const [dragging, setDragging] = useState<ReadonlySet<string>>();
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
@@ -97,7 +98,7 @@ function FleetMap() {
     const q = query.trim();
     if (!q || !fleet) return layout.nodes;
     const matching = new Set(
-      fleet.groups.flatMap((g) => g.workspaces.filter((ws) => workspaceMatches(ws, q)).map((ws) => ws.id)),
+      fleet.groups.flatMap((g) => g.workspaces.filter((ws) => workspaceMatches(ws, q, tagsOf(ws.id))).map((ws) => ws.id)),
     );
     return layout.nodes.map((n): Node => {
       const wsId =
@@ -110,7 +111,7 @@ function FleetMap() {
               : undefined;
       return wsId && !matching.has(wsId) ? { ...n, className: [n.className, "dim"].filter(Boolean).join(" ") } : n;
     });
-  }, [layout, query, fleet, panes]);
+  }, [layout, query, fleet, panes, tagsOf]);
 
   const { hovered, setHovered, pinned, setPinned, select, clear, pinnedPane, detailPane, shownNodes } = useSelection(
     panes,
@@ -130,6 +131,8 @@ function FleetMap() {
       setCollapsed: (ids: string[], collapsed: boolean) => void patchWorkspaces({ ids, collapsed }),
       setWorkspaceColor: (ids: string[], color: TintColor | null) => void patchWorkspaces({ ids, color }),
       setGroupColor: (groupKey: string, color: TintColor | null) => void patchGroup({ key: groupKey, color }),
+      addTag: (ids: string[], tag: string) => void patchWorkspaces({ ids, addTags: [tag] }),
+      removeTag: (ids: string[], tag: string) => void patchWorkspaces({ ids, removeTags: [tag] }),
     }),
     [setDetached, patchWorkspaces, patchGroup],
   );
@@ -177,7 +180,7 @@ function FleetMap() {
   const onSearchEnter = () => {
     const q = query.trim();
     if (!q) return;
-    const hit = [...panes.values()].find((l) => l.pane.agent && workspaceMatches(l.workspace, q));
+    const hit = [...panes.values()].find((l) => l.pane.agent && workspaceMatches(l.workspace, q, tagsOf(l.workspace.id)));
     if (hit) focusPane(hit);
   };
 
@@ -232,6 +235,7 @@ function FleetMap() {
         />
         <CommandPalette
           fleet={fleet}
+          tagsOf={tagsOf}
           onSelect={select}
           onOpen={focusPane}
           onFocus={(target) => void focus(target)}

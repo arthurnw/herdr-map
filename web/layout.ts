@@ -76,6 +76,7 @@ export type WorkspaceData = {
   /** Drawn as its header only, without tabs or panes. */
   collapsed: boolean;
   color?: string;
+  tags: string[];
 };
 export type TabData = { tab: FleetTab; workspaceId: string };
 export type PaneData = { pane: FleetPane };
@@ -327,6 +328,7 @@ export function layoutFleet(
       groupMates: mates.get(p.ws.id) ?? 0,
       collapsed: isCollapsed(p.ws),
       color: meta[p.ws.id]?.color,
+      tags: meta[p.ws.id]?.tags ?? [],
     };
     nodes.push({
       id: wsNode,

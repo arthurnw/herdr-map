@@ -1,4 +1,4 @@
-import { createContext, memo, useContext } from "react";
+import { createContext, memo, useContext, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ChevronsDownUp, ChevronsUpDown, Ellipsis, FolderGit2, Group, Palette, Star, Ungroup } from "lucide-react";
 import {
@@ -18,7 +18,7 @@ import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { KIND_LABEL } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
-import { ColorItems, GroupColorMenu, StatusCounts, tintClass } from "./organize.tsx";
+import { ColorItems, GroupColorMenu, StatusCounts, TagChips, TagInput, TagMenuItems, tintClass } from "./organize.tsx";
 
 export const NowContext = createContext(Date.now());
 
@@ -37,7 +37,9 @@ export const GroupNode = memo(({ data }: NodeProps) => {
 });
 
 export const WorkspaceNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, groupLabel, detached, dropHint, collapsed, color } = data as WorkspaceData;
+  const { workspace: ws, groupLabel, detached, dropHint, collapsed, color, tags } = data as WorkspaceData;
+  const [addingTag, setAddingTag] = useState(false);
+  const actions = useContext(WorkspaceActions);
   const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`, collapsed && "collapsed", tintClass(color)]
     .filter(Boolean)
     .join(" ");
@@ -58,10 +60,12 @@ export const WorkspaceNode = memo(({ data }: NodeProps) => {
           </span>
         )}
         {ws.linkedWorktree && <span className="ws-tag">worktree</span>}
+        <TagChips tags={tags} />
+        {addingTag && <TagInput onAdd={(t) => actions?.addTag([ws.id], t)} onClose={() => setAddingTag(false)} />}
         <DoneMarker workspace={ws} />
         {collapsed && <StatusCounts workspace={ws} />}
         <span className="ws-count">{ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}</span>
-        <WorkspaceMenu data={data as WorkspaceData} />
+        <WorkspaceMenu data={data as WorkspaceData} onAddTag={() => setAddingTag(true)} />
       </div>
     </div>
   );
@@ -71,8 +75,10 @@ export const WorkspaceNode = memo(({ data }: NodeProps) => {
 // content renders in a portal, but React still bubbles its events through the node.
 const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
-function WorkspaceMenu({ data }: { data: WorkspaceData }) {
+function WorkspaceMenu({ data, onAddTag }: { data: WorkspaceData; onAddTag: () => void }) {
   const actions = useContext(WorkspaceActions);
+  // Set by Add tag. The tag input opens once the menu has closed, so the menu can't take focus back.
+  const addTag = useRef(false);
   const { workspace: ws, groupLabel, detached, groupMates, collapsed } = data;
   if (!actions) return null;
   return (
@@ -82,7 +88,17 @@ function WorkspaceMenu({ data }: { data: WorkspaceData }) {
           <Ellipsis aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={stop} onPointerDown={stop}>
+      <DropdownMenuContent
+        align="end"
+        onClick={stop}
+        onPointerDown={stop}
+        onCloseAutoFocus={(e) => {
+          if (!addTag.current) return;
+          addTag.current = false;
+          e.preventDefault();
+          onAddTag();
+        }}
+      >
         <DropdownMenuItem onSelect={() => actions.setCollapsed([ws.id], !collapsed)}>
           {collapsed ? <ChevronsUpDown aria-hidden /> : <ChevronsDownUp aria-hidden />}
           {collapsed ? "Expand" : "Collapse to header"}
@@ -96,6 +112,11 @@ function WorkspaceMenu({ data }: { data: WorkspaceData }) {
             <ColorItems value={data.color} onPick={(c) => actions.setWorkspaceColor([ws.id], c)} />
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        <TagMenuItems
+          tags={data.tags}
+          onAdd={() => (addTag.current = true)}
+          onRemove={(t) => actions.removeTag([ws.id], t)}
+        />
         <DropdownMenuSeparator />
         {detached ? (
           <DropdownMenuItem onSelect={() => actions.setDetached(ws.id, false)}>

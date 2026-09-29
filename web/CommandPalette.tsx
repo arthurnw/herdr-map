@@ -18,12 +18,15 @@ import { indexPanes, type FocusTarget, type Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
 
 const OPEN_EVENT = "herdr-map:open-palette";
+const noTags = () => [];
 const PALETTE_SHORTCUT = "Open command palette";
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 const MOD = isMac ? "⌘" : "Ctrl ";
 
 interface Props {
   fleet?: Fleet;
+  /** A workspace's tags, matched by `t:` and free text. */
+  tagsOf?: (workspaceId: string) => string[];
   /** Selects an agent on the map, as a Needs you row does. */
   onSelect: (paneId: string) => void;
   /** Opens an agent in the terminal. */
@@ -92,7 +95,7 @@ function shortcutActions(): Action[] {
 }
 
 export function CommandPalette(props: Props) {
-  const { fleet, onSelect, onOpen, onFocus, layoutMenu } = props;
+  const { fleet, onSelect, onOpen, onFocus, layoutMenu, tagsOf = noTags } = props;
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [value, setValue] = useState("");
@@ -120,21 +123,23 @@ export function CommandPalette(props: Props) {
   const agents = useMemo(
     () =>
       [...panes.values()]
-        .filter((l) => agentMatches(l, query))
+        .filter((l) => agentMatches(l, query, tagsOf(l.workspace.id)))
         .sort(
           (a, b) =>
             STATUSES.indexOf(a.pane.agent!.status) - STATUSES.indexOf(b.pane.agent!.status) ||
             a.pane.agent!.since - b.pane.agent!.since,
         ),
-    [panes, query],
+    [panes, query, tagsOf],
   );
 
   const workspaces = useMemo(
     () =>
       (fleet?.groups ?? []).flatMap((g) =>
-        g.workspaces.filter((ws) => workspaceItemMatches(ws, g.label, query)).map((ws) => ({ ws, groupLabel: g.label })),
+        g.workspaces
+          .filter((ws) => workspaceItemMatches(ws, g.label, query, tagsOf(ws.id)))
+          .map((ws) => ({ ws, groupLabel: g.label })),
       ),
-    [fleet, query],
+    [fleet, query, tagsOf],
   );
 
   const resetLayout = async () => {
@@ -231,7 +236,7 @@ export function CommandPalette(props: Props) {
           <CommandInput
             value={search}
             onValueChange={setSearch}
-            placeholder="Agents, workspaces, commands · s:blocked a:codex w:api"
+            placeholder="Agents, workspaces, commands · s:blocked a:codex w:api t:infra"
           />
           <CommandList className="max-h-[min(60vh,480px)]">
             <CommandEmpty>No matches.</CommandEmpty>
@@ -263,6 +268,11 @@ export function CommandPalette(props: Props) {
                     <span className="text-xs tabular-nums text-muted-foreground">{ws.number}</span>
                     <span className="font-medium">{ws.label}</span>
                     {groupLabel !== ws.label && <span className="text-muted-foreground">{groupLabel}</span>}
+                    {tagsOf(ws.id).map((t) => (
+                      <span key={t} className="rounded-full border px-1.5 text-xs text-muted-foreground">
+                        {t}
+                      </span>
+                    ))}
                     <span className="ml-auto text-xs text-muted-foreground">
                       {ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}
                     </span>
@@ -301,7 +311,7 @@ export function CommandPalette(props: Props) {
               <Kbd>{MOD}↵</Kbd> open in terminal
             </span>
             <span className="ml-auto">
-              <Kbd>s:</Kbd> status · <Kbd>a:</Kbd> agent kind · <Kbd>w:</Kbd> workspace
+              <Kbd>s:</Kbd> status · <Kbd>a:</Kbd> agent kind · <Kbd>w:</Kbd> workspace · <Kbd>t:</Kbd> tag
             </span>
           </div>
         </Command>

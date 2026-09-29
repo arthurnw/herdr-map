@@ -61,9 +61,9 @@ export function useNow(intervalMs: number) {
   return now;
 }
 
-export function workspaceMatches(ws: FleetWorkspace, query: string): boolean {
+export function workspaceMatches(ws: FleetWorkspace, query: string, tags: string[] = []): boolean {
   const q = query.toLowerCase();
-  if (ws.label.toLowerCase().includes(q)) return true;
+  if (ws.label.toLowerCase().includes(q) || tags.some((t) => t.includes(q))) return true;
   return ws.tabs.some(
     (t) =>
       t.label.toLowerCase().includes(q) ||

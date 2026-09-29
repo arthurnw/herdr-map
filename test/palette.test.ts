@@ -29,9 +29,10 @@ test("parseQuery splits prefixes from free text", () => {
     statuses: ["blocked"],
     kinds: ["codex"],
     workspaces: ["api"],
+    tags: [],
     text: ["deploy", "target"],
   });
-  assert.deepEqual(parseQuery("s: x:y"), { statuses: [], kinds: [], workspaces: [], text: ["x:y"] });
+  assert.deepEqual(parseQuery("s: x:y t:Infra"), { statuses: [], kinds: [], workspaces: [], tags: ["infra"], text: ["x:y"] });
 });
 
 test("status, kind, and workspace prefixes narrow agents", () => {
@@ -71,4 +72,21 @@ test("shortcutLabel names keys and modifiers", () => {
   assert.equal(shortcutLabel({ key: "Enter" }), "↵");
   assert.equal(shortcutLabel({ key: "ArrowLeft" }), "←");
   assert.equal(shortcutLabel({ key: "/" }), "/");
+});
+
+test("t: narrows agents and workspaces by tag prefix, and free text matches tags", () => {
+  const tags: Record<string, string[]> = { "api-auth": ["infra", "urgent"], web: ["design"] };
+  const tagHits = (q: string) =>
+    all.filter((a) => agentMatches(a, parseQuery(q), tags[a.workspace.label])).map((a) => a.pane.id);
+  assert.deepEqual(tagHits("t:infra"), [blockedPi.pane.id]);
+  assert.deepEqual(tagHits("t:inf"), [blockedPi.pane.id]);
+  assert.deepEqual(tagHits("t:urgent t:design"), [blockedPi.pane.id, idleClaude.pane.id]);
+  assert.deepEqual(tagHits("t:design s:blocked"), []);
+  assert.deepEqual(tagHits("urgent"), [blockedPi.pane.id]);
+  assert.deepEqual(tagHits("t:nope"), []);
+  const ws = workspace("web");
+  assert.ok(workspaceItemMatches(ws, "web", parseQuery("t:des"), ["design"]));
+  assert.ok(workspaceItemMatches(ws, "web", parseQuery("design"), ["design"]));
+  assert.ok(!workspaceItemMatches(ws, "web", parseQuery("t:des"), []));
+  assert.ok(!commandMatches("Next in Needs you", parseQuery("t:needs")));
 });

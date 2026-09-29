@@ -7,6 +7,9 @@ import {
   applyWorkspacePatch,
   COLORS,
   isColor,
+  isTag,
+  MAX_TAG_LENGTH,
+  MAX_TAGS,
   type GroupPatch,
   type MetaState,
   type WorkspacePatch,
@@ -41,6 +44,14 @@ export function parseWorkspacePatch(body: unknown): WorkspacePatch | string {
   if (color !== undefined) {
     if (color !== null && !isColor(color)) return COLOR_ERROR;
     patch.color = color;
+  }
+  for (const field of ["addTags", "removeTags"] as const) {
+    const tags = body[field];
+    if (tags === undefined) continue;
+    if (!Array.isArray(tags) || tags.length > MAX_TAGS || !tags.every(isTag)) {
+      return `${field} must be up to ${MAX_TAGS} tags of lowercase letters, digits, ".", "_", or "-" (at most ${MAX_TAG_LENGTH} characters)`;
+    }
+    patch[field] = tags;
   }
   return patch;
 }
