@@ -21,6 +21,7 @@ import {
   type TabData,
   type WorkspaceData,
 } from "./layout.ts";
+import { LayoutMenu } from "./LayoutMenu.tsx";
 import { NowContext, agentAge, nodeTypes } from "./nodes.tsx";
 
 interface ServerState {
@@ -292,11 +293,25 @@ function FleetMap() {
     [layout.nodes],
   );
 
-  const resetLayout = () => {
-    setSaved({});
-    setSaveTick((t) => t + 1);
-    requestAnimationFrame(() => fitView({ padding: 0.05 }));
-  };
+  // Saved positions for hidden workspaces are kept alongside the ones on screen.
+  const currentPositions = useCallback((): SavedLayout => {
+    const out: SavedLayout = { ...saved };
+    for (const n of layout.nodes) {
+      if (n.type !== "workspace") continue;
+      const data = n.data as WorkspaceData;
+      out[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
+    }
+    return out;
+  }, [saved, layout.nodes]);
+
+  const applyLayout = useCallback(
+    (next: SavedLayout) => {
+      setSaved(next);
+      setSaveTick((t) => t + 1);
+      requestAnimationFrame(() => fitView({ padding: 0.05 }));
+    },
+    [fitView],
+  );
 
   const attention = useMemo(
     () =>
@@ -341,9 +356,12 @@ function FleetMap() {
             <input type="checkbox" checked={agentsOnly} onChange={(e) => setAgentsOnly(e.target.checked)} />
             Workspaces with agents only
           </label>
-          <button className="plain" onClick={resetLayout} disabled={!saved || Object.keys(saved).length === 0}>
-            Reset layout
-          </button>
+          <LayoutMenu
+            currentPositions={currentPositions}
+            isCustom={!!saved && Object.keys(saved).length > 0}
+            onApply={applyLayout}
+            onError={setFocusError}
+          />
           <select className="theme" value={theme} onChange={(e) => setTheme(e.target.value as Theme)} aria-label="Theme">
             <option value="system">System theme</option>
             <option value="light">Light</option>

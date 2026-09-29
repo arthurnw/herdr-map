@@ -4,7 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { parseArgs } from "node:util";
 import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
 import { activateApp, focus, readPane, snapshot, type FocusTarget, type HerdrOptions } from "./herdr.ts";
-import { defaultLayoutPath, isSavedLayout, loadLayout, saveLayout } from "./layout-store.ts";
+import { defaultLayoutPath, isLayoutName, isSavedLayout, loadStore, updateStore } from "./layout-store.ts";
 
 const { values: args } = parseArgs({
   options: {
@@ -133,10 +133,32 @@ const server = createServer(async (req, res) => {
       if (req.method === "PUT") {
         const layout = await readBody(req);
         if (!isSavedLayout(layout)) return sendJson(res, 400, { error: "invalid layout" });
-        await saveLayout(layoutPath, layout);
+        await updateStore(layoutPath, (store) => {
+          store.current = layout;
+        });
         return sendJson(res, 200, { ok: true });
       }
-      return sendJson(res, 200, await loadLayout(layoutPath));
+      return sendJson(res, 200, (await loadStore(layoutPath)).current);
+    }
+    if (url.pathname === "/api/layouts") return sendJson(res, 200, (await loadStore(layoutPath)).named);
+    if (url.pathname.startsWith("/api/layouts/")) {
+      const name = decodeURIComponent(url.pathname.slice("/api/layouts/".length));
+      if (!isLayoutName(name)) return sendJson(res, 400, { error: "invalid layout name" });
+      if (req.method === "PUT") {
+        const layout = await readBody(req);
+        if (!isSavedLayout(layout)) return sendJson(res, 400, { error: "invalid layout" });
+        await updateStore(layoutPath, (store) => {
+          store.named[name] = { savedAt: Date.now(), layout };
+        });
+        return sendJson(res, 200, { ok: true });
+      }
+      if (req.method === "DELETE") {
+        await updateStore(layoutPath, (store) => {
+          delete store.named[name];
+        });
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 405, { error: "method not allowed" });
     }
     if (url.pathname === "/api/read") {
       const text = await readPane(herdr, url.searchParams.get("pane") ?? "", 60);

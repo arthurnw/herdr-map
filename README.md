@@ -12,7 +12,7 @@ herdr stays the host. herdr-map only reads `herdr api snapshot` and runs focus c
 - **Needs you**: blocked agents first, then finished ones, oldest first.
 - **Hover preview**: the pane's visible screen, its cwd, and its summary.
 - **Adaptive zoom**: text grows as you zoom out so names and statuses stay readable, summaries and tab labels drop away, and panes fill with their status color.
-- **Your own arrangement**: drag a workspace to move it, or drag a repo box to move all of its workspaces. Drop a workspace away from its repo to detach it; it then shows the repo name as a tag. Positions are saved to a file and survive reloads. **Reset layout** returns to the automatic layout.
+- **Your own arrangement**: drag a workspace to move it, or drag a repo box to move all of its workspaces. Drop a workspace away from its repo to detach it; it then shows the repo name as a tag. Positions are saved to a file and survive reloads. From **Layouts**, you can save the arrangement under a name, restore a saved one, or reset to the automatic layout. Reset and Restore save the arrangement they replace as "Previous layout", so either can be undone.
 - **Light, dark, or system theme**, picked from the toolbar.
 - **Lineage edges** from a `parent` pane token, when present (see below).
 
@@ -47,7 +47,7 @@ Open http://127.0.0.1:4747.
 | `--interval MS` | `1500` | Snapshot poll interval. |
 | `--activate APP` | `Ghostty` | macOS app to bring forward after a focus. |
 | `--no-activate` | off | Skip app activation. |
-| `--layout FILE` | `~/.config/herdr-map/layout.json` | Where dragged positions are saved. |
+| `--layout FILE` | `~/.config/herdr-map/layout.json` | Where the current and named layouts are saved. |
 
 Status ages start when herdr-map first sees a status. Ages that began before the server started are lower bounds and show a trailing `+`.
 
