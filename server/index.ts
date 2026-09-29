@@ -161,7 +161,9 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 405, { error: "method not allowed" });
     }
     if (url.pathname === "/api/read") {
-      const text = await readPane(herdr, url.searchParams.get("pane") ?? "", 60);
+      const source = url.searchParams.get("source") === "recent" ? "recent" : "visible";
+      const lines = Number(url.searchParams.get("lines") ?? 60);
+      const text = await readPane(herdr, url.searchParams.get("pane") ?? "", source, lines);
       return sendJson(res, 200, { text });
     }
     if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "not found" });

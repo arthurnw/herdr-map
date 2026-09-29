@@ -48,8 +48,12 @@ export async function focus(opts: HerdrOptions, target: FocusTarget): Promise<vo
   else await run(opts, ["workspace", "focus", id]);
 }
 
-export function readPane(opts: HerdrOptions, paneId: string, lines: number): Promise<string> {
-  return run(opts, ["pane", "read", assertId(paneId), "--source", "visible", "--lines", String(lines)]);
+export type ReadSource = "visible" | "recent";
+
+/** Reads the visible screen, or `recent` scrollback for a scrollable preview. */
+export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource, lines: number): Promise<string> {
+  const n = Math.min(5000, Math.max(1, Math.floor(lines) || 60));
+  return run(opts, ["pane", "read", assertId(paneId), "--source", source, "--lines", String(n)]);
 }
 
 const APP_NAME = /^[\w .-]{1,64}$/;

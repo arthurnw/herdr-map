@@ -10,7 +10,7 @@ herdr stays the host. herdr-map only reads `herdr api snapshot` and runs focus c
 - **Workspaces and tabs**, with each tab's panes drawn in their real split layout.
 - **Agent panes** colored by status (working, blocked, done, idle), with how long the agent has been in that status and the `summary` pane token when a plugin sets one. Other panes show their terminal title, such as `nvim AGENTS.md` or `hunk`.
 - **Needs you**: blocked agents first, then finished ones, oldest first.
-- **Hover preview**: the pane's visible screen, its cwd, and its summary.
+- **Preview sidebar**: hovering a pane shows its visible screen, cwd, and summary. Pin a pane (Option-click it, or press **Pin**) to keep its preview while you move around the map. A pinned preview loads the last 1,000 lines of scrollback and refreshes every 5 seconds; scrolling up pauses refreshes until you scroll back to the bottom. Drag the sidebar's left edge to resize it.
 - **Adaptive zoom**: text grows as you zoom out so names and statuses stay readable, summaries and tab labels drop away, and panes fill with their status color.
 - **Your own arrangement**: drag a workspace to move it, or drag a repo box to move all of its workspaces. Drop a workspace away from its repo to detach it; it then shows the repo name as a tag. Positions are saved to a file and survive reloads. From **Layouts**, you can save the arrangement under a name, restore a saved one, or reset to the automatic layout. Reset and Restore save the arrangement they replace as "Previous layout", so either can be undone.
 - **Light, dark, or system theme**, picked from the toolbar.

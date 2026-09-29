@@ -81,7 +81,7 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-w, 380px);
   grid-template-rows: auto auto 1fr;
   height: 100%;
 }
@@ -221,6 +221,34 @@ body {
   background: var(--panel);
   border-left: 1px solid var(--border);
 }
+
+.sidebar-resizer {
+  grid-column: 2;
+  grid-row: 3;
+  justify-self: start;
+  position: relative;
+  z-index: 5;
+  width: 8px;
+  margin-left: -4px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer:hover,
+body.resizing .sidebar-resizer { background: color-mix(in srgb, var(--focus-ring) 40%, transparent); }
+
+body.resizing { cursor: col-resize; user-select: none; }
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-panel .hint { margin: 8px 0 0; font-size: 11px; }
+.detail-panel.pinned h2::before { content: "📌 "; }
+.detail-panel.pinned .screen { max-height: none; height: 65vh; }
 
 .inspector h2 {
   margin: 0 0 8px;
@@ -507,5 +535,6 @@ body {
 @media (max-width: 800px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }
   .inspector { grid-column: 1; grid-row: 4; max-height: 40vh; border-left: 0; border-top: 1px solid var(--border); }
+  .sidebar-resizer { display: none; }
   .toolbar { flex-wrap: wrap; }
 }

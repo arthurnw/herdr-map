@@ -22,6 +22,7 @@ import {
   type WorkspaceData,
 } from "./layout.ts";
 import { LayoutMenu } from "./LayoutMenu.tsx";
+import { PaneDetail, type Located } from "./PaneDetail.tsx";
 import { NowContext, agentAge, nodeTypes } from "./nodes.tsx";
 
 interface ServerState {
@@ -82,12 +83,6 @@ function workspaceMatches(ws: FleetWorkspace, query: string): boolean {
   );
 }
 
-interface Located {
-  pane: FleetPane;
-  tabId: string;
-  tabLabel: string;
-  workspace: FleetWorkspace;
-}
 
 function indexPanes(fleet: Fleet | undefined): Map<string, Located> {
   const out = new Map<string, Located>();
@@ -102,6 +97,42 @@ function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
   if (zoom < 0.7) return "zoom-mid";
   return "zoom-near";
+}
+
+const SIDEBAR_MIN = 260;
+const SIDEBAR_KEY = "herdr-map.sidebar-width";
+
+/** Sidebar width, adjustable by dragging its left edge and remembered per browser. */
+function useSidebarWidth(): [number, (e: React.PointerEvent) => void] {
+  const [width, setWidth] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(SIDEBAR_KEY));
+      if (saved >= SIDEBAR_MIN) return saved;
+    } catch {}
+    return 380;
+  });
+  const start = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+    let last = 0;
+    const move = (ev: PointerEvent) => {
+      last = Math.round(Math.min(window.innerWidth * 0.8, Math.max(SIDEBAR_MIN, window.innerWidth - ev.clientX)));
+      setWidth(last);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      document.body.classList.remove("resizing");
+      try {
+        if (last) localStorage.setItem(SIDEBAR_KEY, String(last));
+      } catch {}
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  }, []);
+  return [width, start];
 }
 
 type Theme = "system" | "light" | "dark";
@@ -145,6 +176,8 @@ function FleetMap() {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
   const [hovered, setHovered] = useState<string>();
+  const [pinned, setPinned] = useState<string>();
+  const [sidebarW, startResize] = useSidebarWidth();
   const [focusError, setFocusError] = useState<string>();
   const [theme, setTheme] = useTheme();
   const [saved, setSaved] = useState<SavedLayout>();
@@ -207,7 +240,12 @@ function FleetMap() {
   }, []);
 
   const onNodeClick = useCallback(
-    (_: unknown, node: Node) => {
+    (event: React.MouseEvent, node: Node) => {
+      // Option-click pins a pane's preview without leaving the map.
+      if (node.type === "pane" && event.altKey) {
+        setPinned((p) => (p === node.id ? undefined : node.id));
+        return;
+      }
       if (node.type === "pane") {
         const loc = panes.get(node.id);
         if (loc) void focus(paneTarget(loc.pane, loc.tabId));
@@ -331,11 +369,13 @@ function FleetMap() {
     if (hit) void focus(paneTarget(hit.pane, hit.tabId));
   };
 
-  const hoveredPane = hovered ? panes.get(hovered) : undefined;
+  // A pinned pane holds the preview until unpinned or closed; otherwise it follows the pointer.
+  const pinnedPane = pinned ? panes.get(pinned) : undefined;
+  const detailPane = pinnedPane ?? (hovered ? panes.get(hovered) : undefined);
 
   return (
     <NowContext.Provider value={now}>
-      <div className="app">
+      <div className="app" style={{ "--sidebar-w": `${sidebarW}px` } as React.CSSProperties}>
         <header className="toolbar">
           <strong>herdr-map</strong>
           <div className="counts">
@@ -395,6 +435,7 @@ function FleetMap() {
             <MiniMap pannable zoomable nodeClassName={minimapClass} />
           </ReactFlow>
         </main>
+        <div className="sidebar-resizer" onPointerDown={startResize} title="Drag to resize the sidebar" />
         <aside className="inspector">
           <section>
             <h2>Needs you ({attention.length})</h2>
@@ -402,7 +443,11 @@ function FleetMap() {
             <ul className="attention">
               {attention.map((l) => (
                 <li key={l.pane.id} onMouseEnter={() => setHovered(l.pane.id)}>
-                  <button onClick={() => void focus(paneTarget(l.pane, l.tabId))}>
+                  <button
+                    onClick={(e) =>
+                      e.altKey ? setPinned(l.pane.id) : void focus(paneTarget(l.pane, l.tabId))
+                    }
+                  >
                     <span className={`dot status-${l.pane.agent!.status}`} />
                     <span className="attention-name">
                       {l.pane.agent!.name ?? l.workspace.label} <span className="muted">{l.pane.agent!.kind}</span>
@@ -413,7 +458,15 @@ function FleetMap() {
               ))}
             </ul>
           </section>
-          {hoveredPane && <PaneDetail located={hoveredPane} onFocus={focus} now={now} />}
+          {detailPane && (
+            <PaneDetail
+              located={detailPane}
+              pinned={detailPane === pinnedPane}
+              now={now}
+              onOpen={() => void focus(paneTarget(detailPane.pane, detailPane.tabId))}
+              onTogglePin={() => setPinned((p) => (p === detailPane.pane.id ? undefined : detailPane.pane.id))}
+            />
+          )}
         </aside>
       </div>
     </NowContext.Provider>
@@ -425,49 +478,6 @@ function minimapClass(node: Node): string {
   if (node.type !== "pane") return "mm-container";
   const status = (node.data as PaneData).pane.agent?.status;
   return status ? `mm-pane status-${status}` : "mm-pane tool";
-}
-
-function PaneDetail({ located, onFocus, now }: { located: Located; onFocus: (t: FocusTarget) => void; now: number }) {
-  const { pane, workspace, tabLabel, tabId } = located;
-  const [screen, setScreen] = useState<string>();
-  useEffect(() => {
-    let cancelled = false;
-    setScreen(undefined);
-    // Debounce so sweeping the pointer across the map doesn't fire a read per pane.
-    const timer = setTimeout(async () => {
-      const res = await fetch(`/api/read?pane=${encodeURIComponent(pane.id)}`);
-      const body = await res.json();
-      if (!cancelled) setScreen(body.text ?? body.error);
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [pane.id]);
-
-  return (
-    <section className="detail-panel">
-      <h2>
-        {workspace.label} › {tabLabel}
-      </h2>
-      <p>
-        {pane.agent ? (
-          <>
-            <span className={`dot status-${pane.agent.status}`} /> {pane.agent.name ?? pane.agent.kind} ·{" "}
-            {pane.agent.status} for {agentAge(pane.agent, now)}
-          </>
-        ) : (
-          pane.title
-        )}
-      </p>
-      {pane.cwd && <p className="muted mono">{pane.cwd}</p>}
-      {pane.agent?.summary && <p>{pane.agent.summary}</p>}
-      <button className="primary" onClick={() => onFocus(paneTarget(pane, tabId))}>
-        Open in terminal
-      </button>
-      <pre className="screen">{screen ?? "Loading screen…"}</pre>
-    </section>
-  );
 }
 
 export function App() {
