@@ -74,7 +74,8 @@ case "${1:-}" in
     fi
     ;;
   status)
-    if loaded; then launchctl print "$DOMAIN/$LABEL" | grep -E '^\s*(state|pid|last exit code) ='; else echo "not installed"; fi
+    # Top-level keys have one tab of indentation; nested sections repeat "state".
+    if loaded; then launchctl print "$DOMAIN/$LABEL" | grep -E "^$(printf '\t')(state|pid|last exit code) ="; else echo "not installed"; fi
     ;;
   uninstall)
     if loaded; then launchctl bootout "$DOMAIN/$LABEL"; fi
