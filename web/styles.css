@@ -110,6 +110,21 @@ body {
   background: var(--status-idle);
 }
 
+button.chip {
+  border: 1px solid transparent;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+/* A filtered-out status: outlined, struck through, and faded. */
+.chip.off {
+  background: transparent !important;
+  border-color: var(--border);
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .chip.status-working { background: var(--status-working); }
 .chip.status-blocked { background: var(--status-blocked); }
 .chip.status-done { background: var(--status-done); }
@@ -335,6 +350,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 
 .react-flow__node { cursor: pointer; }
 .react-flow__node.dim { opacity: 0.15; }
+.react-flow__node.status-filtered { opacity: 0.25; }
 .react-flow__node-workspace,
 .react-flow__node-group-box { cursor: grab; }
 .react-flow__node-workspace.dragging,

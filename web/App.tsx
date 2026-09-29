@@ -10,7 +10,7 @@ import {
   type NodeChange,
   type Viewport,
 } from "@xyflow/react";
-import { STATUSES, type Fleet, type FleetPane, type FleetWorkspace } from "../shared/model.ts";
+import { STATUSES, type AgentStatus, type Fleet, type FleetPane, type FleetWorkspace } from "../shared/model.ts";
 import {
   isDetachedDrop,
   layoutFleet,
@@ -120,6 +120,39 @@ function usePersistedFlag(key: string, initial: boolean): [boolean, (v: boolean)
   return [value, set];
 }
 
+/**
+ * Agent statuses hidden from the map, remembered per browser. Clicking a status toggles it;
+ * Option-clicking shows only that status, or everything again if it was already alone.
+ */
+function useHiddenStatuses(): [AgentStatus[], (s: AgentStatus, solo: boolean) => void] {
+  const key = "herdr-map.hidden-statuses";
+  const [hidden, setHidden] = useState<AgentStatus[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? "[]");
+      if (Array.isArray(saved)) return saved.filter((s): s is AgentStatus => STATUSES.includes(s));
+    } catch {}
+    return [];
+  });
+  const toggle = useCallback((status: AgentStatus, solo: boolean) => {
+    setHidden((prev) => {
+      const others = STATUSES.filter((s) => s !== status);
+      const isAlone = !prev.includes(status) && others.every((s) => prev.includes(s));
+      const next = solo
+        ? isAlone
+          ? []
+          : others
+        : prev.includes(status)
+          ? prev.filter((s) => s !== status)
+          : [...prev, status];
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+  return [hidden, toggle];
+}
+
 const SIDEBAR_MIN = 260;
 const SIDEBAR_KEY = "herdr-map.sidebar-width";
 
@@ -195,6 +228,7 @@ function FleetMap() {
   const now = useNow(5000);
   const [agentsOnly, setAgentsOnly] = usePersistedFlag("herdr-map.agents-only", true);
   const [agentPanesOnly, setAgentPanesOnly] = usePersistedFlag("herdr-map.agent-panes-only", true);
+  const [hiddenStatuses, toggleStatus] = useHiddenStatuses();
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
   const [hovered, setHovered] = useState<string>();
@@ -222,8 +256,9 @@ function FleetMap() {
 
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
   const layout = useMemo(
-    () => (fleet && saved ? layoutFleet(fleet, { agentsOnly, agentPanesOnly }, saved) : { nodes: [], edges: [] }),
-    [fleet, agentsOnly, agentPanesOnly, saved],
+    () =>
+      fleet && saved ? layoutFleet(fleet, { agentsOnly, agentPanesOnly, hiddenStatuses }, saved) : { nodes: [], edges: [] },
+    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, saved],
   );
 
   const nodes = useMemo(() => {
@@ -241,7 +276,7 @@ function FleetMap() {
             : n.type === "pane"
               ? panes.get(n.id)?.workspace.id
               : undefined;
-      return wsId && !matching.has(wsId) ? { ...n, className: "dim" } : n;
+      return wsId && !matching.has(wsId) ? { ...n, className: [n.className, "dim"].filter(Boolean).join(" ") } : n;
     });
   }, [layout, query, fleet, panes]);
 
@@ -401,11 +436,21 @@ function FleetMap() {
         <header className="toolbar">
           <strong>herdr-map</strong>
           <div className="counts">
-            {STATUSES.filter((s) => fleet?.counts[s]).map((s) => (
-              <span key={s} className={`chip status-${s}`}>
-                {fleet!.counts[s]} {s}
-              </span>
-            ))}
+            {/* A filtered-out status keeps its chip, struck through, whenever it has agents. */}
+            {STATUSES.filter((s) => fleet?.counts[s]).map((s) => {
+              const hidden = hiddenStatuses.includes(s);
+              return (
+                <button
+                  key={s}
+                  className={`chip status-${s}${hidden ? " off" : ""}`}
+                  aria-pressed={!hidden}
+                  title={`${hidden ? "Show" : "Hide"} ${s} agents. Option-click to show only ${s}.`}
+                  onClick={(e) => toggleStatus(s, e.altKey)}
+                >
+                  {fleet?.counts[s] ?? 0} {s}
+                </button>
+              );
+            })}
           </div>
           <input
             className="search"

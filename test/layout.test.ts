@@ -91,3 +91,15 @@ test("agentPanesOnly keeps only agent panes, as equal rows, and drops agentless 
   assert.ok(!nodes.some((n) => n.id === "w1:p2"), "the hunk pane is hidden");
   assert.ok(!nodes.some((n) => n.id === "ws:w3"), "a workspace with no agents has nothing to draw");
 });
+
+test("hiddenStatuses removes those agents, and agentsOnly ignores them", () => {
+  // In the fixture, w1 has a working agent and w2 a blocked one.
+  const compact = layoutFleet(fleet(), { agentsOnly: true, agentPanesOnly: true, hiddenStatuses: ["blocked"] });
+  assert.ok(compact.nodes.some((n) => n.id === "w1:p1"));
+  assert.ok(!compact.nodes.some((n) => n.id === "w2:p1" || n.id === "ws:w2"));
+
+  // The full layout keeps filtered agents in place but marks them.
+  const full = layoutFleet(fleet(), { agentsOnly: false, hiddenStatuses: ["blocked"] });
+  assert.equal(full.nodes.find((n) => n.id === "w2:p1")?.className, "status-filtered");
+  assert.equal(full.nodes.find((n) => n.id === "w1:p1")?.className, undefined);
+});

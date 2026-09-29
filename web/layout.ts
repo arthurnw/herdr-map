@@ -8,7 +8,7 @@
 // that, every workspace position is saved, and new workspaces are placed next to
 // the other members of their group.
 import type { Edge, Node } from "@xyflow/react";
-import type { Fleet, FleetGroup, FleetPane, FleetTab, FleetWorkspace } from "../shared/model.ts";
+import type { AgentStatus, Fleet, FleetGroup, FleetPane, FleetTab, FleetWorkspace } from "../shared/model.ts";
 
 export const TAB_W = 300;
 const TAB_HEADER = 22;
@@ -28,6 +28,11 @@ export interface LayoutOptions {
   agentsOnly: boolean;
   /** Draw only agent panes, one row per agent, instead of each tab's full split layout. */
   agentPanesOnly?: boolean;
+  /**
+   * Agent statuses to filter out. Those agents are removed in the agent-panes-only view
+   * and dimmed in the full layout, and they don't count toward `agentsOnly`.
+   */
+  hiddenStatuses?: AgentStatus[];
 }
 
 // When only agent panes are drawn, each agent gets a full-width row so names and
@@ -84,9 +89,9 @@ export function workspaceSize(ws: FleetWorkspace) {
 }
 
 /** Keeps a tab's agent panes in their on-screen order (left to right, then top to bottom). */
-function compactTab(tab: FleetTab): ViewTab | undefined {
+function compactTab(tab: FleetTab, shown: (p: FleetPane) => boolean): ViewTab | undefined {
   const agents = tab.panes
-    .filter((p) => p.agent)
+    .filter(shown)
     .sort((a, b) => a.rect.x - b.rect.x || a.rect.y - b.rect.y);
   if (agents.length === 0) return undefined;
   const n = agents.length;
@@ -97,15 +102,29 @@ function compactTab(tab: FleetTab): ViewTab | undefined {
   };
 }
 
+function statusFilter(opts: LayoutOptions) {
+  const hidden = new Set(opts.hiddenStatuses ?? []);
+  return {
+    /** True for an agent pane whose status passes the filter. */
+    shown: (p: FleetPane) => !!p.agent && !hidden.has(p.agent.status),
+    /** True for an agent pane the filter removes. */
+    filtered: (p: FleetPane) => !!p.agent && hidden.has(p.agent.status),
+  };
+}
+
 function visibleGroups(fleet: Fleet, opts: LayoutOptions): FleetGroup[] {
+  const { shown } = statusFilter(opts);
   return fleet.groups
     .map((g) => ({
       ...g,
       workspaces: g.workspaces
-        .filter((ws) => !opts.agentsOnly || ws.agentCount > 0)
+        .filter((ws) => !opts.agentsOnly || ws.tabs.some((t) => t.panes.some(shown)))
         .map((ws) =>
           opts.agentPanesOnly
-            ? { ...ws, tabs: ws.tabs.map(compactTab).filter((t): t is ViewTab => t !== undefined) }
+            ? {
+                ...ws,
+                tabs: ws.tabs.map((t) => compactTab(t, shown)).filter((t): t is ViewTab => t !== undefined),
+              }
             : ws,
         )
         // With agent panes only, a workspace with no agents has nothing left to draw.
@@ -215,6 +234,7 @@ export function layoutFleet(
 ): { nodes: Node[]; edges: Edge[] } {
   const groups = visibleGroups(fleet, opts);
   const placed = placeWorkspaces(groups, saved);
+  const { filtered } = statusFilter(opts);
   const nodes: Node[] = [];
 
   // Group boxes go first so they render beneath their workspaces.
@@ -288,6 +308,7 @@ export function layoutFleet(
           width: Math.max(8, pane.rect.w * tb.w - 4),
           height: Math.max(8, pane.rect.h * bodyH - 4),
           draggable: false,
+          className: filtered(pane) ? "status-filtered" : undefined,
           data: { pane } satisfies PaneData,
         });
       }
