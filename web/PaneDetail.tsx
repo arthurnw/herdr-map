@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { agentAge, formatAge } from "./nodes.tsx";
+import { ReplyBox } from "./ReplyBox.tsx";
 import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
 const PINNED_REFRESH_MS = 5000;
+// The visible screen is cheap to read; a blocked agent's dialog is kept current with it.
+const BLOCKED_REFRESH_MS = 2000;
 
 async function readScreen(paneId: string, pinned: boolean): Promise<string> {
   const params = new URLSearchParams({ pane: paneId });
@@ -85,6 +88,21 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
     };
   }, [pinned, load]);
 
+  // A blocked agent's dialog changes as it is answered, so its hover preview stays live.
+  const blocked = pane.agent?.status === "blocked";
+  useEffect(() => {
+    if (pinned || !blocked) return;
+    const id = setInterval(() => void load().catch(() => undefined), BLOCKED_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [pinned, blocked, load]);
+
+  // After input, re-read once the terminal has reacted, and again once the agent settles.
+  const afterSend = useCallback(() => {
+    stickToBottom.current = true;
+    setTimeout(() => void load().catch(() => undefined), 700);
+    setTimeout(() => void load().catch(() => undefined), 2500);
+  }, [load]);
+
   useLayoutEffect(() => {
     if (pre.current && stickToBottom.current) pre.current.scrollTop = pre.current.scrollHeight;
   }, [screen]);
@@ -144,6 +162,8 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
           </>
         )}
       </div>
+
+      {agent && <ReplyBox located={located} screen={screen} onSent={afterSend} />}
 
       {!pinned && (
         <p className="text-xs text-muted-foreground">

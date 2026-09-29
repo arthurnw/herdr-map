@@ -3,7 +3,17 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { parseArgs } from "node:util";
 import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
-import { activateApp, focus, readPane, snapshot, type FocusTarget, type HerdrOptions } from "./herdr.ts";
+import {
+  activateApp,
+  focus,
+  promptAgent,
+  readPane,
+  sendKeys,
+  sendText,
+  snapshot,
+  type FocusTarget,
+  type HerdrOptions,
+} from "./herdr.ts";
 import { defaultLayoutPath, isLayoutName, isSavedLayout, loadStore, updateStore } from "./layout-store.ts";
 
 const { values: args } = parseArgs({
@@ -165,6 +175,15 @@ const server = createServer(async (req, res) => {
       const lines = Number(url.searchParams.get("lines") ?? 60);
       const text = await readPane(herdr, url.searchParams.get("pane") ?? "", source, lines);
       return sendJson(res, 200, { text });
+    }
+    if (req.method === "POST" && ["/api/prompt", "/api/keys", "/api/text"].includes(url.pathname)) {
+      const body = (await readBody(req)) as { pane?: string; text?: unknown; keys?: unknown };
+      const pane = body.pane ?? "";
+      if (url.pathname === "/api/prompt") await promptAgent(herdr, pane, body.text);
+      else if (url.pathname === "/api/keys") await sendKeys(herdr, pane, body.keys);
+      else await sendText(herdr, pane, body.text);
+      void poll();
+      return sendJson(res, 200, { ok: true });
     }
     if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "not found" });
     return serveStatic(url.pathname, res);

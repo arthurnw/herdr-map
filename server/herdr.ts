@@ -56,6 +56,41 @@ export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource,
   return run(opts, ["pane", "read", assertId(paneId), "--source", source, "--lines", String(n)]);
 }
 
+const MAX_TEXT = 20_000;
+
+function assertText(text: unknown): string {
+  if (typeof text !== "string" || text.length === 0 || text.length > MAX_TEXT) {
+    throw new Error(`text must be 1-${MAX_TEXT} characters`);
+  }
+  return text;
+}
+
+// herdr key-combo names this UI sends: single printable characters, named keys,
+// and a few chords. herdr validates keys too; this keeps shell metacharacters out.
+const KEY = /^([a-z0-9]|enter|esc|escape|tab|backspace|space|up|down|left|right|shift\+tab|ctrl\+[a-z])$/i;
+
+export function assertKeys(keys: unknown): string[] {
+  if (!Array.isArray(keys) || keys.length === 0 || keys.length > 16 || !keys.every((k) => typeof k === "string" && KEY.test(k))) {
+    throw new Error("keys must be 1-16 herdr key names");
+  }
+  return keys;
+}
+
+/** Submits a prompt with Enter. herdr refuses this for a blocked agent; send keys instead. */
+export async function promptAgent(opts: HerdrOptions, paneId: string, text: unknown): Promise<void> {
+  await run(opts, ["agent", "prompt", assertId(paneId), assertText(text)]);
+}
+
+/** Sends key presses, for answering an agent's approval or question dialog. */
+export async function sendKeys(opts: HerdrOptions, paneId: string, keys: unknown): Promise<void> {
+  await run(opts, ["agent", "send-keys", assertId(paneId), ...assertKeys(keys)]);
+}
+
+/** Types text into a pane without pressing Enter, for free-text answers inside a dialog. */
+export async function sendText(opts: HerdrOptions, paneId: string, text: unknown): Promise<void> {
+  await run(opts, ["pane", "send-text", assertId(paneId), assertText(text)]);
+}
+
 const APP_NAME = /^[\w .-]{1,64}$/;
 
 /** Brings the terminal app that shows herdr to the front (macOS only). */
