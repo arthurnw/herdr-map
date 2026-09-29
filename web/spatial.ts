@@ -63,3 +63,15 @@ export function nearestToPoint(point: { x: number; y: number }, boxes: Box[]): s
   }
   return best?.id;
 }
+
+/** The rectangle spanned by two corner points, in either order. */
+export function rectFromPoints(a: { x: number; y: number }, b: { x: number; y: number }): Omit<Box, "id"> {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+}
+
+/** The IDs of the boxes that `rect` overlaps at all. */
+export function boxesTouching(rect: Omit<Box, "id">, boxes: Box[]): string[] {
+  return boxes
+    .filter((b) => b.x < rect.x + rect.w && b.x + b.w > rect.x && b.y < rect.y + rect.h && b.y + b.h > rect.y)
+    .map((b) => b.id);
+}

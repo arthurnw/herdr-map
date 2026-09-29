@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { nearestInDirection, nearestToPoint, type Box } from "../web/spatial.ts";
+import { boxesTouching, nearestInDirection, nearestToPoint, rectFromPoints, type Box } from "../web/spatial.ts";
 
 const box = (id: string, x: number, y: number, w = 100, h = 50): Box => ({ id, x, y, w, h });
 
@@ -67,4 +67,15 @@ test("nearestToPoint picks the card under or closest to a point", () => {
   assert.equal(nearestToPoint({ x: 150, y: 60 }, all), "b2");
   assert.equal(nearestToPoint({ x: 50, y: 300 }, all), "c");
   assert.equal(nearestToPoint({ x: 0, y: 0 }, []), undefined);
+});
+
+test("rectFromPoints accepts corners in either order", () => {
+  assert.deepEqual(rectFromPoints({ x: 10, y: 40 }, { x: 0, y: 20 }), { x: 0, y: 20, w: 10, h: 20 });
+});
+
+test("boxesTouching includes partly covered boxes and skips ones it only borders", () => {
+  // Covers the right halves of a1 and a2 and the left edges of b1 and b2, and stops where a3 begins.
+  const rect = rectFromPoints({ x: 50, y: 10 }, { x: 150, y: 100 });
+  assert.deepEqual(boxesTouching(rect, all), ["a1", "a2", "b1", "b2"]);
+  assert.deepEqual(boxesTouching(rectFromPoints({ x: 110, y: 0 }, { x: 130, y: 200 }), all), []);
 });

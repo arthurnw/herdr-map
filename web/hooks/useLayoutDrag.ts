@@ -7,6 +7,12 @@ function nodeRect(n: Node): Rect {
   return { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
 }
 
+function bounds(rects: Rect[]): Rect {
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
+}
+
 /** The saved workspace positions, loaded once from the server. Undefined until loaded. */
 export function useSavedLayout() {
   const [saved, setSaved] = useState<SavedLayout>();
@@ -21,14 +27,18 @@ export function useSavedLayout() {
   return [saved, setSaved] as const;
 }
 
+const NONE: ReadonlySet<string> = new Set();
+
 /**
  * Workspace and group dragging over the laid-out `nodes`, plus reading and applying whole
- * layouts. Settled positions are written back to the server.
+ * layouts. Settled positions are written back to the server. `selected` holds the node IDs
+ * of box-selected workspaces, which move together.
  */
 export function useLayoutDrag(
   nodes: Node[],
   saved: SavedLayout | undefined,
   setSaved: Dispatch<SetStateAction<SavedLayout | undefined>>,
+  selected: ReadonlySet<string> = NONE,
 ) {
   // Bumped after a drag or reset; the effect below writes the settled layout.
   const [saveTick, setSaveTick] = useState(0);
@@ -43,9 +53,20 @@ export function useLayoutDrag(
   // The first drag freezes the automatic layout by saving every current position.
   // Group drags apply offsets from the drag start, so repeated change events can't compound.
   const groupDrag = useRef<{ id: string; origin: { x: number; y: number }; members: SavedLayout }>(undefined);
+  // Dragging one of several box-selected workspaces moves the others by the same offset.
+  const bulkDrag = useRef<{ id: string; origin: { x: number; y: number }; members: SavedLayout }>(undefined);
 
   const onNodeDragStart = useCallback(
     (_: unknown, node: Node) => {
+      if (node.type === "workspace" && selected.has(node.id) && selected.size > 1) {
+        const members: SavedLayout = {};
+        for (const n of nodes) {
+          if (n.type !== "workspace" || n.id === node.id || !selected.has(n.id)) continue;
+          const data = n.data as WorkspaceData;
+          members[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
+        }
+        bulkDrag.current = { id: node.id, origin: { ...node.position }, members };
+      }
       if (node.type !== "group-box") return;
       const members: SavedLayout = {};
       for (const n of nodes) {
@@ -55,13 +76,14 @@ export function useLayoutDrag(
       }
       groupDrag.current = { id: node.id, origin: { ...node.position }, members };
     },
-    [nodes],
+    [nodes, selected],
   );
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const moves = changes.filter((c) => c.type === "position" && c.position);
       if (moves.length === 0) return;
+      const bulk = bulkDrag.current;
       setSaved((prev) => {
         const next: SavedLayout = { ...prev };
         const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -77,6 +99,12 @@ export function useLayoutDrag(
           if (node.type === "workspace") {
             const id = (node.data as WorkspaceData).workspace.id;
             next[id] = { ...change.position, detached: next[id]?.detached };
+            if (bulk?.id === node.id) {
+              const { origin, members } = bulk;
+              const dx = change.position.x - origin.x;
+              const dy = change.position.y - origin.y;
+              for (const [mid, p] of Object.entries(members)) next[mid] = { ...p, x: p.x + dx, y: p.y + dy };
+            }
           } else if (node.type === "group-box" && groupDrag.current?.id === node.id) {
             const { origin, members } = groupDrag.current;
             const dx = change.position.x - origin.x;
@@ -92,27 +120,38 @@ export function useLayoutDrag(
 
   const onNodeDragStop = useCallback(
     (_: unknown, node: Node) => {
+      // Read before the ref is cleared below; the updater runs later.
+      const bulk = bulkDrag.current;
       setSaved((prev) => {
         if (!prev) return prev;
         const next = { ...prev };
         if (node.type === "workspace") {
-          const data = node.data as WorkspaceData;
-          const others = nodes.filter(
-            (n) =>
-              n.type === "workspace" &&
-              n.id !== node.id &&
-              (n.data as WorkspaceData).groupKey === data.groupKey &&
-              !(n.data as WorkspaceData).detached,
+          const wsId = (n: Node) => (n.data as WorkspaceData).workspace.id;
+          const moved = nodes.filter(
+            (n) => n.type === "workspace" && (n.id === node.id || (bulk?.id === node.id && selected.has(n.id))),
           );
-          const detached = isDetachedDrop(nodeRect(node), others.map(nodeRect));
-          next[data.workspace.id] = { ...node.position, detached };
+          const movedIds = new Set(moved.map((n) => n.id));
+          const rect = (n: Node) => nodeRect({ ...n, position: n.id === node.id ? node.position : (next[wsId(n)] ?? n.position) });
+          // Workspaces moved together detach from, or rejoin, their group as one, depending on
+          // whether they land near the group members that stayed put.
+          for (const m of moved) {
+            const { groupKey } = m.data as WorkspaceData;
+            const sameGroup = (n: Node) => (n.data as WorkspaceData).groupKey === groupKey;
+            const others = nodes.filter(
+              (n) => n.type === "workspace" && !movedIds.has(n.id) && sameGroup(n) && !(n.data as WorkspaceData).detached,
+            );
+            const detached = isDetachedDrop(bounds(moved.filter(sameGroup).map(rect)), others.map(nodeRect));
+            const { x, y } = rect(m);
+            next[wsId(m)] = { x, y, detached };
+          }
         }
         return next;
       });
       groupDrag.current = undefined;
+      bulkDrag.current = undefined;
       setSaveTick((t) => t + 1);
     },
-    [nodes, setSaved],
+    [nodes, setSaved, selected],
   );
 
   // Saved positions for hidden workspaces are kept alongside the ones on screen.

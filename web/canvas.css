@@ -288,3 +288,16 @@
 .react-flow__minimap-node.status-unknown { fill: var(--status-unknown); }
 
 .react-flow__node.selected-pane .pane { box-shadow: 0 0 0 2px var(--foreground); }
+
+/* Box selection: Shift+drag draws the box; the workspaces it touches get an outline. */
+.select-box {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  border: 1px solid var(--ring);
+  background: color-mix(in oklab, var(--ring) 15%, transparent);
+}
+.react-flow__node.box-selected .workspace {
+  outline: 2px dashed var(--foreground);
+  outline-offset: 3px;
+}

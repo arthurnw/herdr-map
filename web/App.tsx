@@ -37,6 +37,7 @@ import {
 import { Toolbar } from "./Toolbar.tsx";
 import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
+import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
@@ -101,10 +102,12 @@ function FleetMap() {
     panes,
     nodes,
   );
+  const boxSelect = useBoxSelect(shownNodes);
   const { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout } = useLayoutDrag(
     layout.nodes,
     saved,
     setSaved,
+    boxSelect.selected,
   );
 
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
@@ -228,9 +231,13 @@ function FleetMap() {
         )}
         <ResizablePanelGroup className="min-h-0 flex-1" {...panels}>
           <ResizablePanel id="canvas" minSize="30">
-            <main className={`canvas h-full ${zoomClass(zoom)}`} style={{ "--z": zoom } as React.CSSProperties}>
+            <main
+              className={`canvas h-full ${zoomClass(zoom)}`}
+              style={{ "--z": zoom } as React.CSSProperties}
+              onMouseDownCapture={boxSelect.onMouseDownCapture}
+            >
               <ReactFlow
-                nodes={shownNodes}
+                nodes={boxSelect.nodes}
                 edges={layout.edges}
                 nodeTypes={nodeTypes}
                 nodesConnectable={false}
@@ -239,6 +246,7 @@ function FleetMap() {
                 onNodeDragStart={onNodeDragStart}
                 onNodeDragStop={onNodeDragStop}
                 onNodeClick={onNodeClick}
+                onPaneClick={boxSelect.onPaneClick}
                 onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
                 onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
                 minZoom={0.05}
@@ -260,6 +268,12 @@ function FleetMap() {
                 </Panel>
                 <MiniMap pannable zoomable nodeClassName={minimapClass} className="overflow-hidden rounded-lg border shadow-sm" />
               </ReactFlow>
+              {boxSelect.box && (
+                <div
+                  className="select-box"
+                  style={{ left: boxSelect.box.x, top: boxSelect.box.y, width: boxSelect.box.w, height: boxSelect.box.h }}
+                />
+              )}
             </main>
           </ResizablePanel>
           <ResizableHandle withHandle />
