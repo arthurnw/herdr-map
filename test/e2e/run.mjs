@@ -6,7 +6,7 @@
 //
 // Needs Google Chrome installed; playwright-core drives it through the "chrome" channel.
 import { spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -307,6 +307,19 @@ test("the app manifest and icons are served", async (page) => {
   });
   assert(res[0] === 200 && res[1].includes("manifest") && res[2] === 200 && res[3] === "image/png", `got ${res}`);
 });
+
+// Feature checks can live in their own files: each module in checks/ default-exports
+// a function that registers tests with the helpers below.
+const checksDir = join(here, "checks");
+const helpers = {
+  test, assert, openPage, agentCards, chip, card, needsYouRow, detailTitle,
+  actions, clearActions, writeSnapshot, snapshot, setStatus, layoutFile, stubDir: dir, base,
+};
+if (existsSync(checksDir)) {
+  for (const file of readdirSync(checksDir).filter((f) => f.endsWith(".mjs")).sort()) {
+    (await import(join(checksDir, file))).default(helpers);
+  }
+}
 
 let failures = 0;
 try {
