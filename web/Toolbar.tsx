@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { useTheme } from "next-themes";
 import { Bell, BellOff, Monitor, Moon, Network, Search, SlidersHorizontal, Sun } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { notificationPermission, playChime, type AlertSettings } from "./alerts.ts";
+import { useShortcut } from "./hooks/useShortcut.ts";
 import { LayoutMenu, type LayoutMenuProps } from "./LayoutMenu.tsx";
 import { StatusDot } from "./status.tsx";
 
@@ -110,16 +111,7 @@ function StatusFilter({
 function SearchBox({ query, onQuery, onEnter }: { query: string; onQuery: (q: string) => void; onEnter: () => void }) {
   const input = useRef<HTMLInputElement>(null);
   // "/" jumps to the filter box from anywhere except another text field.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (e.key !== "/" || target.closest("input, textarea, [contenteditable]")) return;
-      e.preventDefault();
-      input.current?.focus();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  useShortcut({ key: "/", description: "Filter workspaces" }, () => input.current?.focus());
   return (
     <div className="relative w-full max-w-sm">
       <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />

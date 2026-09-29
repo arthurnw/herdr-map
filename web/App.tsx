@@ -8,7 +8,6 @@ import {
   ReactFlowProvider,
   useReactFlow,
   type Node,
-  type NodeChange,
   type Viewport,
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
@@ -19,22 +18,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  isDetachedDrop,
-  layoutFleet,
-  type GroupData,
-  type PaneData,
-  type Rect,
-  type SavedLayout,
-  type TabData,
-  type WorkspaceData,
-} from "./layout.ts";
+import { layoutFleet, type PaneData, type TabData, type WorkspaceData } from "./layout.ts";
 import { NowContext, nodeTypes } from "./nodes.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import {
   indexPanes,
   paneTarget,
-  putLayout,
   requestFocus,
   safeStorage,
   useHiddenStatuses,
@@ -48,15 +37,14 @@ import {
 import { Toolbar } from "./Toolbar.tsx";
 import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
+import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
+import { useSelection } from "./hooks/useSelection.ts";
+import { useShortcut } from "./hooks/useShortcut.ts";
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
   if (zoom < 0.7) return "zoom-mid";
   return "zoom-near";
-}
-
-function nodeRect(n: Node): Rect {
-  return { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
 }
 
 function minimapClass(node: Node): string {
@@ -75,27 +63,11 @@ function FleetMap() {
   const [hiddenStatuses, toggleStatus] = useHiddenStatuses();
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
-  const [hovered, setHovered] = useState<string>();
-  const [pinned, setPinned] = useState<string>();
-  const [saved, setSaved] = useState<SavedLayout>();
-  // Bumped after a drag or reset; the effect below writes the settled layout.
-  const [saveTick, setSaveTick] = useState(0);
-  const { fitView, zoomIn, zoomOut, getInternalNode, getZoom, setCenter } = useReactFlow();
+  const [saved, setSaved] = useSavedLayout();
+  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
   const fitted = useRef(false);
   const panels = useDefaultLayout({ id: "herdr-map.panels", storage: safeStorage });
-
-  useEffect(() => {
-    fetch("/api/layout")
-      .then((res) => res.json())
-      .then((layout: SavedLayout) => setSaved(layout))
-      .catch(() => setSaved({}));
-  }, []);
-
-  useEffect(() => {
-    if (saveTick > 0 && saved) void putLayout(saved);
-    // Only a new tick should trigger a write, not every drag frame.
-  }, [saveTick]);
 
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
   const layout = useMemo(
@@ -122,6 +94,16 @@ function FleetMap() {
       return wsId && !matching.has(wsId) ? { ...n, className: [n.className, "dim"].filter(Boolean).join(" ") } : n;
     });
   }, [layout, query, fleet, panes]);
+
+  const { hovered, setHovered, pinned, setPinned, select, clear, pinnedPane, detailPane, shownNodes } = useSelection(
+    panes,
+    nodes,
+  );
+  const { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout } = useLayoutDrag(
+    layout.nodes,
+    saved,
+    setSaved,
+  );
 
   useEffect(() => {
     if (!fitted.current && layout.nodes.length > 0) {
@@ -156,102 +138,6 @@ function FleetMap() {
     [panes, focus, focusPane],
   );
 
-  // Dragging a workspace moves it; dragging a group box moves its attached workspaces.
-  // The first drag freezes the automatic layout by saving every current position.
-  // Group drags apply offsets from the drag start, so repeated change events can't compound.
-  const groupDrag = useRef<{ id: string; origin: { x: number; y: number }; members: SavedLayout }>(undefined);
-
-  const onNodeDragStart = useCallback(
-    (_: unknown, node: Node) => {
-      if (node.type !== "group-box") return;
-      const members: SavedLayout = {};
-      for (const n of layout.nodes) {
-        if (n.type !== "workspace") continue;
-        const id = (n.data as WorkspaceData).workspace.id;
-        if ((node.data as GroupData).memberIds.includes(id)) members[id] = { ...n.position, detached: false };
-      }
-      groupDrag.current = { id: node.id, origin: { ...node.position }, members };
-    },
-    [layout.nodes],
-  );
-
-  const onNodesChange = useCallback(
-    (changes: NodeChange[]) => {
-      const moves = changes.filter((c) => c.type === "position" && c.position);
-      if (moves.length === 0) return;
-      setSaved((prev) => {
-        const next: SavedLayout = { ...prev };
-        const byId = new Map(layout.nodes.map((n) => [n.id, n]));
-        if (Object.keys(next).length === 0) {
-          for (const n of layout.nodes) {
-            if (n.type === "workspace") next[(n.data as WorkspaceData).workspace.id] = { ...n.position };
-          }
-        }
-        for (const change of moves) {
-          if (change.type !== "position" || !change.position) continue;
-          const node = byId.get(change.id);
-          if (!node) continue;
-          if (node.type === "workspace") {
-            const id = (node.data as WorkspaceData).workspace.id;
-            next[id] = { ...change.position, detached: next[id]?.detached };
-          } else if (node.type === "group-box" && groupDrag.current?.id === node.id) {
-            const { origin, members } = groupDrag.current;
-            const dx = change.position.x - origin.x;
-            const dy = change.position.y - origin.y;
-            for (const [id, p] of Object.entries(members)) next[id] = { x: p.x + dx, y: p.y + dy };
-          }
-        }
-        return next;
-      });
-    },
-    [layout.nodes],
-  );
-
-  const onNodeDragStop = useCallback(
-    (_: unknown, node: Node) => {
-      setSaved((prev) => {
-        if (!prev) return prev;
-        const next = { ...prev };
-        if (node.type === "workspace") {
-          const data = node.data as WorkspaceData;
-          const others = layout.nodes.filter(
-            (n) =>
-              n.type === "workspace" &&
-              n.id !== node.id &&
-              (n.data as WorkspaceData).groupKey === data.groupKey &&
-              !(n.data as WorkspaceData).detached,
-          );
-          const detached = isDetachedDrop(nodeRect(node), others.map(nodeRect));
-          next[data.workspace.id] = { ...node.position, detached };
-        }
-        return next;
-      });
-      groupDrag.current = undefined;
-      setSaveTick((t) => t + 1);
-    },
-    [layout.nodes],
-  );
-
-  // Saved positions for hidden workspaces are kept alongside the ones on screen.
-  const currentPositions = useCallback((): SavedLayout => {
-    const out: SavedLayout = { ...saved };
-    for (const n of layout.nodes) {
-      if (n.type !== "workspace") continue;
-      const data = n.data as WorkspaceData;
-      out[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
-    }
-    return out;
-  }, [saved, layout.nodes]);
-
-  const applyLayout = useCallback(
-    (next: SavedLayout) => {
-      setSaved(next);
-      setSaveTick((t) => t + 1);
-      requestAnimationFrame(() => fitView({ padding: 0.05 }));
-    },
-    [fitView],
-  );
-
   const attention = useMemo(
     () =>
       [...panes.values()]
@@ -271,36 +157,7 @@ function FleetMap() {
     if (hit) focusPane(hit);
   };
 
-  // A pinned pane holds the preview until unpinned or closed; otherwise it follows the pointer.
-  const pinnedPane = pinned ? panes.get(pinned) : undefined;
-  const detailPane = pinnedPane ?? (hovered ? panes.get(hovered) : undefined);
-
-  // Selecting an agent pins its preview and pans the map to it, zooming in only when
-  // it would be too small to read.
-  const select = useCallback(
-    (paneId: string) => {
-      setPinned(paneId);
-      const node = getInternalNode(paneId);
-      if (!node) return;
-      const { x, y } = node.internals.positionAbsolute;
-      setCenter(x + (node.width ?? 0) / 2, y + (node.height ?? 0) / 2, {
-        zoom: Math.max(getZoom(), 0.9),
-        duration: 350,
-      });
-    },
-    [getInternalNode, getZoom, setCenter],
-  );
-
   useAgentAlerts(panes, alerts, select);
-
-  // Outline the selected agent so it's easy to find after the map pans to it.
-  const shownNodes = useMemo(
-    () =>
-      pinned
-        ? nodes.map((n) => (n.id === pinned ? { ...n, className: [n.className, "selected-pane"].filter(Boolean).join(" ") } : n))
-        : nodes,
-    [nodes, pinned],
-  );
 
   useEffect(() => {
     document.title = attention.length ? `(${attention.length}) herdr-map` : "herdr-map";
@@ -308,30 +165,23 @@ function FleetMap() {
 
   // n / shift+n cycle through Needs you, o or Enter opens the selection in the terminal,
   // r moves to the reply box, and Esc clears the selection.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (target.closest("input, textarea, select, [contenteditable], [role=menu]")) return;
-      const k = e.key;
-      if (k === "n" || k === "N") {
-        if (attention.length === 0) return;
-        const i = attention.findIndex((l) => l.pane.id === pinned);
-        const next = k === "N" ? (i <= 0 ? attention.length - 1 : i - 1) : (i + 1) % attention.length;
-        select(attention[next].pane.id);
-      } else if ((k === "o" || k === "Enter") && pinnedPane) {
-        focusPane(pinnedPane);
-      } else if (k === "r" && pinnedPane?.pane.agent) {
-        window.dispatchEvent(new Event(FOCUS_REPLY_EVENT));
-      } else if (k === "Escape" && (pinned || hovered)) {
-        setPinned(undefined);
-        setHovered(undefined);
-      } else return;
-      e.preventDefault();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [attention, pinned, hovered, pinnedPane, select, focusPane]);
+  const cycle = (step: 1 | -1) => {
+    const i = attention.findIndex((l) => l.pane.id === pinned);
+    const next = step < 0 ? (i <= 0 ? attention.length - 1 : i - 1) : (i + 1) % attention.length;
+    select(attention[next].pane.id);
+  };
+  const hasAttention = attention.length > 0;
+  useShortcut({ key: "n", description: "Next in Needs you", enabled: hasAttention }, () => cycle(1));
+  useShortcut({ key: "N", description: "Previous in Needs you", enabled: hasAttention }, () => cycle(-1));
+  const open = () => {
+    if (pinnedPane) focusPane(pinnedPane);
+  };
+  useShortcut({ key: "o", description: "Open selection in terminal", enabled: !!pinnedPane }, open);
+  useShortcut({ key: "Enter", description: "Open selection in terminal", enabled: !!pinnedPane }, open);
+  useShortcut({ key: "r", description: "Reply to selected agent", enabled: !!pinnedPane?.pane.agent }, () =>
+    window.dispatchEvent(new Event(FOCUS_REPLY_EVENT)),
+  );
+  useShortcut({ key: "Escape", description: "Clear selection", enabled: !!(pinned || hovered) }, clear);
 
   return (
     <NowContext.Provider value={now}>
