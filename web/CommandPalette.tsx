@@ -100,8 +100,8 @@ export function CommandPalette(props: Props) {
   const { theme = "system", setTheme } = useTheme();
   const { fitView, getInternalNode } = useReactFlow();
 
-  useShortcut({ key: "k", meta: true, description: PALETTE_SHORTCUT }, () => setOpen((o) => !o));
-  useShortcut({ key: "k", ctrl: true, description: PALETTE_SHORTCUT }, () => setOpen((o) => !o));
+  useShortcut({ key: "k", meta: true, description: PALETTE_SHORTCUT, inInputs: true }, () => setOpen((o) => !o));
+  useShortcut({ key: "k", ctrl: true, description: PALETTE_SHORTCUT, inInputs: true }, () => setOpen((o) => !o));
 
   useEffect(() => {
     const show = () => setOpen(true);

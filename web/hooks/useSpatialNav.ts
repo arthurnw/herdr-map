@@ -7,7 +7,11 @@ import { useShortcut } from "./useShortcut.ts";
  * Arrow keys move the selection to the nearest agent card in that direction. With nothing
  * selected, the first press selects the card nearest the middle of the view.
  */
-export function useSpatialNav(nodes: Node[], selectedId: string | undefined, select: (paneId: string) => void) {
+export function useSpatialNav(
+  nodes: Node[],
+  selectedId: string | undefined,
+  select: (paneId: string, options?: { keepZoom?: boolean }) => void,
+) {
   const { getInternalNode } = useReactFlow();
   const store = useStoreApi();
 
@@ -33,7 +37,7 @@ export function useSpatialNav(nodes: Node[], selectedId: string | undefined, sel
       const [tx, ty, zoom] = transform;
       next = nearestToPoint({ x: (width / 2 - tx) / zoom, y: (height / 2 - ty) / zoom }, cards);
     }
-    if (next) select(next);
+    if (next) select(next, { keepZoom: true });
   };
 
   const enabled = agentIds.length > 0;

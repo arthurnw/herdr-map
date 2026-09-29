@@ -13,15 +13,16 @@ export function useSelection(panes: Map<string, Located>, nodes: Node[]) {
   const detailPane = pinnedPane ?? (hovered ? panes.get(hovered) : undefined);
 
   // Selecting an agent pins its preview and pans the map to it, zooming in only when
-  // it would be too small to read.
+  // it would be too small to read. Arrow-key movement keeps the zoom so stepping
+  // between cards doesn't jump in and out.
   const select = useCallback(
-    (paneId: string) => {
+    (paneId: string, options: { keepZoom?: boolean } = {}) => {
       setPinned(paneId);
       const node = getInternalNode(paneId);
       if (!node) return;
       const { x, y } = node.internals.positionAbsolute;
       setCenter(x + (node.width ?? 0) / 2, y + (node.height ?? 0) / 2, {
-        zoom: Math.max(getZoom(), 0.9),
+        zoom: options.keepZoom ? getZoom() : Math.max(getZoom(), 0.9),
         duration: 350,
       });
     },

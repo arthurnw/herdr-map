@@ -94,3 +94,12 @@ test("a disabled binding lets a later binding for the same key handle it", () =>
   const second = reg({ key: "Enter" });
   assert.equal(findShortcut([first, second], key("Enter")), second);
 });
+
+test("a binding marked inInputs still fires while typing", () => {
+  const input = { closest: (sel: string) => (sel.includes("input") ? {} : null) };
+  const palette = { binding: { key: "k", meta: true, description: "Palette", inInputs: true }, handler: () => {} };
+  const next = { binding: { key: "n", description: "Next" }, handler: () => {} };
+  const event = (key: string, metaKey = false) => ({ key, metaKey, ctrlKey: false, altKey: false, shiftKey: false, target: input, preventDefault() {} });
+  assert.equal(findShortcut([palette, next], event("k", true)), palette);
+  assert.equal(findShortcut([palette, next], event("n")), undefined);
+});
