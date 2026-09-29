@@ -162,33 +162,43 @@ export function useLayoutDrag(
     [nodes, setSaved, selected, setDragging],
   );
 
-  // Takes a workspace out of its repo box, or puts it back, without dragging. A removed
-  // workspace goes just right of the box; a returned one goes where a new member would.
+  // Takes workspaces out of their repo box, or puts them back, without dragging. Removed
+  // workspaces keep their arrangement and go just right of the box; returned ones go where
+  // new members would. A box always keeps at least one workspace.
   const setDetached = useCallback(
-    (wsId: string, detach: boolean) => {
+    (wsIds: string | string[], detach: boolean) => {
+      const ids = new Set(typeof wsIds === "string" ? [wsIds] : wsIds);
       const id = (n: Node) => (n.data as WorkspaceData).workspace.id;
-      const node = nodes.find((n) => n.type === "workspace" && id(n) === wsId);
-      if (!node) return;
-      const { groupKey } = node.data as WorkspaceData;
-      const others = nodes.filter(
-        (n) =>
-          n.type === "workspace" &&
-          n !== node &&
-          (n.data as WorkspaceData).groupKey === groupKey &&
-          !(n.data as WorkspaceData).detached,
-      );
-      if (detach && others.length === 0) return;
+      const data = (n: Node) => n.data as WorkspaceData;
+      const workspaces = nodes.filter((n) => n.type === "workspace");
+      const byGroup = new Map<string, Node[]>();
+      for (const n of workspaces) {
+        if (!ids.has(id(n)) || data(n).detached === detach) continue;
+        byGroup.set(data(n).groupKey, [...(byGroup.get(data(n).groupKey) ?? []), n]);
+      }
+      const moved: SavedLayout = {};
+      const returned: string[] = [];
+      for (const [groupKey, members] of byGroup) {
+        if (!detach) {
+          returned.push(...members.map(id));
+          continue;
+        }
+        const others = workspaces.filter((n) => !ids.has(id(n)) && data(n).groupKey === groupKey && !data(n).detached);
+        if (others.length === 0) continue;
+        const box = bounds(others.map(nodeRect));
+        const from = bounds(members.map(nodeRect));
+        const dx = box.x + box.w + 120 - from.x;
+        const dy = box.y - from.y;
+        for (const m of members) moved[id(m)] = { x: m.position.x + dx, y: m.position.y + dy, detached: true };
+      }
+      if (Object.keys(moved).length === 0 && returned.length === 0) return;
       setSaved((prev) => {
         const next: SavedLayout = { ...prev };
         if (Object.keys(next).length === 0) {
-          for (const n of nodes) if (n.type === "workspace") next[id(n)] = { ...n.position };
+          for (const n of workspaces) next[id(n)] = { ...n.position };
         }
-        if (detach) {
-          const box = bounds(others.map(nodeRect));
-          next[wsId] = { x: box.x + box.w + 120, y: box.y, detached: true };
-        } else {
-          delete next[wsId];
-        }
+        Object.assign(next, moved);
+        for (const r of returned) delete next[r];
         return next;
       });
       setSaveTick((t) => t + 1);

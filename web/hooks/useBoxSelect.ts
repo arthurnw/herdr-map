@@ -69,5 +69,5 @@ export function useBoxSelect(nodes: Node[]) {
     [nodes, selected],
   );
 
-  return { nodes: marked, selected, box, onMouseDownCapture, onPaneClick };
+  return { nodes: marked, selected, box, onMouseDownCapture, onPaneClick, clear };
 }

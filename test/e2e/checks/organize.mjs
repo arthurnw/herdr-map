@@ -219,4 +219,52 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     await page.waitForTimeout(400);
     assert(JSON.stringify(store().current) === before, "⌘Z in a note must not undo the layout");
   });
+
+  test("organize: bulk actions for box-selected workspaces", async (page) => {
+    clearActions();
+    const [a, b] = await Promise.all(["w1", "w2"].map((id) => ws(page, id).boundingBox()));
+    await page.keyboard.down("Shift");
+    await page.mouse.move(a.x - 6, a.y - 6);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x + b.width / 2) / 2, a.y + 20);
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    const bar = page.getByRole("toolbar", { name: "Selected workspaces" });
+    await bar.waitFor();
+    assert((await bar.textContent()).includes("2 workspaces"), `the bar should count the selection, got ${await bar.textContent()}`);
+
+    await bar.getByRole("button", { name: "Collapse" }).click();
+    await page.waitForTimeout(400);
+    const meta = () => store().workspaces ?? {};
+    assert(meta().w1?.collapsed && meta().w2?.collapsed && !meta().w3, `both should collapse, got ${JSON.stringify(meta())}`);
+
+    await bar.getByRole("button", { name: "Add tag" }).click();
+    await page.keyboard.type("batch");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(400);
+    assert(meta().w1?.tags?.includes("batch") && meta().w2?.tags?.includes("batch"), `both should be tagged, got ${JSON.stringify(meta())}`);
+    assert((await page.locator(".react-flow__node.box-selected").count()) === 2, "Enter in the tag input keeps the selection");
+
+    await bar.getByRole("button", { name: "Expand" }).click();
+    await bar.getByRole("button", { name: "Take out of box" }).click();
+    await page.waitForTimeout(500);
+    const cur = () => store().current ?? {};
+    assert(cur().w1?.detached && cur().w2?.detached && !cur().w3?.detached, `both should leave the box, got ${JSON.stringify(cur())}`);
+    const [a2, b2] = await Promise.all(["w1", "w2"].map((id) => ws(page, id).boundingBox()));
+    assert(Math.round(b2.x - a2.x) === Math.round(b.x - a.x), "workspaces taken out together keep their arrangement");
+    assert(await bar.getByRole("button", { name: "Take out of box" }).isDisabled(), "the box's last workspace can't be taken out");
+
+    await bar.getByRole("button", { name: "Put back in box" }).click();
+    await page.waitForTimeout(500);
+    assert(!cur().w1 && !cur().w2, `putting them back hands their positions to the box, got ${JSON.stringify(cur())}`);
+    await page.keyboard.press("Meta+z");
+    await page.waitForTimeout(400);
+    assert(cur().w1?.detached && cur().w2?.detached, "one undo should take both out again");
+
+    await bar.getByRole("button", { name: "Clear selection" }).click();
+    await page.waitForTimeout(200);
+    assert((await bar.count()) === 0 && (await page.locator(".react-flow__node.box-selected").count()) === 0, "Clear should end the selection");
+    assert(actions().length === 0, `bulk actions must not focus anything, got ${actions()}`);
+  });
 };

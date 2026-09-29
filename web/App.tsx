@@ -51,6 +51,7 @@ import { useShortcut } from "./hooks/useShortcut.ts";
 import { useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
+import { BulkBar } from "./BulkBar.tsx";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 
@@ -291,6 +292,9 @@ function FleetMap() {
                 proOptions={{ hideAttribution: true }}
               >
                 <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
+                <Panel position="top-center">
+                  <BulkBar nodes={layout.nodes} selected={boxSelect.selected} onClear={boxSelect.clear} />
+                </Panel>
                 <Panel position="bottom-left" className="flex flex-col gap-1">
                   <CanvasButton label="Zoom in" onClick={() => zoomIn()}>
                     <Plus />

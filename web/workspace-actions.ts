@@ -3,7 +3,7 @@ import type { TintColor } from "../shared/organize.ts";
 
 /** Layout actions the workspace and repo box header menus call; provided by the map. */
 export interface WorkspaceActionsValue {
-  setDetached(workspaceId: string, detach: boolean): void;
+  setDetached(workspaceIds: string | string[], detach: boolean): void;
   setCollapsed(workspaceIds: string[], collapsed: boolean): void;
   setWorkspaceColor(workspaceIds: string[], color: TintColor | null): void;
   setGroupColor(groupKey: string, color: TintColor | null): void;
