@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
@@ -168,6 +168,8 @@ interface ReadResult {
   store: LayoutStore;
   /** The version the file declared; 1 for files from before versioning. */
   fileVersion: number;
+  /** The file exists but isn't valid JSON. */
+  corrupt?: boolean;
 }
 
 function parseStore(value: unknown): ReadResult {
@@ -192,10 +194,16 @@ function parseStore(value: unknown): ReadResult {
 }
 
 async function readStore(path: string): Promise<ReadResult> {
+  let raw: string;
   try {
-    return parseStore(JSON.parse(await readFile(path, "utf8")));
+    raw = await readFile(path, "utf8");
   } catch {
     return { store: emptyStore(), fileVersion: LAYOUT_VERSION };
+  }
+  try {
+    return parseStore(JSON.parse(raw));
+  } catch {
+    return { store: emptyStore(), fileVersion: LAYOUT_VERSION, corrupt: true };
   }
 }
 
@@ -215,13 +223,15 @@ let queue: Promise<unknown> = Promise.resolve();
 
 export function updateStore<T>(path: string, fn: (store: LayoutStore) => T): Promise<T> {
   const run = queue.then(async () => {
-    const { store, fileVersion } = await readStore(path);
+    const { store, fileVersion, corrupt } = await readStore(path);
     // Writing would drop fields this version doesn't know about.
     if (fileVersion > LAYOUT_VERSION) {
       throw new Error(
         `${path} uses layout version ${fileVersion}, newer than this herdr-map supports (${LAYOUT_VERSION}); not overwriting it`,
       );
     }
+    // Keep an unreadable file (say, hand-edited with a typo) before starting a new one.
+    if (corrupt) await copyFile(path, `${path}.corrupt-${new Date().toISOString().replaceAll(":", "-")}`);
     const result = fn(store);
     await saveStore(path, store);
     return result;

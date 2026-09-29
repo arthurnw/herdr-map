@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -191,4 +191,17 @@ test("history keeps only the newest entries", () => {
   );
   for (let i = 0; i < 60; i++) pushHistory(store, {});
   assert.equal(store.history.length, 50);
+});
+
+test("backs up an unreadable file before replacing it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "herdr-map-"));
+  const path = join(dir, "layout.json");
+  await writeFile(path, '{"version": 2, "current": {');
+  await updateStore(path, (s) => {
+    s.current = { w1: { x: 1, y: 1 } };
+  });
+  const backups = (await readdir(dir)).filter((f) => f.startsWith("layout.json.corrupt-"));
+  assert.equal(backups.length, 1);
+  assert.equal(await readFile(join(dir, backups[0]), "utf8"), '{"version": 2, "current": {');
+  assert.deepEqual((await loadStore(path)).current, { w1: { x: 1, y: 1 } });
 });
