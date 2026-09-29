@@ -1,0 +1,146 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
+import { extname, join, normalize } from "node:path";
+import { parseArgs } from "node:util";
+import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
+import { activateApp, focus, readPane, snapshot, type FocusTarget, type HerdrOptions } from "./herdr.ts";
+
+const { values: args } = parseArgs({
+  options: {
+    ssh: { type: "string" },
+    herdr: { type: "string", default: "herdr" },
+    host: { type: "string", default: "127.0.0.1" },
+    port: { type: "string", default: "4747" },
+    interval: { type: "string", default: "1500" },
+    activate: { type: "string", default: "Ghostty" },
+    "no-activate": { type: "boolean", default: false },
+  },
+});
+
+const herdr: HerdrOptions = { ssh: args.ssh, bin: args.herdr! };
+const intervalMs = Number(args.interval);
+const activate = args["no-activate"] ? undefined : args.activate;
+const distDir = join(import.meta.dirname, "..", "dist");
+
+interface State {
+  fleet?: Fleet;
+  error?: string;
+  updatedAt?: number;
+}
+
+const clock = new StatusClock();
+const clients = new Set<ServerResponse>();
+let state: State = {};
+let lastPayload = "";
+let pollTimer: NodeJS.Timeout | undefined;
+let polling = false;
+let pollAgain = false;
+
+function broadcast(payload: string) {
+  for (const res of clients) res.write(`data: ${payload}\n\n`);
+}
+
+async function poll(): Promise<void> {
+  // A focus request asks for an immediate poll; never run two at once.
+  if (polling) {
+    pollAgain = true;
+    return;
+  }
+  polling = true;
+  clearTimeout(pollTimer);
+  try {
+    const snap = await snapshot(herdr);
+    const now = Date.now();
+    state = { fleet: buildFleet(snap, clock.observe(snap.agents, now)), updatedAt: now };
+  } catch (err) {
+    state = { ...state, error: (err as Error).message };
+  }
+  const { updatedAt, ...rest } = state;
+  const payload = JSON.stringify(rest);
+  // Only push when something visible changed; clients age timestamps locally.
+  if (payload !== lastPayload) {
+    lastPayload = payload;
+    broadcast(JSON.stringify(state));
+  }
+  polling = false;
+  if (pollAgain) {
+    pollAgain = false;
+    return poll();
+  }
+  pollTimer = setTimeout(poll, intervalMs);
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown) {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  let raw = "";
+  for await (const chunk of req) raw += chunk;
+  return JSON.parse(raw || "{}");
+}
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+};
+
+async function serveStatic(path: string, res: ServerResponse) {
+  // normalize() resolves `..` against the leading `/`, so rel stays inside distDir.
+  const rel = normalize(path === "/" ? "/index.html" : path);
+  try {
+    const body = await readFile(join(distDir, rel));
+    res.writeHead(200, { "content-type": MIME[extname(rel)] ?? "application/octet-stream" });
+    res.end(body);
+  } catch {
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end(path === "/" ? "dist/ not found. Run `npm run build` first." : "not found");
+  }
+}
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  try {
+    if (url.pathname === "/api/events") {
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      res.write(`data: ${JSON.stringify(state)}\n\n`);
+      clients.add(res);
+      req.on("close", () => clients.delete(res));
+      return;
+    }
+    if (url.pathname === "/api/fleet") return sendJson(res, 200, state);
+    if (url.pathname === "/api/focus" && req.method === "POST") {
+      const target = (await readBody(req)) as FocusTarget;
+      await focus(herdr, target);
+      if (activate) await activateApp(activate);
+      void poll();
+      return sendJson(res, 200, { ok: true });
+    }
+    if (url.pathname === "/api/read") {
+      const text = await readPane(herdr, url.searchParams.get("pane") ?? "", 60);
+      return sendJson(res, 200, { text });
+    }
+    if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "not found" });
+    return serveStatic(url.pathname, res);
+  } catch (err) {
+    return sendJson(res, 500, { error: (err as Error).message });
+  }
+});
+
+// SSE proxies and browsers drop idle streams; a comment line keeps them open.
+setInterval(() => {
+  for (const res of clients) res.write(": ping\n\n");
+}, 20_000);
+
+server.listen(Number(args.port), args.host, () => {
+  const source = herdr.ssh ? `ssh ${herdr.ssh}` : "local herdr";
+  console.log(`herdr-map on http://${args.host}:${args.port} (${source}, every ${intervalMs}ms)`);
+  void poll();
+});
