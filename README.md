@@ -90,6 +90,8 @@ herdr drops pane tokens when its server restarts.
 
 ## Development
 
+`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, and key it would have sent, and refuses anything else. It never reaches a real herdr session.
+
 The UI uses [shadcn/ui](https://ui.shadcn.com) components (in `web/components/ui`, added with `npx shadcn@latest add <name>`) on Tailwind CSS v4. Canvas node styles and the zoom-adaptive text rules live in `web/canvas.css`.
 
 
@@ -98,6 +100,7 @@ npm run dev:server   # API on :4747 with --watch
 npm run dev:web      # Vite on :5173, proxying /api
 npm test
 npm run typecheck
+npm run build && npm run test:e2e   # browser checks against a stand-in herdr (needs Google Chrome)
 ```
 
 The server lives in `server/`, the snapshot-to-view-model conversion in `shared/model.ts`, and canvas layout and rendering in `web/`.
