@@ -12,6 +12,7 @@ herdr stays the host. herdr-map reads `herdr api snapshot` and uses herdr's own 
 - **Status filter**: click a status chip in the toolbar (for example, `24 idle`) to hide or show agents with that status. Option-click a chip to show only that status, and Option-click it again to show everything. Filtered agents disappear in the agent-panes-only view and fade in the full layout. The **Needs you** list ignores the filter, so blocked agents are never hidden there.
 - **Finish markers**: a workspace with finished agents shows a green count on its header, and finished panes are outlined on the minimap, until you focus them.
 - **Stuck agents**: every 10 polls (15 s by default) the server reads the screen of each working agent. An agent whose screen hasn't changed for `--stuck-minutes` (spinner lines and ticking timers don't count as changes) shows "stuck 7m" on its card, and one with a rate-limit, usage-limit, or API error message near the bottom of its screen shows "rate limited" or "API error" right away.
+- **Context and cost**: agent cards show how full each agent's context window is, as "61% ctx" and a thin bar along the bottom edge that turns amber at 80%. The preview shows the tokens, the window, the model, and cost where the agent records it (Pi does; Claude Code and Codex don't), with a total for the workspace. The numbers come from the agents' own transcripts; see [Context and cost](#context-and-cost).
 - **Needs you**: blocked agents first, then stuck ones, then finished ones, oldest first. Clicking a row selects that agent: the map pans to it and its preview stays in the sidebar. The terminal button on the row opens it in your terminal instead.
 - **Starred agents**: press `s` or the star button in the preview to star the selected agent. Starred agents get a star on their card and are listed under **Starred** at the top of the sidebar whatever their status; `g` moves to the next one. Stars are remembered per browser.
 - **Rename agents**: the pencil next to an agent's name in the preview opens an input. Enter renames it with `herdr agent rename`, and Esc cancels. Names follow herdr's rules (up to 32 lowercase letters, digits, `-`, or `_`, starting with a letter, and not used by another agent).
@@ -80,6 +81,8 @@ Logs go to `~/Library/Logs/herdr-map.log`. The first click that brings your term
 | `--activate APP` | `Ghostty` | macOS app to bring forward after a focus. |
 | `--no-activate` | off | Skip app activation. |
 | `--layout FILE` | `~/.config/herdr-map/layout.json` | Where the current and named layouts are saved. |
+| `--probe-node BIN` | `node` on the SSH host; this server's Node locally | Node.js 23.6 or newer that runs the context and cost reader where the agents are. |
+| `--no-probe` | off | Don't read agent transcripts; cards show no context or cost. |
 
 Status ages start when herdr-map first sees a status. Ages that began before the server started are lower bounds and show a trailing `+`.
 
@@ -95,9 +98,19 @@ herdr agent start worker --kind claude --pane "$child"
 
 herdr drops pane tokens when its server restarts.
 
+## Context and cost
+
+Every 5 seconds the server runs a small reader (`probe/usage.ts`) where the agents run: over the same SSH connection as herdr with `--ssh`, locally otherwise. The script is sent on stdin to `node --input-type=module-typescript -` each time, so nothing is installed or kept in sync on the remote.
+
+- **Finding transcripts.** Claude Code: `~/.claude/projects/<cwd>/<session id>.jsonl`, from herdr's session ID. Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-*-<thread id>.jsonl`, dated from the thread ID. Pi: the session path herdr reports. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `PI_CODING_AGENT_DIR` on that machine are respected.
+- **Context** is the input side of the latest turn, including cache reads and writes. Codex records the model's window, and Pi's comes from Pi's model registry. Claude Code doesn't record one, so herdr-map uses a built-in table: 1M tokens for current Claude models and 200K for Haiku and older ones. Unknown models show tokens without a percentage.
+- **Cost** is shown only when the agent records it. Pi records a cost per message; herdr-map adds them up.
+- **Cost of reading.** The server keeps each transcript's read offset and sends it back with the next run, so the remote keeps no state and only new bytes are read. Claude Code and Codex transcripts are read from their last 1 MB, and Pi's once in full, since cost is a sum. Transcripts are read while their agent is working and for a minute after its status changes, plus once per agent at startup, and a run reads at most 16 MB.
+- **Errors**, such as a missing transcript or a failed SSH connection, go to the server log and the `probeError` field of `/api/fleet`. They never affect the snapshot poll or show as a banner.
+
 ## Development
 
-`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, key, rename, and plugin action it would have sent, and refuses anything else. It never reaches a real herdr session.
+`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, key, rename, and plugin action it would have sent, and refuses anything else. It never reaches a real herdr session. The usage probe reads synthetic transcripts from `test/e2e/transcripts/` instead of your own.
 
 The UI uses [shadcn/ui](https://ui.shadcn.com) components (in `web/components/ui`, added with `npx shadcn@latest add <name>`) on Tailwind CSS v4. Canvas node styles and the zoom-adaptive text rules live in `web/canvas.css`.
 
