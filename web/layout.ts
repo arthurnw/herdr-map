@@ -8,6 +8,7 @@
 // that, every workspace position is saved, and new workspaces are placed next to
 // the other members of their group.
 import type { Edge, Node } from "@xyflow/react";
+import type { GroupMeta, WorkspaceMeta } from "../shared/layout-types.ts";
 import type { AgentStatus, Fleet, FleetGroup, FleetPane, FleetTab, FleetWorkspace } from "../shared/model.ts";
 
 export const TAB_W = 300;
@@ -38,6 +39,8 @@ export interface LayoutOptions {
    * so it no longer stretches to follow the drag, and each gets a drop hint.
    */
   dragging?: ReadonlySet<string>;
+  /** Saved metadata keyed by workspace ID; a collapsed workspace is drawn as its header only. */
+  workspaceMeta?: Record<string, WorkspaceMeta>;
 }
 
 // When only agent panes are drawn, each agent gets a full-width row so names and
@@ -68,6 +71,8 @@ export type WorkspaceData = {
   dropHint?: DropHint;
   /** Other workspaces still in this repo's box; a lone workspace can't leave its own box. */
   groupMates: number;
+  /** Drawn as its header only, without tabs or panes. */
+  collapsed: boolean;
 };
 export type TabData = { tab: FleetTab; workspaceId: string };
 export type PaneData = { pane: FleetPane };
@@ -104,6 +109,15 @@ export function workspaceSize(ws: FleetWorkspace) {
   const h = WS_HEADER + Math.max(minTabH, ...tabs.map((t) => t.h)) + PAD;
   return { w: Math.max(w, (compact ? COMPACT_TAB_W : TAB_W) + PAD * 2), h };
 }
+
+const COLLAPSED_MAX_W = 340;
+
+/** A collapsed workspace keeps its header and, up to a limit, its width. */
+function collapsedSize(ws: FleetWorkspace) {
+  return { w: Math.min(workspaceSize(ws).w, COLLAPSED_MAX_W), h: WS_HEADER };
+}
+
+type SizeOf = (ws: FleetWorkspace) => { w: number; h: number };
 
 /** Keeps a tab's agent panes in their on-screen order (left to right, then top to bottom). */
 function compactTab(tab: FleetTab, shown: (p: FleetPane) => boolean): ViewTab | undefined {
@@ -151,7 +165,7 @@ function visibleGroups(fleet: Fleet, opts: LayoutOptions): FleetGroup[] {
 }
 
 /** Shelf-packs workspaces into groups, then groups into a roughly landscape map. */
-function autoPositions(groups: FleetGroup[]): Map<string, { x: number; y: number }> {
+function autoPositions(groups: FleetGroup[], sizeOf: SizeOf): Map<string, { x: number; y: number }> {
   const packed = groups.map((group) => {
     const local = new Map<string, { x: number; y: number }>();
     let x = PAD;
@@ -159,7 +173,7 @@ function autoPositions(groups: FleetGroup[]): Map<string, { x: number; y: number
     let rowH = 0;
     let w = 0;
     for (const ws of group.workspaces) {
-      const size = workspaceSize(ws);
+      const size = sizeOf(ws);
       if (x > PAD && x + size.w > ROW_MAX_W) {
         x = PAD;
         y += rowH + GAP;
@@ -192,10 +206,10 @@ function autoPositions(groups: FleetGroup[]): Map<string, { x: number; y: number
   return out;
 }
 
-function placeWorkspaces(groups: FleetGroup[], saved: SavedLayout): Placed[] {
-  const all = groups.flatMap((group) => group.workspaces.map((ws) => ({ ws, group, ...workspaceSize(ws) })));
+function placeWorkspaces(groups: FleetGroup[], saved: SavedLayout, sizeOf: SizeOf): Placed[] {
+  const all = groups.flatMap((group) => group.workspaces.map((ws) => ({ ws, group, ...sizeOf(ws) })));
   if (Object.keys(saved).length === 0) {
-    const auto = autoPositions(groups);
+    const auto = autoPositions(groups, sizeOf);
     return all.map((p) => ({ ...p, ...auto.get(p.ws.id)!, detached: false }));
   }
 
@@ -256,7 +270,9 @@ export function layoutFleet(
   saved: SavedLayout = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const groups = visibleGroups(fleet, opts);
-  const placed = placeWorkspaces(groups, saved);
+  const meta = opts.workspaceMeta ?? {};
+  const isCollapsed = (ws: FleetWorkspace) => !!meta[ws.id]?.collapsed;
+  const placed = placeWorkspaces(groups, saved, (ws) => (isCollapsed(ws) ? collapsedSize(ws) : workspaceSize(ws)));
   const { filtered } = statusFilter(opts);
   const nodes: Node[] = [];
 
@@ -306,6 +322,7 @@ export function layoutFleet(
       detached: p.detached,
       dropHint: hints.get(p.ws.id),
       groupMates: mates.get(p.ws.id) ?? 0,
+      collapsed: isCollapsed(p.ws),
     };
     nodes.push({
       id: wsNode,
@@ -332,6 +349,7 @@ export function layoutFleet(
       data: wsData,
     });
 
+    if (wsData.collapsed) continue;
     let tabX = PAD;
     for (const tab of p.ws.tabs) {
       const tb = tabSize(tab);

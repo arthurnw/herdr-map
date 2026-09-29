@@ -1,0 +1,24 @@
+/* Collapsed workspaces, tags, repo box and note colors. */
+
+/* A collapsed workspace is its header alone. */
+.workspace.collapsed { overflow: hidden; }
+.workspace.collapsed .ws-header { height: 100%; }
+
+.ws-status-counts { display: inline-flex; gap: 6px; }
+.ws-status-count {
+  --c: var(--status-idle);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: color-mix(in oklab, var(--c) 75%, var(--foreground));
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ws-status-count.status-working { --c: var(--status-working); }
+.ws-status-count.status-blocked { --c: var(--status-blocked); }
+.ws-status-count.status-idle { --c: var(--status-idle); }
+.ws-status-count.status-unknown { --c: var(--status-unknown); }
+.ws-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.ws-status-count.status-blocked .ws-status-dot { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.4; } }

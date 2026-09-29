@@ -54,7 +54,7 @@ export function isLayoutName(name: string): boolean {
 }
 
 // Assigning "__proto__" on a plain object replaces its prototype instead of adding a key.
-function isRecordKey(key: string): boolean {
+export function isRecordKey(key: string): boolean {
   return key.length > 0 && !RESERVED_NAMES.has(key);
 }
 

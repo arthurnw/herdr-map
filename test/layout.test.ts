@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildFleet, StatusClock } from "../shared/model.ts";
-import { isDetachedDrop, layoutFleet } from "../web/layout.ts";
+import { isDetachedDrop, layoutFleet, WS_HEADER } from "../web/layout.ts";
 import { snapshotFixture } from "./fixtures.ts";
 
 function fleet() {
@@ -125,4 +125,19 @@ test("workspaces know how many others share their repo box", () => {
   const mates = (id: string) => (nodes.find((n) => n.id === id)!.data as { groupMates: number }).groupMates;
   assert.equal(mates("ws:w1"), 1);
   assert.equal(mates("ws:w2"), 1);
+});
+
+test("a collapsed workspace is drawn as its header, and its repo box shrinks", () => {
+  const saved = { w1: { x: 0, y: 100 }, w2: { x: 0, y: 400 } };
+  const open = layoutFleet(fleet(), { agentsOnly: true }, saved);
+  const closed = layoutFleet(fleet(), { agentsOnly: true, workspaceMeta: { w2: { collapsed: true } } }, saved);
+  const find = (nodes: typeof open.nodes, id: string) => nodes.find((n) => n.id === id)!;
+  assert.equal(find(closed.nodes, "ws:w2").height, WS_HEADER);
+  assert.equal((find(closed.nodes, "ws:w2").data as { collapsed: boolean }).collapsed, true);
+  assert.ok(!closed.nodes.some((n) => n.parentId === "ws:w2" && n.type === "tab"), "no tabs for a collapsed workspace");
+  assert.ok(!closed.nodes.some((n) => n.id === "w2:p1"), "no panes for a collapsed workspace");
+  assert.ok(closed.nodes.some((n) => n.id === "label:w2"), "the zoomed-out label stays");
+  assert.ok(find(closed.nodes, "group:/r/api/.git").height! < find(open.nodes, "group:/r/api/.git").height!);
+  // The lineage edge into the collapsed workspace's agent goes away with the pane.
+  assert.deepEqual(closed.edges, []);
 });

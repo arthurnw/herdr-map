@@ -6,6 +6,7 @@ import "./index.css";
 import "./canvas.css";
 import "./attention.css";
 import "./usage.css";
+import "./organize.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { App } from "./App.tsx";

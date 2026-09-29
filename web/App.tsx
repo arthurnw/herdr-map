@@ -42,6 +42,7 @@ import { StarsProvider, starredAgents, useStarsContext, useStarShortcuts } from 
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
+import { useMeta } from "./hooks/useMeta.ts";
 import { WorkspaceActions } from "./workspace-actions.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
@@ -71,6 +72,7 @@ function FleetMap() {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
   const [saved, setSaved] = useSavedLayout();
+  const { meta, patchWorkspaces } = useMeta();
   const [dragging, setDragging] = useState<ReadonlySet<string>>();
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
@@ -80,10 +82,14 @@ function FleetMap() {
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
   const layout = useMemo(
     () =>
-      fleet && saved
-        ? layoutFleet(fleet, { agentsOnly, agentPanesOnly, hiddenStatuses, dragging }, saved)
+      fleet && saved && meta
+        ? layoutFleet(
+            fleet,
+            { agentsOnly, agentPanesOnly, hiddenStatuses, dragging, workspaceMeta: meta.workspaces },
+            saved,
+          )
         : { nodes: [], edges: [] },
-    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, dragging, saved],
+    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, dragging, saved, meta],
   );
 
   const nodes = useMemo(() => {
@@ -117,7 +123,13 @@ function FleetMap() {
     boxSelect.selected,
     setDragging,
   );
-  const workspaceActions = useMemo(() => ({ setDetached }), [setDetached]);
+  const workspaceActions = useMemo(
+    () => ({
+      setDetached,
+      setCollapsed: (ids: string[], collapsed: boolean) => void patchWorkspaces({ ids, collapsed }),
+    }),
+    [setDetached, patchWorkspaces],
+  );
 
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
 

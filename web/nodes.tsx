@@ -1,10 +1,11 @@
 import { createContext, memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Ellipsis, FolderGit2, Group, Star, Ungroup } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Ellipsis, FolderGit2, Group, Star, Ungroup } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { WorkspaceActions } from "./workspace-actions.ts";
@@ -14,6 +15,7 @@ import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { KIND_LABEL } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
+import { StatusCounts } from "./organize.tsx";
 
 export const NowContext = createContext(Date.now());
 
@@ -29,8 +31,10 @@ export const GroupNode = memo(({ data }: NodeProps) => {
 });
 
 export const WorkspaceNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, groupLabel, detached, dropHint } = data as WorkspaceData;
-  const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`].filter(Boolean).join(" ");
+  const { workspace: ws, groupLabel, detached, dropHint, collapsed } = data as WorkspaceData;
+  const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`, collapsed && "collapsed"]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className={classes}>
       {dropHint && (
@@ -49,6 +53,7 @@ export const WorkspaceNode = memo(({ data }: NodeProps) => {
         )}
         {ws.linkedWorktree && <span className="ws-tag">worktree</span>}
         <DoneMarker workspace={ws} />
+        {collapsed && <StatusCounts workspace={ws} />}
         <span className="ws-count">{ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}</span>
         <WorkspaceMenu data={data as WorkspaceData} />
       </div>
@@ -62,7 +67,7 @@ const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 function WorkspaceMenu({ data }: { data: WorkspaceData }) {
   const actions = useContext(WorkspaceActions);
-  const { workspace: ws, groupLabel, detached, groupMates } = data;
+  const { workspace: ws, groupLabel, detached, groupMates, collapsed } = data;
   if (!actions) return null;
   return (
     <DropdownMenu>
@@ -72,6 +77,11 @@ function WorkspaceMenu({ data }: { data: WorkspaceData }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={stop} onPointerDown={stop}>
+        <DropdownMenuItem onSelect={() => actions.setCollapsed([ws.id], !collapsed)}>
+          {collapsed ? <ChevronsUpDown aria-hidden /> : <ChevronsDownUp aria-hidden />}
+          {collapsed ? "Expand" : "Collapse to header"}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         {detached ? (
           <DropdownMenuItem onSelect={() => actions.setDetached(ws.id, false)}>
             <Group aria-hidden />
@@ -89,12 +99,13 @@ function WorkspaceMenu({ data }: { data: WorkspaceData }) {
 }
 
 export const WorkspaceLabelNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, detached, groupLabel } = data as WorkspaceData;
+  const { workspace: ws, detached, groupLabel, collapsed } = data as WorkspaceData;
   return (
     <div className="ws-label-float">
       <span className="ws-number">{ws.number}</span> {detached && <span className="ws-label-repo">{groupLabel} / </span>}
       {ws.label}
       <DoneMarker workspace={ws} />
+      {collapsed && <StatusCounts workspace={ws} />}
     </div>
   );
 });
