@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, CornerDownLeft, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
-import { parseDialogOptions } from "../shared/dialog.ts";
+import { hasDialogHint, parseDialogOptions } from "../shared/dialog.ts";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,7 +31,9 @@ interface Props {
 export function ReplyBox({ located, screen, onSent }: Props) {
   const { pane } = located;
   const agent = pane.agent!;
-  const blocked = agent.status === "blocked";
+  // herdr marks Claude and Pi dialogs as blocked, but Codex pickers stay idle, so a
+  // picker's key hints on screen also count as a dialog.
+  const blocked = agent.status === "blocked" || (!!screen && hasDialogHint(screen));
   const options = blocked && screen ? parseDialogOptions(screen) : [];
   const name = agent.name ?? located.workspace.label;
   const [text, setText] = useState("");

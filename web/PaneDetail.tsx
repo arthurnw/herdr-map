@@ -6,6 +6,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { agentAge, formatAge } from "./nodes.tsx";
 import { ReplyBox } from "./ReplyBox.tsx";
+import { hasDialogHint } from "../shared/dialog.ts";
 import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
 
@@ -88,8 +89,9 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
     };
   }, [pinned, load]);
 
-  // A blocked agent's dialog changes as it is answered, so its hover preview stays live.
-  const blocked = pane.agent?.status === "blocked";
+  // A dialog changes as it is answered, so the hover preview stays live while one is up.
+  // Codex pickers leave herdr's status at idle, so key hints on screen count too.
+  const blocked = pane.agent?.status === "blocked" || (!!screen && hasDialogHint(screen));
   useEffect(() => {
     if (pinned || !blocked) return;
     const id = setInterval(() => void load().catch(() => undefined), BLOCKED_REFRESH_MS);

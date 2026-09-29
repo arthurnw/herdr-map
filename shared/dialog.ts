@@ -17,6 +17,21 @@ const OPTION = /^(?:([❯›>▸▶→*])\s*)?(\d{1,2})[.)]\s+(\S.*?)$/;
 // Box-drawing borders that some TUIs draw around dialogs.
 const BORDER = /^[\s│┃|╎╏]+|[\s│┃|╎╏]+$/g;
 
+// Key hints that pickers print under their options, e.g. "enter select · esc back",
+// "Enter to confirm · Esc to cancel", "Enter confirm · Esc dismiss". Codex's pickers
+// leave herdr's status at idle, so these hints are how a dialog is recognized.
+const HINT_LINES = 12;
+const DIALOG_HINT =
+  /\b(?:enter|↵)\b[^·•\n]{0,16}\b(?:select|confirm|continue|choose|submit)\b|\besc\b[^·•\n]{0,12}\b(?:back|cancel|skip|quit|dismiss|close)\b/i;
+
+/** True when the bottom of the screen shows a picker's key hints. */
+export function hasDialogHint(screen: string): boolean {
+  return screen
+    .split("\n")
+    .slice(-HINT_LINES)
+    .some((line) => DIALOG_HINT.test(line));
+}
+
 export function parseDialogOptions(screen: string): DialogOption[] {
   const lines = screen.split("\n").slice(-SCAN_LINES);
   let best: DialogOption[] = [];

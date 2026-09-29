@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseDialogOptions } from "../shared/dialog.ts";
+import { hasDialogHint, parseDialogOptions } from "../shared/dialog.ts";
 
 test("reads a Claude Code permission dialog", () => {
   const screen = [
@@ -50,4 +50,23 @@ test("uses the last list on screen and ignores earlier numbered output", () => {
 test("returns nothing without a numbered list starting at 1", () => {
   assert.deepEqual(parseDialogOptions("Thinking…\n3. stray\n4. lines"), []);
   assert.deepEqual(parseDialogOptions("❯ 1. only one"), []);
+});
+
+test("recognizes picker key hints from Claude, Codex, and Pi", () => {
+  const dialogs = [
+    "Enter to select · ↑/↓ to navigate · Esc to cancel",
+    "Enter to confirm · Esc to cancel",
+    "  enter select · esc back",
+    "  enter continue · esc quit",
+    "  enter continue · esc skip",
+    " t question type · Enter confirm · N/Shift+N note · Esc dismiss · ? settings",
+  ];
+  for (const hint of dialogs) assert.equal(hasDialogHint(`output\n${hint}`), true, hint);
+  const ordinary = [
+    "  ? for shortcuts",
+    "• Working (1s • esc to interrupt)",
+    "  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle) · ← 2 agents",
+    "Press enter to send",
+  ];
+  for (const line of ordinary) assert.equal(hasDialogHint(`output\n${line}`), false, line);
 });
