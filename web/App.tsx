@@ -37,6 +37,7 @@ import {
 import { Toolbar } from "./Toolbar.tsx";
 import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
 import { needsYou } from "./attention.tsx";
+import { StarsProvider, starredAgents, useStarsContext, useStarShortcuts } from "./stars.tsx";
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
@@ -147,6 +148,8 @@ function FleetMap() {
   );
 
   const attention = useMemo(() => needsYou(panes), [panes]);
+  const stars = useStarsContext();
+  const starred = useMemo(() => starredAgents(panes, stars.ids), [panes, stars.ids]);
 
   const onSearchEnter = () => {
     const q = query.trim();
@@ -181,6 +184,7 @@ function FleetMap() {
   );
   useShortcut({ key: "Escape", description: "Clear selection", enabled: !!(pinned || hovered) }, clear);
   useSpatialNav(shownNodes, pinned, select);
+  useStarShortcuts(stars, starred, pinnedPane, select);
 
   return (
     <NowContext.Provider value={now}>
@@ -271,6 +275,7 @@ function FleetMap() {
           <ResizablePanel id="sidebar" defaultSize="26" minSize="18" maxSize="60">
             <Sidebar
               attention={attention}
+              starred={starred}
               detail={detailPane}
               pinned={!!pinnedPane && detailPane === pinnedPane}
               selectedId={pinned}
@@ -303,7 +308,9 @@ function CanvasButton({ label, onClick, children }: { label: string; onClick: ()
 export function App() {
   return (
     <ReactFlowProvider>
-      <FleetMap />
+      <StarsProvider>
+        <FleetMap />
+      </StarsProvider>
     </ReactFlowProvider>
   );
 }

@@ -1,7 +1,9 @@
 import { createContext, memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Star } from "lucide-react";
 import { DoneMarker, StuckMarker } from "./attention.tsx";
 import { agentAge } from "./format.ts";
+import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { KIND_LABEL } from "./status.tsx";
 
@@ -58,6 +60,7 @@ export const TabNode = memo(({ data }: NodeProps) => {
 export const PaneNode = memo(({ data }: NodeProps) => {
   const { pane } = data as PaneData;
   const now = useContext(NowContext);
+  const starred = useStarsContext().isStarred(pane.id);
   const handles = (
     <>
       <Handle type="target" position={Position.Top} isConnectable={false} />
@@ -78,6 +81,7 @@ export const PaneNode = memo(({ data }: NodeProps) => {
     <div className={`pane agent status-${agent.status}${pane.focused ? " focused" : ""}${agent.stuck ? " stuck" : ""}`}>
       {handles}
       <div className="agent-line">
+        {starred && <Star className="agent-star" aria-label="Starred" />}
         <span className="agent-name">{agent.name ?? kind}</span>
         {agent.name && <span className="agent-kind">{kind}</span>}
       </div>

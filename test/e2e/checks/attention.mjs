@@ -3,7 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { RATE_LIMIT_SCREEN } from "../fixture.mjs";
 
-export default function attentionChecks({ test, assert, openPage, card, actions, clearActions, stubDir, base }) {
+export default function attentionChecks({ test, assert, openPage, card, needsYouRow, actions, clearActions, stubDir, base }) {
   const screenFile = (paneId) => join(stubDir, "screens", `${paneId.replace(":", "_")}.txt`);
 
   async function waitFor(check, message, timeoutMs = 8000) {
@@ -81,5 +81,39 @@ export default function attentionChecks({ test, assert, openPage, card, actions,
       els.map((el) => getComputedStyle(el).stroke),
     );
     assert(strokes.length >= 2 && strokes.every((s) => s && s !== "none"), `done panes should have a stroke, got ${strokes}`);
+  });
+
+  test("s stars the selected agent, g cycles through starred agents, and stars survive a reload", async (page) => {
+    const starred = page.locator('aside section[aria-label="Starred"]');
+    await needsYouRow(page, "stylist").click();
+    await page.keyboard.press("s");
+    await card(page, "w4:p7").locator(".agent-star").waitFor({ timeout: 2000 });
+    assert((await starred.locator("li").count()) === 1, "the Starred section should list one agent");
+    // The star button in the detail header stars the agent shown there.
+    await needsYouRow(page, "api-auth").click();
+    await page.locator("aside").getByRole("button", { name: "Star", exact: true }).click();
+    assert((await starred.locator("li").count()) === 2, "the star button should add a second agent");
+    await page.reload();
+    await page.waitForSelector(".react-flow__node-pane");
+    assert((await starred.locator("li").count()) === 2, "stars should survive a reload");
+    const selected = () => starred.locator("li.bg-accent").textContent();
+    await page.keyboard.press("g");
+    await page.waitForTimeout(300);
+    assert((await selected()).includes("stylist"), `g should select the first starred agent, got ${await selected()}`);
+    await page.keyboard.press("g");
+    await page.waitForTimeout(300);
+    assert((await selected()).includes("api-auth"), `a second g should move on, got ${await selected()}`);
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+    assert((await starred.locator("li").count()) === 1, "s on a starred agent should unstar it");
+    assert((await card(page, "w2:p3").locator(".agent-star").count()) === 0, "the card should lose its star");
+  });
+
+  test("stars for panes that no longer exist are not shown", async (page) => {
+    await page.evaluate(() => localStorage.setItem("herdr-map.stars", JSON.stringify(["w9:p99", "w5:p9"])));
+    await page.reload();
+    await page.waitForSelector(".react-flow__node-pane");
+    const rows = await page.locator('aside section[aria-label="Starred"] li').allTextContents();
+    assert(rows.length === 1, `expected one starred row, got ${rows.length}`);
   });
 }

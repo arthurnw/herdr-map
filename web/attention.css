@@ -56,3 +56,17 @@
   stroke: var(--foreground);
   stroke-width: 24;
 }
+
+/* Starred agents */
+:root { --star: oklch(0.72 0.16 80); }
+.dark { --star: oklch(0.82 0.15 88); }
+
+.agent-star {
+  align-self: center;
+  width: 0.95em;
+  height: 0.95em;
+  flex-shrink: 0;
+  color: var(--star);
+  fill: currentColor;
+}
+.zoom-far .pane.agent .agent-star { color: #fff; }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { StuckBadge } from "./attention.tsx";
+import { StarButton } from "./stars.tsx";
 import { agentAge, formatAge } from "./format.ts";
 import { ReplyBox } from "./ReplyBox.tsx";
 import { hasDialogHint } from "../shared/dialog.ts";
@@ -124,6 +125,7 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {agent ? (
             <>
+              <StarButton paneId={pane.id} />
               <StatusDot status={agent.status} />
               <span className="font-medium">{agent.name ?? KIND_LABEL[agent.kind] ?? agent.kind}</span>
               {agent.name && <Badge variant="secondary">{KIND_LABEL[agent.kind] ?? agent.kind}</Badge>}
