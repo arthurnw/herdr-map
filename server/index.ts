@@ -10,6 +10,7 @@ import { fleetRoutes } from "./routes/fleet.ts";
 import { inputRoutes } from "./routes/input.ts";
 import { layoutRoutes } from "./routes/layout.ts";
 import { readRoutes } from "./routes/read.ts";
+import { renameRoutes } from "./routes/rename.ts";
 
 const { values: args } = parseArgs({
   options: {
@@ -34,7 +35,7 @@ const ctx: Context = {
   poller: createPoller(herdr, intervalMs, Number(args["stuck-minutes"]) * 60_000),
 };
 
-const routes = [...fleetRoutes(ctx), ...inputRoutes(ctx), ...layoutRoutes(ctx), ...readRoutes(ctx)];
+const routes = [...fleetRoutes(ctx), ...inputRoutes(ctx), ...layoutRoutes(ctx), ...readRoutes(ctx), ...renameRoutes(ctx)];
 const server = createServer(createRouter(routes, (_req, res, url) => serveStatic(url.pathname, res)));
 
 server.listen(Number(args.port), args.host, () => {

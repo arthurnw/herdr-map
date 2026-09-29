@@ -116,4 +116,54 @@ export default function attentionChecks({ test, assert, openPage, card, needsYou
     const rows = await page.locator('aside section[aria-label="Starred"] li').allTextContents();
     assert(rows.length === 1, `expected one starred row, got ${rows.length}`);
   });
+
+  async function startRename(page, row) {
+    await needsYouRow(page, row).click();
+    await page.getByRole("button", { name: "Rename agent" }).click();
+    return page.getByRole("textbox", { name: "Agent name" });
+  }
+
+  test("the pencil renames an agent through herdr", async (page) => {
+    clearActions();
+    const input = await startRename(page, "stylist");
+    await input.fill("painter");
+    await input.press("Enter");
+    await page.waitForTimeout(400);
+    assert(actions().includes("agent rename w4:p7 painter"), `expected a rename, got ${actions()}`);
+    assert((await input.count()) === 0, "the input should close after saving");
+  });
+
+  test("rename refuses bad and duplicate names before reaching herdr", async (page) => {
+    clearActions();
+    const input = await startRename(page, "stylist");
+    await input.fill("has space");
+    await input.press("Enter");
+    await page.locator("aside").getByText("Use up to 32 lowercase letters").waitFor();
+    await input.fill("lead");
+    await input.press("Enter");
+    await page.locator("aside").getByText("Another agent is already named lead.").waitFor();
+    await input.press("Escape");
+    assert((await input.count()) === 0, "Esc should close the input");
+    const statuses = await page.evaluate(async () => {
+      const post = (name) =>
+        fetch("/api/rename", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pane: "w4:p7", name }) });
+      return [(await post("lead")).status, (await post("Nope")).status];
+    });
+    assert(statuses[0] === 400 && statuses[1] === 400, `the server should refuse both names, got ${statuses}`);
+    assert(actions().length === 0, `nothing should reach herdr, got ${actions()}`);
+  });
+
+  test("herdr's error shows in a toast when it refuses a rename", async (page) => {
+    const errorFile = join(stubDir, "rename-error");
+    writeFileSync(errorFile, JSON.stringify({ error: { code: "name_taken", message: "agent name painter is already used" } }));
+    try {
+      const input = await startRename(page, "stylist");
+      await input.fill("painter");
+      await input.press("Enter");
+      await page.getByText("agent name painter is already used").waitFor({ timeout: 3000 });
+      assert((await input.count()) === 1, "the input should stay open to try another name");
+    } finally {
+      rmSync(errorFile, { force: true });
+    }
+  });
 }

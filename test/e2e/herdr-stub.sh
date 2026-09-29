@@ -4,7 +4,7 @@
 # so a test can never reach a real herdr session.
 #
 # Reads from $HERDR_STUB_DIR: snapshot.json, screens/<pane id with : as _>.txt.
-# Appends input commands to $HERDR_STUB_DIR/actions.log.
+# Appends input commands (focus, prompt, keys, text, rename) to $HERDR_STUB_DIR/actions.log.
 set -eu
 dir="${HERDR_STUB_DIR:?HERDR_STUB_DIR is not set}"
 
@@ -15,6 +15,12 @@ case "$1 ${2:-}" in
   "pane read")
     screen="$dir/screens/$(printf '%s' "$3" | tr ':' '_').txt"
     if [ -f "$screen" ]; then cat "$screen"; else printf 'screen of %s\n$ ' "$3"; fi
+    ;;
+  "agent rename")
+    # A check can make herdr refuse a rename by writing the error to rename-error.
+    if [ -f "$dir/rename-error" ]; then cat "$dir/rename-error" >&2; exit 1; fi
+    printf '%s\n' "$*" >>"$dir/actions.log"
+    printf '{"ok":true}\n'
     ;;
   "agent focus" | "tab focus" | "workspace focus" | "agent prompt" | "agent send-keys" | "pane send-text")
     printf '%s\n' "$*" >>"$dir/actions.log"

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import type { Snapshot } from "../shared/model.ts";
+import { AGENT_NAME } from "../shared/names.ts";
 
 export interface HerdrOptions {
   /** SSH destination that runs the herdr server. Unset runs herdr locally. */
@@ -89,6 +90,27 @@ export async function sendKeys(opts: HerdrOptions, paneId: string, keys: unknown
 /** Types text into a pane without pressing Enter, for free-text answers inside a dialog. */
 export async function sendText(opts: HerdrOptions, paneId: string, text: unknown): Promise<void> {
   await run(opts, ["pane", "send-text", assertId(paneId), assertText(text)]);
+}
+
+/** herdr's own message from a failed command. herdr reports errors as JSON on stderr. */
+export function herdrMessage(err: Error): string {
+  const i = err.message.indexOf("{");
+  if (i < 0) return err.message;
+  try {
+    return JSON.parse(err.message.slice(i)).error?.message ?? err.message;
+  } catch {
+    return err.message;
+  }
+}
+
+/** Renames an agent. herdr checks the name too and refuses one another agent has. */
+export async function renameAgent(opts: HerdrOptions, paneId: string, name: string): Promise<void> {
+  if (!AGENT_NAME.test(name)) throw new Error(`invalid agent name: ${name}`);
+  try {
+    await run(opts, ["agent", "rename", assertId(paneId), name]);
+  } catch (err) {
+    throw new Error(herdrMessage(err as Error));
+  }
 }
 
 const APP_NAME = /^[\w .-]{1,64}$/;

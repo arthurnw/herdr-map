@@ -37,6 +37,7 @@ import {
 import { Toolbar } from "./Toolbar.tsx";
 import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
 import { needsYou } from "./attention.tsx";
+import { agentNames } from "./rename.tsx";
 import { StarsProvider, starredAgents, useStarsContext, useStarShortcuts } from "./stars.tsx";
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useBoxSelect } from "./hooks/useBoxSelect.ts";
@@ -150,6 +151,7 @@ function FleetMap() {
   const attention = useMemo(() => needsYou(panes), [panes]);
   const stars = useStarsContext();
   const starred = useMemo(() => starredAgents(panes, stars.ids), [panes, stars.ids]);
+  const names = useMemo(() => agentNames(panes), [panes]);
 
   const onSearchEnter = () => {
     const q = query.trim();
@@ -276,6 +278,7 @@ function FleetMap() {
             <Sidebar
               attention={attention}
               starred={starred}
+              agentNames={names}
               detail={detailPane}
               pinned={!!pinnedPane && detailPane === pinnedPane}
               selectedId={pinned}

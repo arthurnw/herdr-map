@@ -13,6 +13,7 @@ import { KIND_LABEL, StatusDot } from "./status.tsx";
 interface Props {
   attention: Located[];
   starred: Located[];
+  agentNames: Map<string, string>;
   detail?: Located;
   pinned: boolean;
   selectedId?: string;
@@ -23,7 +24,7 @@ interface Props {
   onPin: (paneId: string | undefined) => void;
 }
 
-export function Sidebar({ attention, starred, detail, pinned, selectedId, now, onFocus, onHover, onSelect, onPin }: Props) {
+export function Sidebar({ attention, starred, agentNames, detail, pinned, selectedId, now, onFocus, onHover, onSelect, onPin }: Props) {
   const rowActions = { onFocus, onHover, onSelect };
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
@@ -73,6 +74,7 @@ export function Sidebar({ attention, starred, detail, pinned, selectedId, now, o
       {detail ? (
         <PaneDetail
           located={detail}
+          agentNames={agentNames}
           pinned={pinned}
           now={now}
           onOpen={() => onFocus(detail)}

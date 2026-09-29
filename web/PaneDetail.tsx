@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { StuckBadge } from "./attention.tsx";
+import { AgentName } from "./rename.tsx";
 import { StarButton } from "./stars.tsx";
 import { agentAge, formatAge } from "./format.ts";
 import { ReplyBox } from "./ReplyBox.tsx";
@@ -34,13 +35,15 @@ function isAtBottom(el: HTMLElement) {
 
 interface Props {
   located: Located;
+  /** Live agents' names by pane ID, for checking a new name. */
+  agentNames: Map<string, string>;
   pinned: boolean;
   now: number;
   onOpen: () => void;
   onTogglePin: () => void;
 }
 
-export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props) {
+export function PaneDetail({ located, agentNames, pinned, now, onOpen, onTogglePin }: Props) {
   const { pane, workspace, tabLabel } = located;
   const [screen, setScreen] = useState<string>();
   const [readAt, setReadAt] = useState<number>();
@@ -127,7 +130,7 @@ export function PaneDetail({ located, pinned, now, onOpen, onTogglePin }: Props)
             <>
               <StarButton paneId={pane.id} />
               <StatusDot status={agent.status} />
-              <span className="font-medium">{agent.name ?? KIND_LABEL[agent.kind] ?? agent.kind}</span>
+              <AgentName key={pane.id} located={located} names={agentNames} />
               {agent.name && <Badge variant="secondary">{KIND_LABEL[agent.kind] ?? agent.kind}</Badge>}
               <span className="text-muted-foreground">
                 {agent.status} for {agentAge(agent, now)}
