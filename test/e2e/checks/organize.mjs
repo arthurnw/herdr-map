@@ -93,4 +93,90 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     await page.waitForTimeout(400);
     assert(!store().workspaces?.w5, "removing the last tag clears the metadata");
   });
+
+  // A point on empty canvas, away from every node, panel, and the minimap.
+  const emptySpot = (page) =>
+    page.evaluate(() => {
+      const r = document.querySelector(".react-flow").getBoundingClientRect();
+      for (let y = r.top + 40; y < r.bottom - 40; y += 20)
+        for (let x = r.left + 80; x < r.right - 260; x += 20) {
+          const hits = [-30, 0, 30].flatMap((dx) => [-30, 0, 30].map((dy) => document.elementFromPoint(x + dx, y + dy)));
+          if (hits.every((el) => el?.classList.contains("react-flow__pane"))) return { x, y };
+        }
+      return undefined;
+    });
+
+  test("organize: sticky notes are added, edited, moved, recolored, and deleted", async (page) => {
+    clearActions();
+    const spot = await emptySpot(page);
+    assert(spot, "the map should have some empty canvas");
+    await page.mouse.dblclick(spot.x, spot.y);
+    const note = page.locator(".react-flow__node-note");
+    await note.waitFor();
+    const text = note.getByRole("textbox", { name: "Note text" });
+    assert(await text.evaluate((el) => el === document.activeElement), "a new note should take focus");
+    await page.keyboard.type("Check the deploy");
+    // Typing doesn't trigger shortcuts: "n" would select from Needs you, "o" would open.
+    assert(actions().length === 0, `typing in a note must not run shortcuts, got ${actions()}`);
+    await page.waitForTimeout(900);
+    assert(store().notes?.[0]?.text === "Check the deploy", `the text should be saved, got ${JSON.stringify(store().notes)}`);
+    assert(Object.keys(store().current ?? {}).length === 0, "adding a note must not freeze the automatic layout");
+
+    const start = await note.boundingBox();
+    const before = store().notes[0];
+    await page.mouse.move(start.x + 20, start.y + 8);
+    await page.mouse.down();
+    for (let i = 1; i <= 5; i++) await page.mouse.move(start.x + 20 + i * 12, start.y + 8 + i * 10);
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    const after = store().notes[0];
+    assert(after.x > before.x && after.y > before.y, `dragging the bar should move the note, ${JSON.stringify([before, after])}`);
+    assert(Object.keys(store().current ?? {}).length === 0, "moving a note must not save workspace positions");
+    assert(actions().length === 0, `moving a note must not focus anything, got ${actions()}`);
+
+    await note.hover();
+    await note.getByRole("button", { name: "Note color" }).click();
+    await page.getByRole("menuitem", { name: "Blue" }).click();
+    await page.waitForTimeout(400);
+    assert(store().notes[0].color === "blue", "the note color should be saved");
+    assert(await note.locator(".note.tint-blue").count(), "the note should be tinted");
+
+    await page.reload();
+    await page.waitForSelector(".react-flow__node-note");
+    assert((await note.getByRole("textbox").inputValue()) === "Check the deploy", "the note should survive a reload");
+
+    await note.hover();
+    await note.getByRole("button", { name: "Delete note" }).click();
+    await page.waitForTimeout(400);
+    assert(store().notes.length === 0, "deleting should remove the note");
+    await page.getByRole("button", { name: "Undo" }).click();
+    await page.waitForTimeout(400);
+    assert(store().notes[0]?.text === "Check the deploy", "Undo in the toast should bring the note back");
+  });
+
+  test("organize: the palette adds a note, and notes don't join box selections", async (page) => {
+    await page.keyboard.press("Meta+k");
+    await page.getByRole("dialog", { name: "Command palette" }).waitFor();
+    await page.keyboard.type("new note");
+    await page.keyboard.press("Enter");
+    await page.locator(".react-flow__node-note").waitFor();
+    await page.waitForTimeout(300);
+    assert(store().notes?.length === 1, "the palette command should add a note");
+    await page.keyboard.press("Escape");
+    await page.locator(".react-flow__pane").click({ position: { x: 5, y: 5 } });
+
+    // Shift+drag a box over the whole map: every workspace on the map is selected, and no note is.
+    const r = await page.locator(".react-flow").boundingBox();
+    await page.keyboard.down("Shift");
+    await page.mouse.move(r.x + 4, r.y + 4);
+    await page.mouse.down();
+    await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+    await page.mouse.move(r.x + r.width - 4, r.y + r.height - 4);
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+    await page.waitForTimeout(200);
+    const selected = await page.locator(".react-flow__node.box-selected").evaluateAll((els) => els.map((e) => e.dataset.id));
+    const total = await page.locator(".react-flow__node-workspace").count();
+    assert(selected.length === total && selected.every((id) => id.startsWith("ws:")), `expected all ${total} workspaces, got ${selected}`);
+  });
 };

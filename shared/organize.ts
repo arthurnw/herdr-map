@@ -70,3 +70,22 @@ export function applyGroupPatch(groups: Record<string, GroupMeta>, patch: GroupP
   if (patch.color) groups[patch.key] = { ...groups[patch.key], color: patch.color };
   else delete groups[patch.key];
 }
+
+export const MAX_NOTES = 500;
+export const NOTE_TEXT_MAX = 10_000;
+/** Note sizes in canvas units. */
+export const NOTE_MIN = { w: 140, h: 90 };
+export const NOTE_MAX = 3000;
+export const NOTE_DEFAULT = { w: 240, h: 160 };
+/** Canvas coordinates beyond this are refused. */
+export const MAX_COORD = 10_000_000;
+
+/** A note change. `color: null` removes the color. */
+export interface NotePatch {
+  text?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  color?: TintColor | null;
+}

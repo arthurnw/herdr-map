@@ -12,7 +12,7 @@ import {
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
 import { useDefaultLayout } from "react-resizable-panels";
-import { Maximize, Minus, Plus, TriangleAlert } from "lucide-react";
+import { Maximize, Minus, Plus, StickyNote, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,9 @@ import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
 import { useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
+import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
+
+const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
@@ -137,6 +140,10 @@ function FleetMap() {
     [setDetached, patchWorkspaces, patchGroup],
   );
 
+  const notes = useNotes();
+  const flowHandlers = notes.withNotes({ onNodesChange, onNodeDragStart, onNodeDragStop });
+  const flowNodes = useMemo(() => [...boxSelect.nodes, ...notes.nodes], [boxSelect.nodes, notes.nodes]);
+
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
 
   useEffect(() => {
@@ -215,6 +222,7 @@ function FleetMap() {
   return (
     <NowContext.Provider value={now}>
       <WorkspaceActions.Provider value={workspaceActions}>
+      <NoteActionsProvider value={notes.actions}>
       <div className="flex h-full flex-col">
         <Toolbar
           fleet={fleet}
@@ -244,6 +252,7 @@ function FleetMap() {
           agentPanesOnly={agentPanesOnly}
           onAgentPanesOnly={setAgentPanesOnly}
           layoutMenu={layoutMenu}
+          extraCommands={[{ value: "note:new", label: "New note", run: notes.createInView }]}
         />
         {error && (
           <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">
@@ -258,16 +267,18 @@ function FleetMap() {
               className={`canvas h-full ${zoomClass(zoom)}`}
               style={{ "--z": zoom } as React.CSSProperties}
               onMouseDownCapture={boxSelect.onMouseDownCapture}
+              onDoubleClick={notes.onCanvasDoubleClick}
             >
               <ReactFlow
-                nodes={boxSelect.nodes}
+                nodes={flowNodes}
                 edges={layout.edges}
-                nodeTypes={nodeTypes}
+                nodeTypes={canvasNodeTypes}
                 nodesConnectable={false}
                 elementsSelectable={false}
-                onNodesChange={onNodesChange}
-                onNodeDragStart={onNodeDragStart}
-                onNodeDragStop={onNodeDragStop}
+                onNodesChange={flowHandlers.onNodesChange}
+                onNodeDragStart={flowHandlers.onNodeDragStart}
+                onNodeDragStop={flowHandlers.onNodeDragStop}
+                zoomOnDoubleClick={false}
                 onNodeClick={onNodeClick}
                 onPaneClick={boxSelect.onPaneClick}
                 onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
@@ -287,6 +298,9 @@ function FleetMap() {
                   </CanvasButton>
                   <CanvasButton label="Fit everything" onClick={() => fitView({ padding: 0.05, duration: 300 })}>
                     <Maximize />
+                  </CanvasButton>
+                  <CanvasButton label="New note" onClick={notes.createInView}>
+                    <StickyNote />
                   </CanvasButton>
                 </Panel>
                 <MiniMap pannable zoomable nodeClassName={minimapClass} className="overflow-hidden rounded-lg border shadow-sm" />
@@ -317,6 +331,7 @@ function FleetMap() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      </NoteActionsProvider>
       </WorkspaceActions.Provider>
     </NowContext.Provider>
   );

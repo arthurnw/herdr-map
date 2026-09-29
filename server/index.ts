@@ -10,6 +10,7 @@ import { fleetRoutes } from "./routes/fleet.ts";
 import { inputRoutes } from "./routes/input.ts";
 import { layoutRoutes } from "./routes/layout.ts";
 import { metaRoutes } from "./routes/meta.ts";
+import { notesRoutes } from "./routes/notes.ts";
 import { readRoutes } from "./routes/read.ts";
 import { renameRoutes } from "./routes/rename.ts";
 import { zoetropeRoutes } from "./routes/zoetrope.ts";
@@ -50,6 +51,7 @@ const routes = [
   ...inputRoutes(ctx),
   ...layoutRoutes(ctx),
   ...metaRoutes(ctx),
+  ...notesRoutes(ctx),
   ...readRoutes(ctx),
   ...renameRoutes(ctx),
   ...zoetropeRoutes(ctx),

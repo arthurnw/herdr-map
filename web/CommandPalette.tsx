@@ -37,9 +37,11 @@ interface Props {
   agentPanesOnly: boolean;
   onAgentPanesOnly: (v: boolean) => void;
   layoutMenu: LayoutMenuProps;
+  /** More commands to list, such as adding a note or acting on the box selection. */
+  extraCommands?: PaletteAction[];
 }
 
-interface Action {
+export interface PaletteAction {
   value: string;
   label: string;
   keys?: string[];
@@ -47,6 +49,8 @@ interface Action {
   disabled?: boolean;
   run: () => void;
 }
+
+type Action = PaletteAction;
 
 /** The toolbar button that opens the palette. */
 export function PaletteButton() {
@@ -157,6 +161,7 @@ export function CommandPalette(props: Props) {
   const commands: Action[] = open
     ? [
         ...shortcutActions(),
+        ...(props.extraCommands ?? []),
         {
           value: "view:agent-panes",
           label: "Show only agent panes",
