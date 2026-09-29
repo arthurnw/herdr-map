@@ -7,7 +7,7 @@ herdr stays the host. herdr-map only reads `herdr api snapshot` and runs focus c
 ## What it shows
 
 - **Repo groups** built from herdr's worktree metadata. Linked worktrees are tagged. Workspaces outside a repo go under "Other workspaces".
-- **Workspaces and tabs.** By default only agent panes are drawn, one column per agent, and tabs without agents are hidden. Turn off **Agent panes only** to see each tab's full split layout, including nvim, hunk, and shell panes. Both toolbar filters are remembered per browser.
+- **Workspaces and tabs.** By default only agent panes are drawn, one full-width row per agent, and tabs without agents are hidden. Turn off **Agent panes only** to see each tab's full split layout, including nvim, hunk, and shell panes. Both toolbar filters are remembered per browser.
 - **Agent panes** colored by status (working, blocked, done, idle), with how long the agent has been in that status and the `summary` pane token when a plugin sets one. Other panes show their terminal title, such as `nvim AGENTS.md` or `hunk`.
 - **Needs you**: blocked agents first, then finished ones, oldest first.
 - **Preview sidebar**: hovering a pane shows its visible screen, cwd, and summary. Pin a pane (Option-click it, or press **Pin**) to keep its preview while you move around the map. A pinned preview loads the last 1,000 lines of scrollback and refreshes every 5 seconds; scrolling up pauses refreshes until you scroll back to the bottom. Drag the sidebar's left edge to resize it.
@@ -38,6 +38,19 @@ npm start -- --ssh mini
 ```
 
 Open http://127.0.0.1:4747.
+
+### Run as a background service (macOS)
+
+`scripts/service.sh` installs herdr-map as a launchd user agent that starts at login and restarts if it exits. Server flags pass through:
+
+```sh
+scripts/service.sh install --ssh mini
+scripts/service.sh status      # or: restart, uninstall
+```
+
+Logs go to `~/Library/Logs/herdr-map.log`. The first click that brings your terminal forward may trigger a macOS prompt to let `node` control that app.
+
+`scripts/update.sh` pulls the latest version and does only what the changes need: `npm install` when dependencies changed, a rebuild when the web app changed, and a service restart when the server changed.
 
 | Flag | Default | Meaning |
 |---|---|---|
