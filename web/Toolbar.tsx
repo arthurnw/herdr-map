@@ -66,12 +66,12 @@ function StatusFilter({
   hidden: AgentStatus[];
   onToggle: (s: AgentStatus, solo: boolean) => void;
 }) {
-  // A filtered-out status keeps its chip, struck through, whenever it has agents.
-  const statuses = STATUSES.filter((s) => fleet?.counts[s]);
+  // Every status gets a chip, even at zero, so a filter can be set before agents reach it.
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Filter agents by status">
-      {statuses.map((s) => {
+      {STATUSES.map((s) => {
         const off = hidden.includes(s);
+        const count = fleet?.counts[s] ?? 0;
         return (
           <Tooltip key={s}>
             <TooltipTrigger asChild>
@@ -80,10 +80,14 @@ function StatusFilter({
                 size="sm"
                 aria-pressed={!off}
                 onClick={(e) => onToggle(s, e.altKey)}
-                className={cn("h-7 gap-1.5 rounded-full px-2.5 text-xs", off && "text-muted-foreground opacity-60")}
+                className={cn(
+                  "h-7 gap-1.5 rounded-full px-2.5 text-xs",
+                  count === 0 && !off && "text-muted-foreground",
+                  off && "text-muted-foreground opacity-60",
+                )}
               >
-                <StatusDot status={s} className={cn(off && "opacity-40")} />
-                <span className="tabular-nums font-semibold">{fleet?.counts[s]}</span>
+                <StatusDot status={s} className={cn((off || count === 0) && "opacity-40")} />
+                <span className="tabular-nums font-semibold">{count}</span>
                 <span className={cn(off && "line-through")}>{s}</span>
               </Button>
             </TooltipTrigger>
