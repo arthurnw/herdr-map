@@ -81,6 +81,20 @@ export interface FleetAgent {
   stuck?: { reason: StuckReason; since: number };
   /** The agent's native session ID, when herdr knows it. */
   sessionId?: string;
+  /** Context use and recorded cost, read from the agent's transcript by the usage probe. */
+  usage?: AgentUsage;
+}
+
+export interface AgentUsage {
+  model?: string;
+  /** Input-side tokens of the latest turn. */
+  contextTokens?: number;
+  /** The model's context window, when the transcript records it or the model is known. */
+  contextWindow?: number;
+  /** Total the agent recorded as spent in this session. Only Pi records cost. */
+  costUsd?: number;
+  /** Epoch ms when these numbers last changed. */
+  updatedAt: number;
 }
 
 export type StuckReason = "no-output" | "rate-limit" | "error";

@@ -1,11 +1,14 @@
 import type { ServerResponse } from "node:http";
-import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
+import { buildFleet, StatusClock, type Fleet, type Snapshot } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
+import { createUsageWatcher, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
 import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
 
 export interface State {
   fleet?: Fleet;
   error?: string;
+  /** The usage probe's last error. Logged by the server, not shown as a banner. */
+  probeError?: string;
   updatedAt?: number;
 }
 
@@ -23,10 +26,14 @@ export interface Poller {
 // once every this many snapshot polls.
 const STUCK_POLLS = 10;
 
-export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: number): Poller {
+// Transcript reads run on their own slower loop; see server/probe.ts.
+const PROBE_INTERVAL_MS = 5000;
+
+export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: number, probe?: ProbeOptions): Poller {
   const clock = new StatusClock();
   const clients = new Set<ServerResponse>();
   let state: State = {};
+  let snap: Snapshot | undefined;
   let lastPayload = "";
   let pollTimer: NodeJS.Timeout | undefined;
   let polling = false;
@@ -45,10 +52,11 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     polling = true;
     clearTimeout(pollTimer);
     try {
-      const snap = await snapshot(herdr);
+      snap = await snapshot(herdr);
       const now = Date.now();
       const fleet = buildFleet(snap, clock.observe(snap.agents, now, snap.focused_pane_id));
       state = { fleet: markStuck(fleet, watcher.stuck()), updatedAt: now };
+      if (usage) state = { ...state, fleet: markUsage(state.fleet!, usage.usage()), probeError: usage.error() };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -74,6 +82,11 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     panes: () => workingPanes(state.fleet),
     onChange: () => void poll(),
   });
+
+  const usage =
+    probe &&
+    createUsageWatcher({ probe, intervalMs: PROBE_INTERVAL_MS, refs: () => sessionRefs(snap, state.fleet), onChange: () => void poll() });
+  usage?.start();
 
   // SSE proxies and browsers drop idle streams; a comment line keeps them open.
   setInterval(() => {

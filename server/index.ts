@@ -24,6 +24,8 @@ const { values: args } = parseArgs({
     activate: { type: "string", default: "Ghostty" },
     "no-activate": { type: "boolean", default: false },
     layout: { type: "string", default: defaultLayoutPath() },
+    "probe-node": { type: "string" },
+    "no-probe": { type: "boolean", default: false },
   },
 });
 
@@ -33,7 +35,13 @@ const ctx: Context = {
   herdr,
   layoutPath: args.layout!,
   activate: args["no-activate"] ? undefined : args.activate,
-  poller: createPoller(herdr, intervalMs, Number(args["stuck-minutes"]) * 60_000),
+  poller: createPoller(
+    herdr,
+    intervalMs,
+    Number(args["stuck-minutes"]) * 60_000,
+    // Locally, the probe runs on this server's own Node unless told otherwise.
+    args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath) },
+  ),
 };
 
 const routes = [
