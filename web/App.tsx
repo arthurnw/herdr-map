@@ -40,6 +40,7 @@ import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
 import { useLayoutDrag, useSavedLayout } from "./hooks/useLayoutDrag.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
+import { useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
 
 function zoomClass(zoom: number) {
@@ -185,6 +186,7 @@ function FleetMap() {
     window.dispatchEvent(new Event(FOCUS_REPLY_EVENT)),
   );
   useShortcut({ key: "Escape", description: "Clear selection", enabled: !!(pinned || hovered) }, clear);
+  useSpatialNav(shownNodes, pinned, select);
 
   return (
     <NowContext.Provider value={now}>

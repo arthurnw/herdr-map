@@ -1,7 +1,7 @@
 // Command palette, arrow-key movement between agent cards, and box selection.
 import { readFileSync } from "node:fs";
 
-export default function ({ test, assert, card, actions, clearActions, layoutFile }) {
+export default function ({ test, assert, needsYouRow, actions, clearActions, layoutFile }) {
   const palette = (page) => page.getByRole("dialog", { name: "Command palette" });
   const items = (page) => palette(page).locator("[cmdk-item]");
   const selectedPane = (page) => page.locator(".react-flow__node.selected-pane").getAttribute("data-id");
@@ -43,5 +43,31 @@ export default function ({ test, assert, card, actions, clearActions, layoutFile
     await page.waitForTimeout(200);
     const focused = await page.evaluate(() => document.activeElement?.getAttribute("placeholder"));
     assert(focused?.startsWith("Filter workspaces"), `running the command should focus the filter box, got ${focused}`);
+  });
+
+  test("arrow keys move the selection between agent cards", async (page) => {
+    clearActions();
+    await page.keyboard.press("ArrowRight");
+    await page.waitForTimeout(200);
+    assert(await selectedPane(page), "the first arrow should select the agent nearest the middle of the view");
+
+    await needsYouRow(page, "api-auth").click();
+    await page.waitForTimeout(200);
+    assert((await selectedPane(page)) === "w2:p3", "the Needs you row should select the blocked agent");
+    const steps = [
+      ["ArrowDown", "w2:p4"],
+      ["ArrowRight", "w3:p5"],
+      ["ArrowLeft", "w2:p3"],
+      ["ArrowLeft", "w1:p1"],
+      ["ArrowDown", "w4:p7"],
+      ["ArrowUp", "w1:p1"],
+    ];
+    for (const [key, expected] of steps) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(150);
+      const got = await selectedPane(page);
+      assert(got === expected, `${key} should select ${expected}, got ${got}`);
+    }
+    assert(actions().length === 0, `moving the selection must not focus the terminal, got ${actions()}`);
   });
 }
