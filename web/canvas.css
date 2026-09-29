@@ -172,22 +172,12 @@
   -webkit-box-orient: vertical;
 }
 
+/* Status shows as a soft wash of the status color across the whole card. */
 .pane.agent {
   --c: var(--status-idle);
   position: relative;
-  background: color-mix(in oklab, var(--c) 9%, var(--card));
-  border: 1px solid color-mix(in oklab, var(--c) 35%, var(--border));
-  padding-left: 13px;
-}
-
-/* Status bar on the left edge. */
-.pane.agent::before {
-  content: "";
-  position: absolute;
-  inset: 4px auto 4px 4px;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--c);
+  background: color-mix(in oklab, var(--c) 16%, var(--card));
+  border: 1px solid color-mix(in oklab, var(--c) 55%, var(--border));
 }
 
 .pane.agent.status-working { --c: var(--status-working); }
@@ -228,7 +218,7 @@
   align-items: center;
   gap: 5px;
   margin-top: 1px;
-  color: var(--muted-foreground);
+  color: color-mix(in oklab, var(--c) 70%, var(--foreground));
   white-space: nowrap;
 }
 
@@ -277,7 +267,6 @@
   background: var(--c);
   border-color: transparent;
 }
-.zoom-far .pane.agent::before,
 .zoom-far .agent-dot { display: none; }
 .zoom-far .pane.agent .agent-name,
 .zoom-far .pane.agent .agent-kind,
