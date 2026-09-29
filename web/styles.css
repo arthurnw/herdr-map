@@ -18,8 +18,10 @@
   color-scheme: light;
 }
 
+/* Dark tokens apply for the system preference unless the theme picker chose light,
+   and always when it chose dark. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #111317;
     --panel: #181b20;
     --text: #e6e8eb;
@@ -38,6 +40,26 @@
     --focus-ring: #9775fa;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #111317;
+  --panel: #181b20;
+  --text: #e6e8eb;
+  --muted: #8b939e;
+  --border: #2c3139;
+  --group: #161a1f;
+  --workspace: #1c2026;
+  --tab: #22272e;
+  --tool: #3a414b;
+  --tool-bg: #2a3038;
+  --status-working: #5c93f0;
+  --status-blocked: #ff7a45;
+  --status-done: #51cf66;
+  --status-idle: #6c747e;
+  --status-unknown: #4a5058;
+  --focus-ring: #9775fa;
+  color-scheme: dark;
 }
 
 * {
@@ -111,6 +133,20 @@ body {
   color: var(--muted);
   white-space: nowrap;
 }
+
+.plain,
+.theme {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.plain:disabled { color: var(--muted); cursor: default; }
 
 .conn {
   font-size: 12px;
@@ -219,10 +255,21 @@ body {
   white-space: pre;
 }
 
-/* Canvas nodes. React Flow sets each node's size from layout.ts. */
+
+
+/* Canvas nodes. React Flow sets each node's size from layout.ts.
+   The canvas sets --z to the current zoom; --inv scales text up as the map zooms out
+   so labels keep a readable on-screen size, clamped to what fits in each box. */
+
+.canvas { --inv: calc(1 / var(--z, 1)); }
 
 .react-flow__node { cursor: pointer; }
 .react-flow__node.dim { opacity: 0.15; }
+.react-flow__node-workspace,
+.react-flow__node-group-box { cursor: grab; }
+.react-flow__node-workspace.dragging,
+.react-flow__node-group-box.dragging { cursor: grabbing; }
+.react-flow__node-ws-label { pointer-events: none !important; }
 .react-flow__handle { opacity: 0; pointer-events: none; }
 
 .group-box {
@@ -231,13 +278,16 @@ body {
   background: var(--group);
   border: 1px solid var(--border);
   border-radius: 14px;
-  cursor: default;
 }
 
 .group-header {
   padding: 8px 14px;
-  font-size: 18px;
+  font-size: clamp(18px, calc(15px * var(--inv)), 44px);
   font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace {
@@ -271,22 +321,20 @@ body {
 .ws-tag { padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); font-size: 10px; font-weight: 500; }
 .ws-count { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 11px; }
 
-.ws-bigname {
+/* Floating workspace name, shown instead of the header when zoomed out. */
+.ws-label-float {
   display: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  padding: 6px 12px;
-  font-size: 34px;
+  padding: 4px 10px 6px;
+  font-size: clamp(13px, calc(12px * var(--inv)), 64px);
   font-weight: 800;
   line-height: 1.1;
   overflow-wrap: anywhere;
   color: var(--text);
-  background: color-mix(in srgb, var(--workspace) 80%, transparent);
+  background: color-mix(in srgb, var(--workspace) 88%, transparent);
   border-radius: 10px 10px 0 0;
-  pointer-events: none;
-  z-index: 5;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .tab {
@@ -315,7 +363,8 @@ body {
   padding: 5px 7px;
   border-radius: 4px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: clamp(11px, calc(10px * var(--inv)), 36px);
+  line-height: 1.2;
 }
 
 .pane.focused { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
@@ -324,12 +373,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
   background: var(--tool-bg);
   border: 1px dashed var(--tool);
   color: var(--muted);
 }
 
-.tool-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-title {
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
 
 .pane.agent {
   --c: var(--status-idle);
@@ -362,18 +418,42 @@ body {
   overflow: hidden;
 }
 
-/* Semantic zoom: drop text as the map zooms out, fill panes with their status color,
-   then show large workspace names. */
-.zoom-mid .pane .agent-summary { display: none; }
-.zoom-mid .pane.agent { background: color-mix(in srgb, var(--c) 35%, var(--workspace)); }
-.zoom-far .pane.agent { background: var(--c); }
-.zoom-far .pane .detail,
-.zoom-far .tab-header,
+/* Semantic zoom. Mid: drop summaries and tab labels, let names wrap, and swap the
+   workspace header for the floating label. Far: fill panes with their status color. */
+.zoom-mid .agent-summary,
+.zoom-far .agent-summary,
+.zoom-mid .tab-header,
+.zoom-far .tab-header { visibility: hidden; }
+.zoom-mid .agent-summary,
+.zoom-far .agent-summary { display: none; }
+.zoom-mid .ws-header,
 .zoom-far .ws-header { visibility: hidden; }
-.zoom-far .ws-bigname { display: block; }
-.zoom-far .group-header { font-size: 40px; padding: 4px 14px; }
-.zoom-far .agent-line { visibility: hidden; }
+.zoom-mid .ws-label-float,
+.zoom-far .ws-label-float { display: -webkit-box; }
+.zoom-mid .agent-line,
+.zoom-far .agent-line { display: block; white-space: normal; overflow-wrap: anywhere; }
+.zoom-mid .agent-name,
+.zoom-far .agent-name { display: block; }
+/* The floating workspace label covers the top of each pane, so pane text sits at the bottom. */
+.zoom-mid .pane.agent,
+.zoom-far .pane.agent {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.zoom-mid .pane.tool,
+.zoom-far .pane.tool { align-items: flex-end; }
+.zoom-mid .pane.agent { background: color-mix(in srgb, var(--c) 35%, var(--workspace)); }
+.zoom-far .pane.agent {
+  background: var(--c);
+  color: #fff;
+}
+.zoom-far .pane.agent .agent-kind,
+.zoom-far .pane.agent .agent-status { color: inherit; opacity: 0.85; }
+/* The name says more than the kind when both can't fit. */
+.zoom-far .pane.agent:has(.agent-name) .agent-kind { display: none; }
 
+.react-flow__minimap-node.mm-hidden { display: none; }
 .react-flow__minimap-node.mm-container { fill: transparent; stroke: var(--border); }
 .react-flow__minimap-node.mm-pane.tool { fill: var(--tool); }
 .react-flow__minimap-node.status-working { fill: var(--status-working); }

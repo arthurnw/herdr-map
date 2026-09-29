@@ -11,7 +11,9 @@ herdr stays the host. herdr-map only reads `herdr api snapshot` and runs focus c
 - **Agent panes** colored by status (working, blocked, done, idle), with how long the agent has been in that status and the `summary` pane token when a plugin sets one. Other panes show their terminal title, such as `nvim AGENTS.md` or `hunk`.
 - **Needs you**: blocked agents first, then finished ones, oldest first.
 - **Hover preview**: the pane's visible screen, its cwd, and its summary.
-- **Semantic zoom**: text drops away as you zoom out, panes fill with their status color, and workspace names get large.
+- **Adaptive zoom**: text grows as you zoom out so names and statuses stay readable, summaries and tab labels drop away, and panes fill with their status color.
+- **Your own arrangement**: drag a workspace to move it, or drag a repo box to move all of its workspaces. Drop a workspace away from its repo to detach it; it then shows the repo name as a tag. Positions are saved to a file and survive reloads. **Reset layout** returns to the automatic layout.
+- **Light, dark, or system theme**, picked from the toolbar.
 - **Lineage edges** from a `parent` pane token, when present (see below).
 
 Clicking an agent runs `herdr agent focus <pane>`. Clicking any other pane focuses its tab, and clicking a workspace focuses the workspace. On macOS the server then activates the terminal app (Ghostty by default). Typing in the filter box dims non-matching workspaces, and Enter focuses the first matching agent.
@@ -45,6 +47,7 @@ Open http://127.0.0.1:4747.
 | `--interval MS` | `1500` | Snapshot poll interval. |
 | `--activate APP` | `Ghostty` | macOS app to bring forward after a focus. |
 | `--no-activate` | off | Skip app activation. |
+| `--layout FILE` | `~/.config/herdr-map/layout.json` | Where dragged positions are saved. |
 
 Status ages start when herdr-map first sees a status. Ages that began before the server started are lower bounds and show a trailing `+`.
 

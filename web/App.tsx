@@ -7,10 +7,20 @@ import {
   ReactFlowProvider,
   useReactFlow,
   type Node,
+  type NodeChange,
   type Viewport,
 } from "@xyflow/react";
 import { STATUSES, type Fleet, type FleetPane, type FleetWorkspace } from "../shared/model.ts";
-import { layoutFleet, type PaneData, type TabData, type WorkspaceData } from "./layout.ts";
+import {
+  isDetachedDrop,
+  layoutFleet,
+  type GroupData,
+  type PaneData,
+  type Rect,
+  type SavedLayout,
+  type TabData,
+  type WorkspaceData,
+} from "./layout.ts";
 import { NowContext, agentAge, nodeTypes } from "./nodes.tsx";
 
 interface ServerState {
@@ -93,6 +103,40 @@ function zoomClass(zoom: number) {
   return "zoom-near";
 }
 
+type Theme = "system" | "light" | "dark";
+
+function readTheme(): Theme {
+  try {
+    const saved = localStorage.getItem("herdr-map.theme");
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {}
+  return "system";
+}
+
+function useTheme(): [Theme, (t: Theme) => void] {
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  useEffect(() => {
+    if (theme === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("herdr-map.theme", theme);
+    } catch {}
+  }, [theme]);
+  return [theme, setTheme];
+}
+
+async function putLayout(layout: SavedLayout) {
+  await fetch("/api/layout", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(layout),
+  });
+}
+
+function nodeRect(n: Node): Rect {
+  return { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
+}
+
 function FleetMap() {
   const [{ fleet, error }, connected] = useServerState();
   const now = useNow(5000);
@@ -101,11 +145,30 @@ function FleetMap() {
   const [zoom, setZoom] = useState(1);
   const [hovered, setHovered] = useState<string>();
   const [focusError, setFocusError] = useState<string>();
+  const [theme, setTheme] = useTheme();
+  const [saved, setSaved] = useState<SavedLayout>();
+  // Bumped after a drag or reset; the effect below writes the settled layout.
+  const [saveTick, setSaveTick] = useState(0);
   const { fitView } = useReactFlow();
   const fitted = useRef(false);
 
+  useEffect(() => {
+    fetch("/api/layout")
+      .then((res) => res.json())
+      .then((layout: SavedLayout) => setSaved(layout))
+      .catch(() => setSaved({}));
+  }, []);
+
+  useEffect(() => {
+    if (saveTick > 0 && saved) void putLayout(saved);
+    // Only a new tick should trigger a write, not every drag frame.
+  }, [saveTick]);
+
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
-  const layout = useMemo(() => (fleet ? layoutFleet(fleet, { agentsOnly }) : { nodes: [], edges: [] }), [fleet, agentsOnly]);
+  const layout = useMemo(
+    () => (fleet && saved ? layoutFleet(fleet, { agentsOnly }, saved) : { nodes: [], edges: [] }),
+    [fleet, agentsOnly, saved],
+  );
 
   const nodes = useMemo(() => {
     const q = query.trim();
@@ -115,7 +178,7 @@ function FleetMap() {
     );
     return layout.nodes.map((n): Node => {
       const wsId =
-        n.type === "workspace"
+        n.type === "workspace" || n.type === "ws-label"
           ? (n.data as WorkspaceData).workspace.id
           : n.type === "tab"
             ? (n.data as TabData).workspaceId
@@ -152,6 +215,88 @@ function FleetMap() {
     },
     [panes, focus],
   );
+
+  // Dragging a workspace moves it; dragging a group box moves its attached workspaces.
+  // The first drag freezes the automatic layout by saving every current position.
+  // Group drags apply offsets from the drag start, so repeated change events can't compound.
+  const groupDrag = useRef<{ id: string; origin: { x: number; y: number }; members: SavedLayout }>(undefined);
+
+  const onNodeDragStart = useCallback(
+    (_: unknown, node: Node) => {
+      if (node.type !== "group-box") return;
+      const members: SavedLayout = {};
+      for (const n of layout.nodes) {
+        if (n.type !== "workspace") continue;
+        const id = (n.data as WorkspaceData).workspace.id;
+        if ((node.data as GroupData).memberIds.includes(id)) members[id] = { ...n.position, detached: false };
+      }
+      groupDrag.current = { id: node.id, origin: { ...node.position }, members };
+    },
+    [layout.nodes],
+  );
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      const moves = changes.filter((c) => c.type === "position" && c.position);
+      if (moves.length === 0) return;
+      setSaved((prev) => {
+        const next: SavedLayout = { ...prev };
+        const byId = new Map(layout.nodes.map((n) => [n.id, n]));
+        if (Object.keys(next).length === 0) {
+          for (const n of layout.nodes) {
+            if (n.type === "workspace") next[(n.data as WorkspaceData).workspace.id] = { ...n.position };
+          }
+        }
+        for (const change of moves) {
+          if (change.type !== "position" || !change.position) continue;
+          const node = byId.get(change.id);
+          if (!node) continue;
+          if (node.type === "workspace") {
+            const id = (node.data as WorkspaceData).workspace.id;
+            next[id] = { ...change.position, detached: next[id]?.detached };
+          } else if (node.type === "group-box" && groupDrag.current?.id === node.id) {
+            const { origin, members } = groupDrag.current;
+            const dx = change.position.x - origin.x;
+            const dy = change.position.y - origin.y;
+            for (const [id, p] of Object.entries(members)) next[id] = { x: p.x + dx, y: p.y + dy };
+          }
+        }
+        return next;
+      });
+    },
+    [layout.nodes],
+  );
+
+  const onNodeDragStop = useCallback(
+    (_: unknown, node: Node) => {
+      setSaved((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        if (node.type === "workspace") {
+          const data = node.data as WorkspaceData;
+          const others = layout.nodes.filter(
+            (n) =>
+              n.type === "workspace" &&
+              n.id !== node.id &&
+              (n.data as WorkspaceData).groupKey === data.groupKey &&
+              !(n.data as WorkspaceData).detached,
+          );
+          const detached = isDetachedDrop(nodeRect(node), others.map(nodeRect));
+          next[data.workspace.id] = { ...node.position, detached };
+        }
+        return next;
+      });
+      groupDrag.current = undefined;
+      setSaveTick((t) => t + 1);
+    },
+    [layout.nodes],
+  );
+
+  const resetLayout = () => {
+    setSaved({});
+    setSaveTick((t) => t + 1);
+    requestAnimationFrame(() => fitView({ padding: 0.05 }));
+  };
 
   const attention = useMemo(
     () =>
@@ -196,25 +341,35 @@ function FleetMap() {
             <input type="checkbox" checked={agentsOnly} onChange={(e) => setAgentsOnly(e.target.checked)} />
             Workspaces with agents only
           </label>
+          <button className="plain" onClick={resetLayout} disabled={!saved || Object.keys(saved).length === 0}>
+            Reset layout
+          </button>
+          <select className="theme" value={theme} onChange={(e) => setTheme(e.target.value as Theme)} aria-label="Theme">
+            <option value="system">System theme</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
           <span className={`conn ${connected && !error ? "ok" : "bad"}`}>
             {!connected ? "disconnected" : error ? "herdr error" : `herdr ${fleet?.version ?? ""}`}
           </span>
         </header>
         {(error || focusError) && <div className="banner">{focusError ?? error}</div>}
-        <main className={`canvas ${zoomClass(zoom)}`}>
+        <main className={`canvas ${zoomClass(zoom)}`} style={{ "--z": zoom } as React.CSSProperties}>
           <ReactFlow
             nodes={nodes}
             edges={layout.edges}
             nodeTypes={nodeTypes}
-            nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable={false}
+            onNodesChange={onNodesChange}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDragStop={onNodeDragStop}
             onNodeClick={onNodeClick}
             onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
             onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
             minZoom={0.05}
             maxZoom={2.5}
-            colorMode="system"
+            colorMode={theme}
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={40} />
@@ -248,6 +403,7 @@ function FleetMap() {
 }
 
 function minimapClass(node: Node): string {
+  if (node.type === "ws-label") return "mm-hidden";
   if (node.type !== "pane") return "mm-container";
   const status = (node.data as PaneData).pane.agent?.status;
   return status ? `mm-pane status-${status}` : "mm-pane tool";

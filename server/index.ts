@@ -4,6 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { parseArgs } from "node:util";
 import { buildFleet, StatusClock, type Fleet } from "../shared/model.ts";
 import { activateApp, focus, readPane, snapshot, type FocusTarget, type HerdrOptions } from "./herdr.ts";
+import { defaultLayoutPath, isSavedLayout, loadLayout, saveLayout } from "./layout-store.ts";
 
 const { values: args } = parseArgs({
   options: {
@@ -14,8 +15,10 @@ const { values: args } = parseArgs({
     interval: { type: "string", default: "1500" },
     activate: { type: "string", default: "Ghostty" },
     "no-activate": { type: "boolean", default: false },
+    layout: { type: "string", default: defaultLayoutPath() },
   },
 });
+const layoutPath = args.layout!;
 
 const herdr: HerdrOptions = { ssh: args.ssh, bin: args.herdr! };
 const intervalMs = Number(args.interval);
@@ -77,7 +80,10 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   let raw = "";
-  for await (const chunk of req) raw += chunk;
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > 1_000_000) throw new Error("request body too large");
+  }
   return JSON.parse(raw || "{}");
 }
 
@@ -122,6 +128,15 @@ const server = createServer(async (req, res) => {
       if (activate) await activateApp(activate);
       void poll();
       return sendJson(res, 200, { ok: true });
+    }
+    if (url.pathname === "/api/layout") {
+      if (req.method === "PUT") {
+        const layout = await readBody(req);
+        if (!isSavedLayout(layout)) return sendJson(res, 400, { error: "invalid layout" });
+        await saveLayout(layoutPath, layout);
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendJson(res, 200, await loadLayout(layoutPath));
     }
     if (url.pathname === "/api/read") {
       const text = await readPane(herdr, url.searchParams.get("pane") ?? "", 60);
