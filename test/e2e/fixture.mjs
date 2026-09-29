@@ -1,5 +1,20 @@
 // A made-up herdr session for end-to-end tests: two repos plus a scratch workspace,
 // with agents in every interesting state. Shaped like `herdr api snapshot` output.
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Synthetic agent transcripts for the usage probe, copied so checks can append to them.
+// run.mjs passes its environment to the server, and the probe finds Claude Code, Codex,
+// and Pi files through these variables instead of the real home directory.
+export const TRANSCRIPTS = mkdtempSync(join(tmpdir(), "herdr-map-e2e-transcripts-"));
+cpSync(join(dirname(fileURLToPath(import.meta.url)), "transcripts"), TRANSCRIPTS, { recursive: true });
+process.on("exit", () => rmSync(TRANSCRIPTS, { recursive: true, force: true }));
+process.env.CLAUDE_CONFIG_DIR = join(TRANSCRIPTS, "claude");
+process.env.CODEX_HOME = join(TRANSCRIPTS, "codex");
+process.env.PI_CODING_AGENT_DIR = join(TRANSCRIPTS, "pi");
+const piSession = (dir, file) => join(TRANSCRIPTS, "pi", "sessions", dir, file);
 
 const ws = (id, label, number, repo, linked = false) => ({
   workspace_id: id,
@@ -21,6 +36,7 @@ const pane = (id, tabId, title, agent) => ({
   ...(agent && { agent: agent.kind, agent_status: agent.status }),
   ...(agent?.tokens && { tokens: agent.tokens }),
   ...(agent?.session && { agent_session: { source: `herdr:${agent.kind}`, agent: agent.kind, kind: "id", value: agent.session } }),
+  ...(agent?.sessionPath && { agent_session: { source: `herdr:${agent.kind}`, agent: agent.kind, kind: "path", value: agent.sessionPath } }),
 });
 
 // Two panes side by side, 60/40.
@@ -42,11 +58,20 @@ export const AGENTS = {
     tokens: { summary: "Refactor the auth middleware" },
     session: "1fcd536a-ca43-43bf-8d03-a6ed74098343",
   },
-  "w2:p3": { kind: "pi", status: "blocked", tokens: { summary: "Pick a deploy target" } },
-  "w2:p4": { kind: "codex", status: "done", tokens: { summary: "Rewrite the token cache" } },
+  "w2:p3": {
+    kind: "pi",
+    status: "blocked",
+    tokens: { summary: "Pick a deploy target" },
+    sessionPath: piSession("--repos-w2--", "2026-09-29T09-00-00-000Z_01a0e000-0000-7000-8000-0000000000a2.jsonl"),
+  },
+  "w2:p4": { kind: "codex", status: "done", tokens: { summary: "Rewrite the token cache" }, session: "01a08b30-6600-7000-8000-00000000c0de" },
   "w3:p5": { kind: "codex", status: "idle", tokens: { parent: "w1:p1" } },
-  "w4:p7": { kind: "claude", status: "done", name: "stylist" },
-  "w5:p9": { kind: "pi", status: "idle" },
+  "w4:p7": { kind: "claude", status: "done", name: "stylist", session: "5a1e5a1e-0000-4000-8000-00000000c1a0" },
+  "w5:p9": {
+    kind: "pi",
+    status: "idle",
+    sessionPath: piSession("--repos-w5--", "2026-09-29T10-00-00-000Z_01a0e000-0000-7000-8000-0000000000a5.jsonl"),
+  },
 };
 
 export function snapshot() {

@@ -1,0 +1,6 @@
+{"type":"session","version":3,"cwd":"/repos/w5"}
+{"type":"model_change","provider":"openai-codex","modelId":"gpt-6-luna"}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Synthetic prompt."}]}}
+{"type":"message","message":{"role":"assistant","provider":"openai-codex","model":"gpt-6-luna","content":[{"type":"text","text":"Synthetic reply."}],"usage":{"input":5,"output":30,"cacheRead":50000,"cacheWrite":4000,"cost":{"total":0.75}}}}
+{"type":"usage","kind":"cache_warm","provider":"openai-codex","model":"gpt-6-luna","usage":{"input":1,"output":1,"cacheRead":54000,"cacheWrite":0,"cost":{"total":0.5}}}
+{"type":"message","message":{"role":"assistant","provider":"openai-codex","model":"gpt-6-luna","content":[{"type":"text","text":"Synthetic reply."}],"usage":{"input":5,"output":30,"cacheRead":100000,"cacheWrite":8800,"cost":{"total":0.5}}}}

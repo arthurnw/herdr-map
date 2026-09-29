@@ -1,0 +1,19 @@
+{
+  "openai-codex": {
+    "models": [
+      {
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
+        "contextWindow": 272000
+      }
+    ]
+  },
+  "anthropic": {
+    "models": [
+      {
+        "id": "claude-opus-5-5",
+        "contextWindow": 1000000
+      }
+    ]
+  }
+}

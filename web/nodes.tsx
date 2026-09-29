@@ -13,6 +13,7 @@ import { agentAge } from "./format.ts";
 import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { KIND_LABEL } from "./status.tsx";
+import { UsageMeter } from "./usage.tsx";
 
 export const NowContext = createContext(Date.now());
 
@@ -140,6 +141,7 @@ export const PaneNode = memo(({ data }: NodeProps) => {
       <div className="agent-status">
         <span className="agent-dot" />
         {agent.status} · {agentAge(agent, now)}
+        {agent.usage && <UsageMeter usage={agent.usage} />}
       </div>
       {agent.stuck && <StuckMarker stuck={agent.stuck} now={now} />}
       {agent.summary && <div className="agent-summary">{agent.summary}</div>}

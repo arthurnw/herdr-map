@@ -1,0 +1,2 @@
+{"type":"session","version":3,"cwd":"/repos/w2"}
+{"type":"message","message":{"role":"assistant","provider":"local","model":"house-model","content":[{"type":"text","text":"Synthetic reply."}],"usage":{"input":10,"output":30,"cacheRead":43000,"cacheWrite":200,"cost":{"total":0.004}}}}
