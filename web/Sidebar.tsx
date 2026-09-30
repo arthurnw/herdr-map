@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { CircleCheck, MousePointerClick, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,8 @@ import { agentAge } from "./format.ts";
 import { PaneDetail } from "./PaneDetail.tsx";
 import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
+import { SubagentDetail } from "./SubagentDetail.tsx";
+import { SubagentViewContext } from "./subagents.tsx";
 
 interface Props {
   attention: Located[];
@@ -26,6 +29,8 @@ interface Props {
 
 export function Sidebar({ attention, starred, agentNames, detail, pinned, selectedId, now, onFocus, onHover, onSelect, onPin }: Props) {
   const rowActions = { onFocus, onHover, onSelect };
+  const subagent = useContext(SubagentViewContext);
+  const openSubagent = pinned && detail && subagent?.selected?.pane === detail.pane.id ? subagent.selected.id : undefined;
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
       {starred.length > 0 && (
@@ -71,7 +76,9 @@ export function Sidebar({ attention, starred, agentNames, detail, pinned, select
         )}
       </section>
       <Separator />
-      {detail ? (
+      {detail && openSubagent ? (
+        <SubagentDetail key={openSubagent} located={detail} id={openSubagent} now={now} onBack={() => subagent?.close()} />
+      ) : detail ? (
         <PaneDetail
           located={detail}
           agentNames={agentNames}

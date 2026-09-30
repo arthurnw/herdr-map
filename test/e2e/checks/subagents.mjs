@@ -1,4 +1,4 @@
-// Subagent cards, from the synthetic transcripts in
+// Subagent cards and their transcripts, from the synthetic transcripts in
 // ../transcripts and the Codex rollouts fixture.mjs writes at startup.
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,7 +7,7 @@ import { CODEX_CHILD, CODEX_GRANDCHILD, TRANSCRIPTS } from "../fixture.mjs";
 const CLAUDE_SESSION = "1fcd536a-ca43-43bf-8d03-a6ed74098343";
 const CLAUDE_SUB = "ae2e0000000000001";
 
-export default function subagentChecks({ test, assert, card }) {
+export default function subagentChecks({ test, assert, card, actions, clearActions }) {
   // The probe runs every 5 s, so a change can take a full round to show.
   async function waitFor(check, what, timeoutMs = 12_000) {
     const end = Date.now() + timeoutMs;
@@ -43,6 +43,24 @@ export default function subagentChecks({ test, assert, card }) {
     assert((await hit(neighbor)) === `sub:w1:p1:${CLAUDE_SUB}`, "selecting the agent brings its subagent cards forward");
   });
 
+  test("clicking a subagent card shows its transcript without focusing anything", async (page) => {
+    const sub = subCard(page, "w1:p1", CLAUDE_SUB);
+    await sub.waitFor({ timeout: 12_000 });
+    await card(page, "w1:p1").click({ modifiers: ["Alt"] });
+    clearActions();
+    await sub.click();
+    const transcript = page.locator('aside [aria-label="Subagent transcript"]');
+    await waitFor(async () => {
+      const t = await textOf(transcript);
+      return (t.includes("→ Grep authMiddleware") && t.trimEnd().endsWith("Synthetic finding: the middleware lives in src/auth.ts.")) || t;
+    }, "the subagent's messages, newest last");
+    assert(actions().length === 0, `clicking a subagent must not focus the terminal, got ${actions()}`);
+    assert((await sub.locator(".subagent.selected").count()) === 1, "the open card is outlined");
+    await page.getByRole("button", { name: /Back to lead/ }).click();
+    await page.getByRole("button", { name: "Unpin" }).waitFor();
+    assert((await transcript.count()) === 0, "Back returns to the agent's preview");
+  });
+
   test("Codex subagents show as a tree, and approval reviews as a chip", async (page) => {
     const child = subCard(page, "w2:p4", CODEX_CHILD);
     const grandchild = subCard(page, "w2:p4", CODEX_GRANDCHILD);
@@ -54,6 +72,12 @@ export default function subagentChecks({ test, assert, card }) {
     const [cb, gb] = [await child.boundingBox(), await grandchild.boundingBox()];
     assert(gb.x > cb.x && gb.y > cb.y, "the nested subagent is indented under its parent");
     assert((await card(page, "w2:p4").locator(".review-chip").count()) === 1, "a running review shows as a chip");
+    await card(page, "w2:p4").click({ modifiers: ["Alt"] });
+    await child.click();
+    await waitFor(async () => {
+      const text = await textOf(page.locator('aside [aria-label="Subagent transcript"]'));
+      return (text.includes("Synthetic review note.") && !text.includes("Synthetic parent history.")) || text;
+    }, "the Codex subagent's own messages, without the history it copied from its parent");
   });
 
   // Last: the notification stays in the transcript for the rest of the run.

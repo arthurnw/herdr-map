@@ -38,12 +38,13 @@ function writeCodexRollout(id, source, events, meta = {}) {
 const spawn = (parent, path, depth, role) => ({ subagent: { thread_spawn: { parent_thread_id: parent, depth, agent_path: path, agent_nickname: "Noether", agent_role: role } } });
 writeCodexRollout(CODEX_CHILD, spawn(CODEX_PARENT, "/root/token_cache_review", 1, "reviewer"), [
   // Copied from the parent's history, before `subagent_history_start_ordinal`.
+  [100_000, "response_item", { type: "message", role: "assistant", content: [{ type: "output_text", text: "Synthetic parent history." }] }],
   [100_000, "event_msg", { type: "task_complete" }],
   [90_000, "event_msg", { type: "task_started" }],
   [85_000, "response_item", { type: "custom_tool_call", name: "exec", input: "tools.exec_command({cmd: 'git diff'})" }],
   [60_000, "response_item", { type: "message", role: "assistant", content: [{ type: "output_text", text: "Synthetic review note." }] }],
   [60_000, "event_msg", { type: "token_count", info: { last_token_usage: { input_tokens: 41_900, output_tokens: 100, total_tokens: 42_000 } } }],
-]);
+], { subagent_history_start_ordinal: 3 });
 writeCodexRollout(CODEX_GRANDCHILD, spawn(CODEX_CHILD, "/root/token_cache_review/lint", 2, null), [
   [100_000, "event_msg", { type: "task_complete" }],
   [80_000, "event_msg", { type: "task_started" }],

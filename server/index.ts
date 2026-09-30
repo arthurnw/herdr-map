@@ -19,6 +19,7 @@ import { queueRoutes } from "./routes/queue.ts";
 import { readRoutes } from "./routes/read.ts";
 import { renameRoutes } from "./routes/rename.ts";
 import { schedulesRoutes } from "./routes/schedules.ts";
+import { subagentRoutes } from "./routes/subagents.ts";
 import { zoetropeRoutes } from "./routes/zoetrope.ts";
 
 const { values: args } = parseArgs({
@@ -67,6 +68,7 @@ const routes = [
   ...readRoutes(ctx),
   ...renameRoutes(ctx),
   ...schedulesRoutes(ctx),
+  ...subagentRoutes(ctx),
   ...zoetropeRoutes(ctx),
 ];
 const server = createServer(createRouter(routes, (_req, res, url) => serveStatic(url.pathname, res)));
