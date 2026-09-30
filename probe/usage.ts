@@ -293,11 +293,14 @@ export function claudeSession(root: string, processes: PaneProcess[]): ClaudeSes
 // while its agent is working or blocked and the transcript has stopped growing.
 export const CLAUDE_RECHECK_MS = 60_000;
 export const CLAUDE_STALL_MS = 30_000;
+// The server sends an idle pane once a minute, timed on its own clock; a check falls due this
+// much early so run-to-run latency can't push it to the minute after.
+export const CLAUDE_RECHECK_SLACK_MS = 5_000;
 
 export function claudeRecheckDue(status: string | undefined, follow: ClaudeFollow, now: number): boolean {
   const since = now - follow.resolvedAt;
   const stalled = (status === "working" || status === "blocked") && now - follow.grewAt >= CLAUDE_STALL_MS;
-  return since < 0 || since >= (stalled ? CLAUDE_STALL_MS : CLAUDE_RECHECK_MS);
+  return since < 0 || since >= (stalled ? CLAUDE_STALL_MS : CLAUDE_RECHECK_MS) - CLAUDE_RECHECK_SLACK_MS;
 }
 
 /** The cursor for a Claude Code pane. When a check is due, it follows the pane's process to its current session. */

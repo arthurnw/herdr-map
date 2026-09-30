@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   advance,
   CLAUDE_RECHECK_MS,
+  CLAUDE_RECHECK_SLACK_MS,
   CLAUDE_STALL_MS,
   claudeSession,
   claudeTranscript,
@@ -347,15 +348,17 @@ test("probe re-checks a Claude pane's session only when due, and starts over whe
   assert.equal(res.cursor?.offset, lines(claude(1, 820_000, 6_000)).length, "read from the start of the new transcript");
   assert.equal(res.usage?.contextTokens, 826_001);
 
-  // An idle agent is re-checked once a minute.
+  // An idle agent is re-checked once a minute, allowing for the server's timing.
   const idle = { ...ref, status: "idle" };
-  t += CLAUDE_RECHECK_MS - 1;
+  t += CLAUDE_RECHECK_MS - CLAUDE_RECHECK_SLACK_MS - 1;
   res = run({ ...idle, cursor: res.cursor });
   assert.equal(calls, 2);
   t += 1;
   res = run({ ...idle, cursor: res.cursor });
   assert.equal(calls, 3);
   assert.equal(res.usage?.contextTokens, 826_001, "the same session keeps its cursor");
+  t += CLAUDE_RECHECK_MS;
+  assert.equal(probe({ refs: [{ ...idle, cursor: res.cursor }], roots }, { processes, now: () => t }).bytesRead, 0, "nothing new, nothing read");
 });
 
 test("herdrProcesses reads process-info, and a missing or failing herdr gives nothing", () => {

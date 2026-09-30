@@ -105,11 +105,16 @@ interface Entry {
 export const RECENT_MS = 60_000;
 // A transcript that couldn't be found is looked for again this often while its agent is idle.
 export const RETRY_MS = 60_000;
+// An idle Claude Code agent's session can move to another transcript without its status
+// changing, so it's sent this often for the probe's own once-a-minute re-check. The probe
+// reads nothing when the transcript hasn't grown.
+export const CLAUDE_IDLE_MS = 60_000;
 
 export function isDue(ref: SessionRef, entry: Entry | undefined, now: number): boolean {
   if (!entry?.triedAt) return true;
   if (ref.status === "working" || ref.status === "blocked") return true;
   if (now - ref.since < RECENT_MS) return true;
+  if (ref.kind === "claude" && ref.sessionKind === "id" && now - entry.triedAt >= CLAUDE_IDLE_MS) return true;
   return !!entry.error && now - entry.triedAt >= RETRY_MS;
 }
 

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { buildFleet, fleetPanes, StatusClock } from "../shared/model.ts";
 import type { ProbeInput, ProbeOutput } from "../probe/usage.ts";
 import {
+  CLAUDE_IDLE_MS,
   createUsageWatcher,
   isDue,
   markUsage,
@@ -92,6 +93,16 @@ test("isDue reads new agents, working ones, and ones whose status just changed",
   assert.equal(isDue(ref("done", now - 1000), { session: "s", triedAt: now - 1 }, now), true, "just finished");
   assert.equal(isDue(ref("idle", 0), { session: "s", triedAt: now - 1 }, now), false, "idle for a while");
   assert.equal(isDue(ref("idle", 0), { session: "s", triedAt: now - RETRY_MS, error: "transcript not found" }, now), true, "retry");
+});
+
+test("isDue sends an idle Claude Code agent once a minute, and other idle agents only once", () => {
+  const now = 10 * RECENT_MS;
+  const read = { session: "s", triedAt: now - CLAUDE_IDLE_MS };
+  assert.equal(isDue(ref("idle", 0), { ...read, triedAt: now - CLAUDE_IDLE_MS + 1 }, now), false);
+  assert.equal(isDue(ref("idle", 0), read, now), true, "its session may have moved");
+  assert.equal(isDue(ref("done", 0), read, now), true);
+  assert.equal(isDue({ ...ref("idle", 0), kind: "codex" }, read, now), false);
+  assert.equal(isDue({ ...ref("idle", 0), kind: "pi", sessionKind: "path" }, read, now), false);
 });
 
 test("the watcher round-trips cursors, keeps numbers, and survives probe errors", async () => {
