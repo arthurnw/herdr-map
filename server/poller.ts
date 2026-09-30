@@ -6,6 +6,7 @@ import type { TranscriptOutput } from "../probe/subagents.ts";
 import { agentPaneIds, createMemoryWatcher, markMemory } from "./memory.ts";
 import { createUsageWatcher, markActivity, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
 import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
+import { createGitWatcher, markGit, workspaceDirs } from "./git.ts";
 
 export interface State {
   fleet?: Fleet;
@@ -67,6 +68,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
       state = { fleet: markStuck(fleet, watcher.stuck()), updatedAt: now };
       if (usage) state = { ...state, fleet: markActivity(markUsage(state.fleet!, usage.usage()), usage.activity()), probeError: usage.error() };
       if (memory) state = { ...state, fleet: markMemory(state.fleet!, memory.memory()) };
+      if (git) state = { ...state, fleet: markGit(state.fleet!, git.workspaces(workspaceDirs(snap))) };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -102,6 +104,9 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     probe &&
     createMemoryWatcher({ probe, intervalMs: MEMORY_INTERVAL_MS, panes: () => agentPaneIds(state.fleet), onChange: () => void poll() });
   memory?.start();
+  // Branch, changes, and PRs, on their own slower loop; see server/git.ts.
+  const git = probe && createGitWatcher({ probe, dirs: () => workspaceDirs(snap), onChange: () => void poll() });
+  git?.start();
 
   // SSE proxies and browsers drop idle streams; a comment line keeps them open.
   setInterval(() => {

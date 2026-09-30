@@ -1,0 +1,62 @@
+/* Branch, changes, and PR on a workspace header and in the preview. The header hides at mid
+   and far zoom, and these with it. */
+:root {
+  --git-pass: var(--status-done);
+  --git-fail: var(--destructive);
+  --git-pending: oklch(0.75 0.16 75);
+  --git-merged: oklch(0.6 0.2 300);
+}
+
+.git-branch,
+.git-counts,
+.git-pr {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+.git-branch svg,
+.git-pr svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+/* To fit change counts and a PR, a narrow header drops the agent count (as a collapsed one
+   does) and the worktree tag (the branch's title says so instead), and the label keeps up to
+   40% while the branch name shrinks. */
+.workspace:has(.ws-header .git-branch) { container-type: inline-size; }
+@container (max-width: 480px) {
+  .ws-header:has(.git-counts, .git-pr) .ws-count { visibility: hidden; flex-shrink: 50; min-width: 0; }
+  .ws-header:has(.git-counts, .git-pr) .ws-tag:not(.ws-repo-tag, .ws-user-tag) { display: none; }
+  .ws-header:has(.git-branch) .ws-label { flex-shrink: 0; max-width: 40%; }
+}
+.git-branch { gap: 3px; min-width: 11px; flex-shrink: 8; overflow: hidden; }
+.git-branch-name { min-width: 0; max-width: 14em; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+.git-counts { gap: 4px; flex-shrink: 0; }
+.git-dirty { color: var(--git-pending); }
+
+.git-pr {
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  cursor: pointer;
+  text-decoration: none;
+}
+.git-pr:hover { background: var(--accent); }
+.git-pr.pr-draft { border-style: dashed; color: var(--muted-foreground); }
+.git-pr.pr-merged { color: var(--git-merged); border-color: color-mix(in oklab, var(--git-merged) 45%, transparent); }
+.git-pr.pr-closed { color: var(--muted-foreground); text-decoration: line-through; }
+
+.git-ci { stroke-width: 3; }
+.git-ci-pass { color: var(--git-pass); }
+.git-ci-fail { color: var(--git-fail); }
+.git-ci-pending { color: var(--git-pending); fill: currentColor; }
+
+/* The preview's line, at the sidebar's text size. */
+.git-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.git-line > * { font-size: 12px; }
+.git-line svg { width: 13px; height: 13px; }
+.git-line .git-branch-name { max-width: none; }

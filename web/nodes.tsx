@@ -21,6 +21,7 @@ import { KIND_LABEL } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
 import { AgentActivity } from "./activity.tsx";
 import { ColorItems, GroupColorMenu, StatusCounts, TagChips, TagInput, TagMenuItems, tintClass } from "./organize.tsx";
+import { GitBadge } from "./git.tsx";
 
 export const NowContext = createContext(Date.now());
 
@@ -64,6 +65,7 @@ export const WorkspaceNode = memo(({ data }: NodeProps) => {
         {ws.linkedWorktree && <span className="ws-tag">worktree</span>}
         <TagChips tags={tags} />
         {addingTag && <TagInput onAdd={(t) => actions?.addTag([ws.id], t)} onClose={() => setAddingTag(false)} />}
+        <GitBadge git={ws.git} label={ws.label} worktree={ws.linkedWorktree} />
         <DoneMarker workspace={ws} />
         {collapsed && <StatusCounts workspace={ws} />}
         <span className="ws-count">{ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}</span>

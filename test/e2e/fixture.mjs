@@ -1,6 +1,7 @@
 // A made-up herdr session for end-to-end tests: two repos plus a scratch workspace,
 // with agents in every interesting state. Shaped like `herdr api snapshot` output.
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +54,69 @@ writeCodexRollout(CODEX_GRANDCHILD, spawn(CODEX_CHILD, "/root/token_cache_review
 ]);
 writeCodexRollout(codexId(3), { subagent: { other: "guardian" } }, [[5000, "event_msg", { type: "task_started" }]], { parent_thread_id: CODEX_PARENT });
 
+// Real git repos for the git probe, and a stub gh first on PATH that answers from GH_PRS.
+// Agent panes in w1, w2, w3, and w5 run in them (`foreground_cwd`); their `cwd` stays under
+// /repos, where the transcripts expect it.
+export const GIT = realpathSync(mkdtempSync(join(tmpdir(), "herdr-map-e2e-git-")));
+process.on("exit", () => rmSync(GIT, { recursive: true, force: true }));
+const pr = (number, title, rollup, extra = {}) => ({
+  number,
+  title,
+  url: `https://github.com/example/api/pull/${number}`,
+  state: "OPEN",
+  isDraft: false,
+  reviewDecision: "",
+  statusCheckRollup: rollup,
+  ...extra,
+});
+const check = (name, status, conclusion = "") => ({ __typename: "CheckRun", name, workflowName: "ci", status, conclusion });
+export const GH_PRS = {
+  "auth-tokens": pr(42, "Add token refresh", [check("lint", "COMPLETED", "SUCCESS"), check("test", "COMPLETED", "SUCCESS")], { reviewDecision: "APPROVED" }),
+  "billing-retry": pr(57, "Retry failed charges", [check("lint", "COMPLETED", "SUCCESS"), check("test", "COMPLETED", "FAILURE")], { isDraft: true }),
+  redesign: pr(88, "New landing page", [check("build", "IN_PROGRESS")]),
+};
+export const GIT_DIRS = { w1: join(GIT, "api"), w2: join(GIT, "api-auth"), w3: join(GIT, "api-billing"), w5: join(GIT, "web-redesign") };
+function setUpRepos() {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "e2e", GIT_AUTHOR_EMAIL: "e2e@example.com", GIT_COMMITTER_NAME: "e2e", GIT_COMMITTER_EMAIL: "e2e@example.com" };
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, env, stdio: "ignore" });
+  const commit = (cwd, file) => {
+    writeFileSync(join(cwd, file), `${file}\n`);
+    git(cwd, "add", ".");
+    git(cwd, "commit", "-q", "-m", file);
+  };
+  const init = (dir) => {
+    mkdirSync(dir);
+    git(dir, "init", "-q", "-b", "main");
+    commit(dir, "README.md");
+  };
+  git(GIT, "init", "-q", "--bare", "-b", "main", "api.git");
+  init(GIT_DIRS.w1);
+  git(GIT_DIRS.w1, "remote", "add", "origin", join(GIT, "api.git"));
+  git(GIT_DIRS.w1, "push", "-q", "-u", "origin", "main");
+  git(GIT_DIRS.w1, "remote", "set-head", "origin", "main");
+  // Pushed once, then two commits ahead, with a change, a staged file, and an untracked one.
+  git(GIT_DIRS.w1, "worktree", "add", "-q", "-b", "auth-tokens", GIT_DIRS.w2);
+  commit(GIT_DIRS.w2, "auth.ts");
+  git(GIT_DIRS.w2, "push", "-q", "-u", "origin", "auth-tokens");
+  commit(GIT_DIRS.w2, "refresh.ts");
+  commit(GIT_DIRS.w2, "expiry.ts");
+  writeFileSync(join(GIT_DIRS.w2, "auth.ts"), "changed\n");
+  writeFileSync(join(GIT_DIRS.w2, "staged.ts"), "staged\n");
+  git(GIT_DIRS.w2, "add", "staged.ts");
+  writeFileSync(join(GIT_DIRS.w2, "notes.txt"), "untracked\n");
+  git(GIT_DIRS.w1, "worktree", "add", "-q", "-b", "billing-retry", GIT_DIRS.w3);
+  init(GIT_DIRS.w5);
+  git(GIT_DIRS.w5, "checkout", "-q", "-b", "redesign");
+
+  mkdirSync(join(GIT, "bin"));
+  copyFileSync(join(dirname(fileURLToPath(import.meta.url)), "gh-stub.sh"), join(GIT, "bin", "gh"));
+  mkdirSync(join(GIT, "gh", "prs"), { recursive: true });
+  for (const [branch, body] of Object.entries(GH_PRS)) writeFileSync(join(GIT, "gh", "prs", `${branch}.json`), JSON.stringify(body));
+  process.env.GH_STUB_DIR = join(GIT, "gh");
+  process.env.PATH = `${join(GIT, "bin")}:${process.env.PATH}`;
+}
+setUpRepos();
+
 const ws = (id, label, number, repo, linked = false) => ({
   workspace_id: id,
   label,
@@ -69,6 +133,7 @@ const pane = (id, tabId, title, agent) => ({
   workspace_id: id.split(":")[0],
   focused: id === "w1:p1",
   cwd: `/repos/${id.split(":")[0]}`,
+  ...(GIT_DIRS[id.split(":")[0]] && { foreground_cwd: GIT_DIRS[id.split(":")[0]] }),
   terminal_title_stripped: title,
   ...(agent && { agent: agent.kind, agent_status: agent.status }),
   ...(agent?.tokens && { tokens: agent.tokens }),

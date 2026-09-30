@@ -18,6 +18,7 @@ import { UsageLine } from "./usage.tsx";
 import { MemoryLine } from "./memory.tsx";
 import { TaskLine } from "./activity.tsx";
 import { SubagentList } from "./subagents.tsx";
+import { GitBadge } from "./git.tsx";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
@@ -151,6 +152,11 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
           <p className="truncate font-mono text-xs text-muted-foreground" title={pane.cwd}>
             {pane.cwd}
           </p>
+        )}
+        {workspace.git && (
+          <div className="git-line">
+            <GitBadge git={workspace.git} worktree={workspace.linkedWorktree} />
+          </div>
         )}
         <UsageLine located={located} />
         <MemoryLine agent={agent} />

@@ -1,4 +1,5 @@
 // Converts a herdr `session.snapshot` into the grouped view model the canvas renders.
+import type { WorkspaceGit } from "./git.ts";
 
 export type AgentStatus = "working" | "blocked" | "done" | "idle" | "unknown";
 
@@ -35,6 +36,8 @@ export interface SnapPane {
   workspace_id: string;
   focused: boolean;
   cwd?: string;
+  /** Working directory of the pane's foreground process, such as the agent. */
+  foreground_cwd?: string;
   agent?: string;
   agent_status?: AgentStatus;
   terminal_title_stripped?: string;
@@ -178,6 +181,8 @@ export interface FleetWorkspace {
   linkedWorktree: boolean;
   agentCount: number;
   tabs: FleetTab[];
+  /** Branch, changes, and PR of the repo its agents work in, from the git probe. */
+  git?: WorkspaceGit;
 }
 
 export interface FleetGroup {

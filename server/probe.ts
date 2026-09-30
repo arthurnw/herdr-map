@@ -68,7 +68,7 @@ export function memoryScript(input: MemoryInput): string {
   return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(memoryUse(${JSON.stringify(input)})));\n`;
 }
 
-function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: number): Promise<T> {
+export function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: number): Promise<T> {
   const [cmd, argv] = probeCommand(opts);
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, argv, { stdio: ["pipe", "pipe", "pipe"] });
