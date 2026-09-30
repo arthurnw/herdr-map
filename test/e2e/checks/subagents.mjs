@@ -1,4 +1,4 @@
-// Subagent cards and their transcripts, from the synthetic transcripts in
+// Subagent cards, their transcripts, and task progress, from the synthetic transcripts in
 // ../transcripts and the Codex rollouts fixture.mjs writes at startup.
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -59,6 +59,13 @@ export default function subagentChecks({ test, assert, card, actions, clearActio
     await page.getByRole("button", { name: /Back to lead/ }).click();
     await page.getByRole("button", { name: "Unpin" }).waitFor();
     assert((await transcript.count()) === 0, "Back returns to the agent's preview");
+  });
+
+  test("an agent card shows its todo progress, and the preview names the current task", async (page) => {
+    await waitFor(async () => (await textOf(card(page, "w1:p1").locator(".task-chip"))) === "3/7" || (await textOf(card(page, "w1:p1").locator(".task-chip"))), "3/7");
+    await card(page, "w1:p1").click({ modifiers: ["Alt"] });
+    const line = await textOf(page.locator('aside [aria-label="Tasks"]'));
+    assert(line.includes("3 of 7 tasks done") && line.includes("Rewrite the token check"), `unexpected task line: ${line}`);
   });
 
   test("Codex subagents show as a tree, and approval reviews as a chip", async (page) => {

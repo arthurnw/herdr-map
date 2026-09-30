@@ -1,4 +1,4 @@
-/* Subagent cards beside their parent agent's card, and subagent and Codex review chips. */
+/* Subagent cards beside their parent agent's card, task progress, and Codex review chips. */
 
 .subagent {
   --c: var(--status-working);
@@ -86,7 +86,8 @@
 .zoom-mid .subagent { background: color-mix(in oklab, var(--c) 35%, var(--card)); }
 .zoom-far .subagent { background: var(--c); border-color: transparent; }
 
-/* Running subagents and Codex reviews on agent cards. */
+/* Task progress on agent cards: a ring and "done/total". */
+.task-chip,
 .subagent-chip,
 .review-chip {
   display: inline-flex;
@@ -95,9 +96,15 @@
   gap: 3px;
   font-variant-numeric: tabular-nums;
 }
+.task-ring { width: 1em; height: 1em; }
+.task-ring circle { fill: none; stroke-width: 2.5; }
+.task-ring-track { stroke: color-mix(in oklab, var(--c) 25%, transparent); }
+.task-ring-fill { stroke: currentColor; stroke-linecap: round; }
 .subagent-chip svg,
 .review-chip svg { width: 1em; height: 1em; }
 
+.zoom-mid .task-chip,
+.zoom-far .task-chip,
 .zoom-mid .subagent-chip,
 .zoom-far .subagent-chip,
 .zoom-mid .review-chip,

@@ -15,6 +15,7 @@ import { hasDialogHint } from "../shared/dialog.ts";
 import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
 import { UsageLine } from "./usage.tsx";
+import { TaskLine } from "./activity.tsx";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
@@ -150,6 +151,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
           </p>
         )}
         <UsageLine located={located} />
+        <TaskLine agent={agent} />
         {agent?.summary && <p className="text-sm leading-snug">{agent.summary}</p>}
       </div>
 
