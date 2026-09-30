@@ -1,6 +1,6 @@
 // A made-up herdr session for end-to-end tests: two repos plus a scratch workspace,
 // with agents in every interesting state. Shaped like `herdr api snapshot` output.
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,42 @@ process.env.CLAUDE_CONFIG_DIR = join(TRANSCRIPTS, "claude");
 process.env.CODEX_HOME = join(TRANSCRIPTS, "codex");
 process.env.PI_CODING_AGENT_DIR = join(TRANSCRIPTS, "pi");
 const piSession = (dir, file) => join(TRANSCRIPTS, "pi", "sessions", dir, file);
+
+// Codex files a subagent's rollout under the day it starts, and the probe looks only at recent
+// days, so these are written at startup: a running subagent of the w2:p4 thread with a finished
+// subagent of its own, and a running approval review.
+export const CODEX_PARENT = "01a08b30-6600-7000-8000-00000000c0de";
+export const CODEX_CHILD = codexId(1);
+export const CODEX_GRANDCHILD = codexId(2);
+function codexId(n) {
+  const hex = Date.now().toString(16).padStart(12, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-7000-8000-00000000e2e${n}`;
+}
+function writeCodexRollout(id, source, events, meta = {}) {
+  const d = new Date();
+  const dir = join(TRANSCRIPTS, "codex", "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
+  mkdirSync(dir, { recursive: true });
+  const at = (ago) => new Date(Date.now() - ago).toISOString();
+  const lines = [{ timestamp: at(120_000), ordinal: 0, type: "session_meta", payload: { id, timestamp: at(120_000), source, subagent_history_start_ordinal: 2, ...meta } }];
+  events.forEach(([ago, type, payload], i) => lines.push({ timestamp: at(ago), ordinal: i + 1, type, payload }));
+  writeFileSync(join(dir, `rollout-e2e-${id}.jsonl`), lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
+}
+const spawn = (parent, path, depth, role) => ({ subagent: { thread_spawn: { parent_thread_id: parent, depth, agent_path: path, agent_nickname: "Noether", agent_role: role } } });
+writeCodexRollout(CODEX_CHILD, spawn(CODEX_PARENT, "/root/token_cache_review", 1, "reviewer"), [
+  // Copied from the parent's history, before `subagent_history_start_ordinal`.
+  [100_000, "event_msg", { type: "task_complete" }],
+  [90_000, "event_msg", { type: "task_started" }],
+  [85_000, "response_item", { type: "custom_tool_call", name: "exec", input: "tools.exec_command({cmd: 'git diff'})" }],
+  [60_000, "response_item", { type: "message", role: "assistant", content: [{ type: "output_text", text: "Synthetic review note." }] }],
+  [60_000, "event_msg", { type: "token_count", info: { last_token_usage: { input_tokens: 41_900, output_tokens: 100, total_tokens: 42_000 } } }],
+]);
+writeCodexRollout(CODEX_GRANDCHILD, spawn(CODEX_CHILD, "/root/token_cache_review/lint", 2, null), [
+  [100_000, "event_msg", { type: "task_complete" }],
+  [80_000, "event_msg", { type: "task_started" }],
+  [70_000, "response_item", { type: "function_call", name: "exec_command", arguments: JSON.stringify({ cmd: "npm run lint" }) }],
+  [40_000, "event_msg", { type: "task_complete" }],
+]);
+writeCodexRollout(codexId(3), { subagent: { other: "guardian" } }, [[5000, "event_msg", { type: "task_started" }]], { parent_thread_id: CODEX_PARENT });
 
 const ws = (id, label, number, repo, linked = false) => ({
   workspace_id: id,

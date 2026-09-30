@@ -1,0 +1,104 @@
+/* Subagent cards beside their parent agent's card, and subagent and Codex review chips. */
+
+.subagent {
+  --c: var(--status-working);
+  width: 100%;
+  height: 100%;
+  padding: 5px 8px 5px 9px;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid color-mix(in oklab, var(--c) 45%, var(--border));
+  border-left: 3px solid var(--c);
+  background: color-mix(in oklab, var(--c) 8%, var(--card));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+  font-size: 10.5px;
+  line-height: 1.3;
+  overflow: hidden;
+  cursor: pointer;
+}
+.subagent.sub-done { --c: var(--status-done); }
+.subagent.sub-failed { --c: var(--stuck); }
+.subagent.sub-stopped { --c: var(--status-idle); }
+.subagent.sub-running .sub-dot { animation: sub-pulse 1.4s ease-in-out infinite; }
+.react-flow__node-subagent:hover .subagent { box-shadow: 0 0 0 1px var(--ring); }
+.subagent.selected { box-shadow: 0 0 0 2px var(--foreground); }
+.react-flow__node-subagent.raised .subagent { box-shadow: 0 4px 14px rgb(0 0 0 / 0.25); }
+.react-flow__node-subagent.raised .subagent.selected { box-shadow: 0 0 0 2px var(--foreground), 0 4px 14px rgb(0 0 0 / 0.25); }
+
+@keyframes sub-pulse { 50% { opacity: 0.35; } }
+
+.sub-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.sub-dot,
+.sub-dot-inline {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--c);
+}
+.sub-dot-inline { --c: var(--status-working); display: inline-block; width: 8px; height: 8px; }
+.sub-dot-inline.sub-done { --c: var(--status-done); }
+.sub-dot-inline.sub-failed { --c: var(--stuck); }
+.sub-dot-inline.sub-stopped { --c: var(--status-idle); }
+.sub-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.sub-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: color-mix(in oklab, var(--c) 70%, var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+.sub-desc,
+.sub-stats {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sub-desc { color: var(--foreground); opacity: 0.85; }
+.sub-stats { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+
+.subagent-more {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 9px;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px dashed var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+}
+
+/* Zoomed out, the text is too small to read, so cards become status-colored blocks. */
+.zoom-mid .subagent > *,
+.zoom-far .subagent > *,
+.zoom-mid .subagent-more,
+.zoom-far .subagent-more { visibility: hidden; }
+.zoom-mid .subagent { background: color-mix(in oklab, var(--c) 35%, var(--card)); }
+.zoom-far .subagent { background: var(--c); border-color: transparent; }
+
+/* Running subagents and Codex reviews on agent cards. */
+.subagent-chip,
+.review-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.subagent-chip svg,
+.review-chip svg { width: 1em; height: 1em; }
+
+.zoom-mid .subagent-chip,
+.zoom-far .subagent-chip,
+.zoom-mid .review-chip,
+.zoom-far .review-chip { display: none; }

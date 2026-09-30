@@ -54,8 +54,9 @@ import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
 import { AutomationProvider, NEW_SCHEDULE_EVENT, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
 import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
+import { SubagentNode, SubagentViewContext, subagentNodes, useSubagentView, type SubagentData } from "./subagents.tsx";
 
-const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
+const canvasNodeTypes = { ...nodeTypes, note: NoteNode, subagent: SubagentNode };
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
@@ -64,7 +65,7 @@ function zoomClass(zoom: number) {
 }
 
 function minimapClass(node: Node): string {
-  if (node.type === "ws-label") return "mm-hidden";
+  if (node.type === "ws-label" || node.type === "subagent") return "mm-hidden";
   if (node.type !== "pane") return "mm-container";
   const status = (node.data as PaneData).pane.agent?.status;
   return status ? `mm-pane status-${status}` : "mm-pane tool";
@@ -157,7 +158,14 @@ function FleetMap() {
   const { lastDeletedAt, undoDelete } = notes;
   useLayoutUndo(setSaved, useMemo(() => ({ lastDeletedAt, undoDelete }), [lastDeletedAt, undoDelete]));
   const flowHandlers = notes.withNotes({ onNodesChange, onNodeDragStart, onNodeDragStop });
-  const flowNodes = useMemo(() => [...boxSelect.nodes, ...notes.nodes], [boxSelect.nodes, notes.nodes]);
+  const subagentView = useSubagentView(pinned);
+  const openSubagentPane = subagentView.selected?.pane;
+  const raised = useMemo(() => new Set([pinned, openSubagentPane].filter((id) => id !== undefined)), [pinned, openSubagentPane]);
+  const subagents = useMemo(() => subagentNodes(nodes, now, raised), [nodes, now, raised]);
+  const flowNodes = useMemo(
+    () => [...subagents.below, ...boxSelect.nodes, ...notes.nodes, ...subagents.above],
+    [boxSelect.nodes, notes.nodes, subagents],
+  );
 
   const automation = useAutomationState();
   const automationValue = useMemo(
@@ -196,13 +204,18 @@ function FleetMap() {
         setPinned((p) => (p === node.id ? undefined : node.id));
         return;
       }
-      if (node.type === "pane") {
+      if (node.type === "subagent") {
+        const { pane, sub } = node.data as SubagentData;
+        if (!sub) return;
+        setPinned(pane);
+        subagentView.open(pane, sub.id);
+      } else if (node.type === "pane") {
         const loc = panes.get(node.id);
         if (loc) focusPane(loc);
       } else if (node.type === "tab") void focus({ kind: "tab", id: (node.data as TabData).tab.id });
       else if (node.type === "workspace") void focus({ kind: "workspace", id: (node.data as WorkspaceData).workspace.id });
     },
-    [panes, focus, focusPane],
+    [panes, focus, focusPane, subagentView],
   );
 
   const attention = useMemo(() => needsYou(panes), [panes]);
@@ -250,6 +263,7 @@ function FleetMap() {
       <WorkspaceActions.Provider value={workspaceActions}>
       <NoteActionsProvider value={notes.actions}>
       <AutomationProvider value={automationValue}>
+      <SubagentViewContext.Provider value={subagentView}>
       <div className="flex h-full flex-col">
         <Toolbar
           fleet={fleet}
@@ -379,6 +393,7 @@ function FleetMap() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      </SubagentViewContext.Provider>
       </AutomationProvider>
       </NoteActionsProvider>
       </WorkspaceActions.Provider>
