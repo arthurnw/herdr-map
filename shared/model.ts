@@ -83,6 +83,39 @@ export interface FleetAgent {
   sessionId?: string;
   /** Context use and recorded cost, read from the agent's transcript by the usage probe. */
   usage?: AgentUsage;
+  /** Subagents running or finished recently, running first. Nested ones name their `parent`. */
+  subagents?: SubagentInfo[];
+  /** Codex's automatic approval reviews, which run as hidden subagents. */
+  reviews?: { running: number; done: number };
+  /** Progress through the agent's own todo list. */
+  tasks?: TaskProgress;
+}
+
+export interface SubagentInfo {
+  id: string;
+  type?: string;
+  /** Codex: the nickname Codex gave the thread. */
+  name?: string;
+  description?: string;
+  status: "running" | "done" | "failed" | "stopped";
+  /** Epoch ms, from the transcripts. */
+  startedAt?: number;
+  endedAt?: number;
+  /** Tokens of its latest turn: the context it saw plus its output. */
+  tokens?: number;
+  costUsd?: number;
+  toolCalls?: number;
+  /** ID of the subagent that started this one. */
+  parent?: string;
+  /** Whether its transcript can be read with `/api/subagent`. */
+  transcript?: boolean;
+}
+
+export interface TaskProgress {
+  done: number;
+  total: number;
+  /** The task in progress. */
+  current?: string;
 }
 
 export interface AgentUsage {

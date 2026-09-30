@@ -1,12 +1,26 @@
 // Reads agent transcripts on the machine where the agents run and returns each agent's
-// context use and recorded cost. herdr-map pipes this file to `node --input-type=module-typescript -`
-// (locally, or over SSH) with a call to `probe()` appended, so it must stay a single file
-// that imports only Node built-ins.
+// context use and recorded cost, and its subagents and task progress (probe/subagents.ts).
+// herdr-map joins the two files and pipes them to `node --input-type=module-typescript -`
+// (locally, or over SSH) with a call to `probe()` appended, so they import only Node
+// built-ins and each other.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  activity,
+  claudeActivity,
+  codexActivity,
+  piActivity,
+  SUBAGENT_READERS,
+  type Activity,
+  type ChildStats,
+  type SubagentContext,
+  type SubagentState,
+  type SubLog,
+  type TaskList,
+} from "./subagents.ts";
 
 /** What the transcript says so far. Carried in the cursor between runs. */
 export interface Tally {
@@ -18,6 +32,14 @@ export interface Tally {
   contextWindow?: number;
   /** Sum of the costs the agent recorded. Only Pi records cost. */
   costUsd?: number;
+  /** Subagents the transcript has started or heard back from. */
+  subs?: SubLog;
+  /** Claude Code: the time of the first line read, when reading started at the tail. */
+  subsFrom?: number;
+  /** The agent's todo list. */
+  tasks?: TaskList;
+  /** Set in a subagent transcript's tally. */
+  child?: ChildStats;
 }
 
 /** Where a transcript is and how far it has been read. Each run returns it; the server sends it back with the next. */
@@ -31,6 +53,8 @@ export interface Cursor {
   tally: Tally;
   /** Claude Code: which session the pane's process is on, and when that was last checked. */
   claude?: ClaudeFollow;
+  /** Subagent transcripts being followed. */
+  subagents?: SubagentState;
 }
 
 export interface ClaudeFollow {
@@ -108,7 +132,7 @@ export interface Usage {
   costUsd?: number;
 }
 
-export interface ProbeResult {
+export interface ProbeResult extends Activity {
   pane: string;
   cursor?: Cursor;
   /** Set once the transcript has been read to its end. */
@@ -196,7 +220,7 @@ export function codexTranscript(root: string, id: string): string | undefined {
   return undefined;
 }
 
-function safeList(dir: string): string[] {
+export function safeList(dir: string): string[] {
   try {
     return readdirSync(dir).sort().reverse();
   } catch {
@@ -218,9 +242,9 @@ export function locate(ref: ProbeRef, roots: Roots): string {
   return found;
 }
 
-type Json = Record<string, any>;
+export type Json = Record<string, any>;
 
-function readJson(path: string): Json | undefined {
+export function readJson(path: string): Json | undefined {
   try {
     const o = JSON.parse(readFileSync(path, "utf8"));
     return o && typeof o === "object" ? o : undefined;
@@ -233,7 +257,7 @@ function validId(v: unknown): v is string {
   return typeof v === "string" && SESSION_ID.test(v);
 }
 
-function fileSize(path: string): number | undefined {
+export function fileSize(path: string): number | undefined {
   try {
     return statSync(path).size;
   } catch {
@@ -571,7 +595,7 @@ export function screenCursor(ref: ProbeRef, ctx: ScreenContext): Cursor | undefi
   return { path: path ?? "", offset: 0, tally: {}, claude: follow };
 }
 
-function num(v: unknown): number {
+export function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
@@ -610,15 +634,23 @@ function piLine(o: Json, t: Tally) {
 }
 
 const READERS: Record<string, { marker: string[]; read: (o: Json, t: Tally) => void; history: boolean }> = {
-  claude: { marker: ['"usage"'], read: claudeLine, history: false },
-  codex: { marker: ['"token_count"', '"turn_context"'], read: codexLine, history: false },
+  claude: {
+    marker: ['"usage"', '"toolUseResult"', "<task-notification>"],
+    read: (o, t) => (claudeLine(o, t), claudeActivity(o, t)),
+    history: false,
+  },
+  codex: { marker: ['"token_count"', '"turn_context"', '"update_plan"'], read: (o, t) => (codexLine(o, t), codexActivity(o, t)), history: false },
   // Pi's cost is a sum over the whole session, so its transcript is read from the start.
-  pi: { marker: ['"usage"'], read: piLine, history: true },
+  pi: { marker: ['"usage"', '"Agent"', "subagents:record"], read: (o, t) => (piLine(o, t), piActivity(o, t)), history: true },
 };
+
+function readerFor(kind: string) {
+  return READERS[kind] ?? SUBAGENT_READERS[kind];
+}
 
 /** Applies complete JSON lines to a tally. Lines that aren't JSON, or aren't relevant, are skipped. */
 export function readLines(kind: string, text: string, tally: Tally): Tally {
-  const reader = READERS[kind];
+  const reader = readerFor(kind);
   if (!reader) throw new Error(`no transcript reader for ${kind} sessions`);
   for (const line of text.split("\n")) {
     // Most lines are tool output; checking for a marker first avoids parsing them.
@@ -639,7 +671,7 @@ export function readLines(kind: string, text: string, tally: Tally): Tally {
  * A partial last line is left for the next run. A line longer than `maxLine` is dropped.
  */
 export function advance(cursor: Cursor, kind: string, budget: number, tailBytes: number, maxLine: number): number {
-  const reader = READERS[kind];
+  const reader = readerFor(kind);
   if (!reader) throw new Error(`no transcript reader for ${kind} sessions`);
   const fd = openSync(cursor.path, "r");
   try {
@@ -803,5 +835,14 @@ export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
       return { pane: ref.pane, error: (err as Error).message };
     }
   });
-  return { results, bytesRead };
+
+  // Subagent transcripts get what's left of the budget once every agent's own is read.
+  const sub: SubagentContext = { roots, now, budget: maxBytes - bytesRead, maxLine: maxBytes, heads: new Map() };
+  results.forEach((res, i) => {
+    if (!res.cursor?.path || res.error) return;
+    try {
+      Object.assign(res, activity(input.refs[i], res.cursor, sub));
+    } catch {}
+  });
+  return { results, bytesRead: maxBytes - sub.budget };
 }

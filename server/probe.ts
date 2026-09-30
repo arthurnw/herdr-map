@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { fleetPanes, type AgentStatus, type AgentUsage, type Fleet, type Snapshot } from "../shared/model.ts";
+import { fleetPanes, type AgentStatus, type AgentUsage, type Fleet, type FleetAgent, type Snapshot } from "../shared/model.ts";
+import type { Activity, Subagent, TranscriptOutput, TranscriptRequest } from "../probe/subagents.ts";
 import type { Cursor, ProbeInput, ProbeOutput, ProbeRef, Usage } from "../probe/usage.ts";
 import { commandFor } from "./herdr.ts";
 
@@ -13,7 +14,32 @@ export interface ProbeOptions {
   herdr?: string;
 }
 
-const PROBE_SOURCE = readFileSync(new URL("../probe/usage.ts", import.meta.url), "utf8");
+const IMPORT = /^import (type )?\{([^}]*)\} from "([^"]+)";(\n|$)/gm;
+
+/**
+ * Joins probe modules into one script. Imports between them are dropped, and imports of Node
+ * built-ins are merged so no name is imported twice. Only named imports are supported.
+ */
+export function bundleProbe(sources: string[]): string {
+  const builtins = new Map<string, Set<string>>();
+  const bodies = sources.map((src) => {
+    const body = src.replace(IMPORT, (_, typeOnly: string | undefined, names: string, from: string) => {
+      if (from.startsWith("./") || typeOnly) return "";
+      if (!from.startsWith("node:")) throw new Error(`the probe can only import Node built-ins, not ${from}`);
+      const set = builtins.get(from) ?? new Set();
+      for (const n of names.split(",").map((x) => x.trim())) if (n && !n.startsWith("type ")) set.add(n);
+      builtins.set(from, set);
+      return "";
+    });
+    const other = /^import .*$/m.exec(body);
+    if (other) throw new Error(`unsupported probe import: ${other[0]}`);
+    return body;
+  });
+  const imports = [...builtins].map(([from, names]) => `import { ${[...names].join(", ")} } from "${from}";`);
+  return [...imports, ...bodies].join("\n");
+}
+
+const PROBE_SOURCE = bundleProbe(["../probe/usage.ts", "../probe/subagents.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")));
 
 /** The probe reads its script from stdin, so nothing has to be installed on the remote. */
 export function probeCommand(opts: ProbeOptions): [string, string[]] {
@@ -25,7 +51,12 @@ export function probeScript(input: ProbeInput): string {
   return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(probe(${JSON.stringify(input)})));\n`;
 }
 
-export function runProbe(opts: ProbeOptions, input: ProbeInput, timeoutMs = 20_000): Promise<ProbeOutput> {
+/** The probe source with a call that prints the end of a subagent's transcript as text. */
+export function transcriptScript(req: TranscriptRequest): string {
+  return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(subagentTranscript(${JSON.stringify(req)})));\n`;
+}
+
+function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: number): Promise<T> {
   const [cmd, argv] = probeCommand(opts);
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, argv, { stdio: ["pipe", "pipe", "pipe"] });
@@ -49,14 +80,22 @@ export function runProbe(opts: ProbeOptions, input: ProbeInput, timeoutMs = 20_0
         return;
       }
       try {
-        resolve(JSON.parse(out) as ProbeOutput);
+        resolve(JSON.parse(out) as T);
       } catch {
         reject(new Error(`probe printed something other than JSON: ${out.slice(0, 200)}`));
       }
     });
     child.stdin.on("error", () => undefined);
-    child.stdin.end(probeScript(input));
+    child.stdin.end(script);
   });
+}
+
+export function runProbe(opts: ProbeOptions, input: ProbeInput, timeoutMs = 20_000): Promise<ProbeOutput> {
+  return runScript(opts, probeScript(input), timeoutMs);
+}
+
+export function readTranscript(opts: ProbeOptions, req: TranscriptRequest, timeoutMs = 10_000): Promise<TranscriptOutput> {
+  return runScript(opts, transcriptScript(req), timeoutMs);
 }
 
 /** An agent pane whose session herdr knows. */
@@ -92,10 +131,31 @@ export function markUsage(fleet: Fleet, usage: Map<string, AgentUsage>): Fleet {
   return fleet;
 }
 
+/** Sets subagents, reviews, and task progress on agents the probe found them for. */
+export function markActivity(fleet: Fleet, activity: Map<string, Activity>): Fleet {
+  if (activity.size === 0) return fleet;
+  for (const pane of fleetPanes(fleet)) {
+    const a = activity.get(pane.id);
+    if (a && pane.agent) Object.assign(pane.agent, fleetActivity(a));
+  }
+  return fleet;
+}
+
+/** The probe's activity as the browser gets it: transcript paths stay on the server. */
+function fleetActivity(a: Activity): Pick<FleetAgent, "subagents" | "reviews" | "tasks"> {
+  const out: Pick<FleetAgent, "subagents" | "reviews" | "tasks"> = {};
+  if (a.subagents?.length) out.subagents = a.subagents.map(({ path, fromOrdinal, ...s }) => ({ ...s, ...(path && { transcript: true }) }));
+  if (a.reviews) out.reviews = a.reviews;
+  if (a.tasks) out.tasks = a.tasks;
+  return out;
+}
+
 interface Entry {
   session: string;
+  kind?: string;
   cursor?: Cursor;
   usage?: AgentUsage;
+  activity?: Activity;
   triedAt?: number;
   error?: string;
 }
@@ -113,6 +173,8 @@ export const CLAUDE_IDLE_MS = 60_000;
 export function isDue(ref: SessionRef, entry: Entry | undefined, now: number): boolean {
   if (!entry?.triedAt) return true;
   if (ref.status === "working" || ref.status === "blocked") return true;
+  // Background subagents keep working after their parent's turn ends.
+  if (entry.activity?.subagents?.some((s) => s.status === "running")) return true;
   if (now - ref.since < RECENT_MS) return true;
   if (ref.kind === "claude" && ref.sessionKind === "id" && now - entry.triedAt >= CLAUDE_IDLE_MS) return true;
   return !!entry.error && now - entry.triedAt >= RETRY_MS;
@@ -129,6 +191,7 @@ export interface UsageWatcherOptions {
   /** Called when any agent's numbers, or the probe's error, change. */
   onChange: () => void;
   run?: (input: ProbeInput) => Promise<ProbeOutput>;
+  read?: (req: TranscriptRequest) => Promise<TranscriptOutput>;
   log?: (line: string) => void;
 }
 
@@ -139,6 +202,7 @@ export interface UsageWatcherOptions {
  */
 export function createUsageWatcher(opts: UsageWatcherOptions) {
   const run = opts.run ?? ((input: ProbeInput) => runProbe(opts.probe, input));
+  const read = opts.read ?? ((req: TranscriptRequest) => readTranscript(opts.probe, req));
   const log = opts.log ?? ((line: string) => console.error(line));
   const entries = new Map<string, Entry>();
   let lastError: string | undefined;
@@ -150,7 +214,7 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
     for (const [pane, e] of entries) {
       if (live.get(pane)?.session !== e.session) {
         entries.delete(pane);
-        changed ||= !!e.usage;
+        changed ||= !!e.usage || !!e.activity;
       }
     }
     const now = Date.now();
@@ -193,6 +257,13 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
             e.usage = { ...res.usage, updatedAt: Date.now() };
             changed = true;
           }
+          if (!res.error) {
+            const { subagents, reviews, tasks } = res;
+            const next: Activity | undefined = subagents?.length || reviews || tasks ? { subagents, reviews, tasks } : undefined;
+            if (JSON.stringify(next) !== JSON.stringify(e.activity)) changed = true;
+            e.activity = next;
+            e.kind = ref.kind;
+          }
           entries.set(res.pane, e);
         }
       } catch (err) {
@@ -225,6 +296,19 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
       const out = new Map<string, AgentUsage>();
       for (const [pane, e] of entries) if (e.usage) out.set(pane, e.usage);
       return out;
+    },
+    activity(): Map<string, Activity> {
+      const out = new Map<string, Activity>();
+      for (const [pane, e] of entries) if (e.activity) out.set(pane, e.activity);
+      return out;
+    },
+    /** The end of a subagent's transcript as text. Only transcripts the probe reported can be read. */
+    async transcript(pane: string, id: string): Promise<TranscriptOutput> {
+      const e = entries.get(pane);
+      const s: Subagent | undefined = e?.activity?.subagents?.find((x) => x.id === id);
+      if (!e?.kind || !s) throw new Error("no such subagent");
+      if (!s.path) throw new Error("this subagent has no transcript");
+      return read({ path: s.path, kind: e.kind, ...(s.fromOrdinal !== undefined && { fromOrdinal: s.fromOrdinal }) });
     },
     error: () => lastError,
   };

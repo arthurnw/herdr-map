@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { buildFleet, fleetPanes, StatusClock } from "../shared/model.ts";
 import type { ProbeInput, ProbeOutput } from "../probe/usage.ts";
 import {
+  bundleProbe,
   CLAUDE_IDLE_MS,
   createUsageWatcher,
   isDue,
+  markActivity,
   markUsage,
   probeCommand,
   probeScript,
   RECENT_MS,
   RETRY_MS,
+  readTranscript,
   runProbe,
   sessionRefs,
   type SessionRef,
@@ -163,4 +166,83 @@ test("the watcher names the sessions of Claude Code panes left out of a run", as
   await w.round();
   assert.deepEqual(inputs[1].refs.map((r) => r.pane), ["w1:p1"]);
   assert.deepEqual(inputs[1].claimed, ["s-idle", "s-idle-moved"]);
+});
+
+test("bundleProbe merges Node imports and drops imports between probe files", () => {
+  const out = bundleProbe([
+    'import { a, b } from "node:fs";\nimport { x, type Y } from "./other.ts";\nexport const one = 1;',
+    'import {\n  b,\n  c,\n} from "node:fs";\nimport type { Z } from "./usage.ts";\nimport { join } from "node:path";\nexport const two = 2;',
+  ]);
+  assert.equal(out, 'import { a, b, c } from "node:fs";\nimport { join } from "node:path";\nexport const one = 1;\nexport const two = 2;');
+  assert.throws(() => bundleProbe(['import { z } from "zod";']), /only import Node built-ins/);
+  assert.throws(() => bundleProbe(['import fs from "node:fs";']), /unsupported probe import/);
+});
+
+test("the joined probe reads a Claude subagent through stdin, and its transcript as text", async () => {
+  const root = mkdtempSync(join(tmpdir(), "herdr-map-probe-"));
+  const dir = join(root, "projects", "-repos-w1");
+  mkdirSync(join(dir, "s1", "subagents"), { recursive: true });
+  const at = new Date().toISOString();
+  writeFileSync(join(dir, "s1.jsonl"), `${JSON.stringify({ type: "assistant", timestamp: at, message: { content: [{ type: "tool_use", id: "toolu_1", name: "Agent", input: { description: "Look around", subagent_type: "Explore" } }], usage: { input_tokens: 5 } } })}\n`);
+  writeFileSync(join(dir, "s1", "subagents", "agent-a1.meta.json"), JSON.stringify({ agentType: "Explore", description: "Look around", toolUseId: "toolu_1" }));
+  const sub = join(dir, "s1", "subagents", "agent-a1.jsonl");
+  writeFileSync(sub, `${JSON.stringify({ type: "assistant", timestamp: at, message: { role: "assistant", content: [{ type: "text", text: "Looking." }], usage: { input_tokens: 40, output_tokens: 2 } } })}\n`);
+  const out = await runProbe(
+    { node: process.execPath },
+    { refs: [{ pane: "w1:p1", kind: "claude", sessionKind: "id", session: "s1", cwd: "/repos/w1", status: "working" }], roots: { claude: root }, herdr: "/nonexistent/herdr" },
+  );
+  const s = out.results[0].subagents![0];
+  assert.deepEqual([s.status, s.type, s.tokens, s.path], ["running", "Explore", 42, sub]);
+  assert.deepEqual(await readTranscript({ node: process.execPath }, { path: sub, kind: "claude" }), { text: "Looking.", truncated: false });
+});
+
+test("markActivity sets subagents without their transcript paths", () => {
+  const { fleet } = fixtureFleet();
+  const activity = {
+    subagents: [{ id: "a1", status: "running" as const, path: "/t/agent-a1.jsonl" }, { id: "c1", status: "done" as const, parent: "a1", fromOrdinal: 3 }],
+    tasks: { done: 1, total: 3 },
+  };
+  markActivity(fleet, new Map([["w1:p1", activity]]));
+  const agent = fleetPanes(fleet).find((p) => p.id === "w1:p1")!.agent!;
+  assert.deepEqual(agent.subagents, [{ id: "a1", status: "running", transcript: true }, { id: "c1", status: "done", parent: "a1" }]);
+  assert.deepEqual(agent.tasks, { done: 1, total: 3 });
+});
+
+test("isDue keeps reading an idle agent while one of its subagents runs", () => {
+  const now = 10 * RECENT_MS;
+  const read = { session: "s", triedAt: now - 1 };
+  const idle = { ...ref("idle", 0), kind: "pi", sessionKind: "path" };
+  assert.equal(isDue(idle, { ...read, activity: { subagents: [{ id: "a", status: "running" }] } }, now), true);
+  assert.equal(isDue(idle, { ...read, activity: { subagents: [{ id: "a", status: "done" }] } }, now), false);
+});
+
+test("the watcher keeps each agent's subagents and reads only transcripts the probe reported", async () => {
+  const reads: unknown[] = [];
+  let subagents = [{ id: "a1", status: "running" as const, path: "/t/agent-a1.jsonl" }, { id: "a2", status: "running" as const }];
+  let changes = 0;
+  const w = createUsageWatcher({
+    probe: { node: "node" },
+    intervalMs: 1000,
+    refs: () => [ref("working", Date.now())],
+    onChange: () => changes++,
+    run: async () => ({ results: [{ pane: "w1:p1", cursor: { path: "/t", offset: 0, tally: {} }, subagents }], bytesRead: 0 }),
+    read: async (req) => {
+      reads.push(req);
+      return { text: "Looking.", truncated: false };
+    },
+  });
+  await w.round();
+  assert.equal(changes, 1);
+  assert.equal(w.activity().get("w1:p1")!.subagents!.length, 2);
+  assert.deepEqual(await w.transcript("w1:p1", "a1"), { text: "Looking.", truncated: false });
+  assert.deepEqual(reads, [{ path: "/t/agent-a1.jsonl", kind: "claude" }]);
+  await assert.rejects(w.transcript("w1:p1", "a2"), /no transcript/);
+  await assert.rejects(w.transcript("w1:p1", "nope"), /no such subagent/);
+  await assert.rejects(w.transcript("w9:p9", "a1"), /no such subagent/);
+  await w.round();
+  assert.equal(changes, 1, "the same subagents are no change");
+  subagents = [];
+  await w.round();
+  assert.equal(changes, 2);
+  assert.equal(w.activity().size, 0, "an agent whose subagents are gone has none");
 });

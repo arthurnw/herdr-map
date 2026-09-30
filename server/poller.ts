@@ -1,7 +1,8 @@
 import type { ServerResponse } from "node:http";
 import { buildFleet, StatusClock, type Fleet, type Snapshot } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
-import { createUsageWatcher, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
+import type { TranscriptOutput } from "../probe/subagents.ts";
+import { createUsageWatcher, markActivity, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
 import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
 
 export interface State {
@@ -20,6 +21,8 @@ export interface Poller {
   clients: Set<ServerResponse>;
   /** Clears a held `done` for a pane herdr-map just focused. */
   markSeen(paneId: string): void;
+  /** The end of a subagent's transcript, read by the probe. */
+  subagentTranscript(paneId: string, subagentId: string): Promise<TranscriptOutput>;
 }
 
 // Screen reads for stuck detection cost a herdr call per working agent, so they run
@@ -56,7 +59,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
       const now = Date.now();
       const fleet = buildFleet(snap, clock.observe(snap.agents, now, snap.focused_pane_id));
       state = { fleet: markStuck(fleet, watcher.stuck()), updatedAt: now };
-      if (usage) state = { ...state, fleet: markUsage(state.fleet!, usage.usage()), probeError: usage.error() };
+      if (usage) state = { ...state, fleet: markActivity(markUsage(state.fleet!, usage.usage()), usage.activity()), probeError: usage.error() };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -93,5 +96,11 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     for (const res of clients) res.write(": ping\n\n");
   }, 20_000);
 
-  return { state: () => state, poll, clients, markSeen: (paneId) => clock.markSeen(paneId) };
+  return {
+    state: () => state,
+    poll,
+    clients,
+    markSeen: (paneId) => clock.markSeen(paneId),
+    subagentTranscript: (paneId, id) => (usage ? usage.transcript(paneId, id) : Promise.reject(new Error("the usage probe is off"))),
+  };
 }
