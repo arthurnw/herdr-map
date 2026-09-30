@@ -48,8 +48,11 @@ export interface Link {
   to: Endpoint;
   kind: LinkKind;
   createdAt: number;
-  /** When a context link last queued its message for the target. */
-  sent?: { at: number };
+  /**
+   * When a context or note link last queued its message for the target, and for a note
+   * a fingerprint of the text it sent (`textHash`), so the UI can offer to send an edit.
+   */
+  sent?: { at: number; hash?: string };
 }
 
 export interface LayoutStore {

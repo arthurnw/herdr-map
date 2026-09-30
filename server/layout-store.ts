@@ -149,6 +149,7 @@ function parseLink(l: unknown): Link | undefined {
   const link: Link = { id: l.id, from, to, kind: l.kind, createdAt: l.createdAt as number };
   if (isObject(l.sent) && Number.isFinite(l.sent.at)) {
     link.sent = { at: l.sent.at as number };
+    if (typeof l.sent.hash === "string") link.sent.hash = l.sent.hash;
   }
   return link;
 }

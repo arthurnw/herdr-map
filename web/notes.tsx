@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Note } from "../shared/layout-types.ts";
 import { isColor, NOTE_DEFAULT, NOTE_MAX, NOTE_MIN, NOTE_TEXT_MAX, type NotePatch } from "../shared/organize.ts";
+import { NoteLinkHandle, NoteLinks } from "./links.tsx";
 import { ColorItems, stop, tintClass } from "./organize.tsx";
 
 export type NoteData = { note: Note; autoFocus: boolean };
@@ -167,6 +168,8 @@ export function useNotes() {
           position: { x: n.x, y: n.y },
           width: w,
           height: h,
+          // Without `measured`, React Flow drops the note's handle positions each time the node is rebuilt.
+          measured: { width: w, height: h },
           style: { width: w, height: h },
           // Above workspaces, their panes, and the zoomed-out labels.
           zIndex: 2000,
@@ -288,6 +291,8 @@ export const NoteNode = memo(({ data }: NodeProps) => {
         onChange={(e) => actions.edit(note.id, { text: e.target.value }, 600)}
         onBlur={() => actions.flush(note.id)}
       />
+      <NoteLinks noteId={note.id} text={note.text} />
+      <NoteLinkHandle />
     </div>
   );
 });

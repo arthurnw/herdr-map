@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { textHash } from "../shared/automation.ts";
 import { FINISH_GRACE_MS, type AgentStatus } from "../shared/model.ts";
 import { indexPanes } from "../server/agents.ts";
 import { TurnWatcher } from "../server/automation.ts";
@@ -50,3 +51,7 @@ test("handoff prompts name the agent and keep the end of long output", () => {
   assert.match(handoffPrompt(info, "w1:p1", { error: "timeout" }), /herdr agent read w1:p1/);
 });
 
+test("text hashes differ for different text", () => {
+  assert.equal(textHash("a"), textHash("a"));
+  assert.notEqual(textHash("a"), textHash("b"));
+});

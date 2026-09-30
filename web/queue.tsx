@@ -46,7 +46,7 @@ export function AutomationControls({ now }: { now: number }) {
         <TooltipContent>
           {paused
             ? "Nothing is sent automatically. Click to resume queued prompts and links."
-            : "Click to stop all automatic sends: handoffs and context links."}
+            : "Click to stop all automatic sends: handoffs, and context and note links."}
         </TooltipContent>
       </Tooltip>
       <Popover open={open} onOpenChange={setOpen}>
@@ -132,7 +132,7 @@ function QueuePanel({ auto, state, now }: { auto: AutomationValue; state: Automa
       <section className="p-3" aria-label="Links">
         <h3 className="mb-1 font-semibold">Links</h3>
         {state.links.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No links. Drag from the dot on an agent's card to another agent.</p>
+          <p className="text-xs text-muted-foreground">No links. Drag from the dot on an agent's card or a note to another agent.</p>
         ) : (
           <ul className="space-y-1">
             {state.links.map((l) => {

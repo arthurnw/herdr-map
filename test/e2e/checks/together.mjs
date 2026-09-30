@@ -1,4 +1,4 @@
-// Agents working together: handoff edges, context links, and the queue's pause.
+// Agents working together: handoff edges, context links, note links, and the queue's pause.
 export default function togetherChecks({ test, assert, card, actions, clearActions, writeSnapshot, snapshot, setStatus, base }) {
   const api = async (method, path, body) => {
     const res = await fetch(base + path, {
@@ -108,6 +108,27 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
       await page.getByRole("menuitem", { name: "Remove link" }).click();
       await waitFor(async () => (await savedLinks()).length === 0, "Remove link should delete the link");
       await edge.waitFor({ state: "detached", timeout: 3000 });
+    }));
+
+  test("together: a note dragged to an agent sends its text, shows where it went, and can send an edit", async (page) =>
+    withReset(async () => {
+      await api("POST", "/api/notes", { x: -500, y: 0, w: 240, h: 160, text: "Check the flaky login test" });
+      await page.reload();
+      await page.waitForSelector(".react-flow__node-note");
+      await page.getByRole("button", { name: "Fit everything" }).click();
+      await page.waitForTimeout(500);
+      clearActions();
+      await drawLink(page, page.locator(".react-flow__node-note"), "w5:p9");
+      await waitFor(() => promptsTo("w5:p9").length > 0, "the note should reach the agent");
+      assert(promptsTo("w5:p9")[0].includes("A note from the user:"), `unexpected prompt: ${promptsTo("w5:p9")}`);
+      assert(actions().includes("Check the flaky login test"), `the note text should be sent: ${actions()}`);
+      const links = page.locator(".note-links");
+      await links.getByText(/sent .* ago/).waitFor({ timeout: 4000 });
+      assert((await links.getByRole("button", { name: "Send again" }).count()) === 0, "no Send again before an edit");
+      await page.locator(".note-text").fill("Check the flaky login test on CI");
+      await page.locator(".note-text").blur();
+      await links.getByRole("button", { name: "Send again" }).click();
+      await waitFor(() => actions().includes("Check the flaky login test on CI"), "Send again should send the edited note", 12000);
     }));
 
   test("together: pausing stops delivery until resumed", async (page) =>

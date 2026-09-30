@@ -61,3 +61,12 @@ export const MAX_QUEUE_ITEMS = 500;
 export const MAX_LINKS = 500;
 export const HISTORY_KEEP = 50;
 
+/** A short fingerprint of a note's text, to tell whether it changed since it was sent. */
+export function textHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}

@@ -1,6 +1,7 @@
-// Links the user draws between agent cards: handoffs and context links. They are stored
-// in the layout file and drawn as their own edges, apart from the lineage edges in layout.ts.
-import { memo, useCallback, useRef, useState } from "react";
+// Links the user draws between agent cards, and from notes to agents: handoffs, context
+// links, and note links. They are stored in the layout file and drawn as their own edges,
+// apart from the lineage edges in layout.ts.
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -14,7 +15,8 @@ import {
   type FinalConnectionState,
   type IsValidConnection,
 } from "@xyflow/react";
-import { BookOpen, Forward, Trash2, Undo2 } from "lucide-react";
+import { BookOpen, Forward, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -25,8 +27,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { textHash } from "../shared/automation.ts";
 import type { Endpoint, Link, LinkKind } from "../shared/layout-types.ts";
 import { agentLabel, useAutomation, type AutomationActions, type AutomationValue } from "./automation.tsx";
+import { formatAge } from "./format.ts";
 import { stop } from "./organize.tsx";
 import type { Located } from "./state.ts";
 
@@ -52,13 +56,29 @@ export function LinkHandles() {
   );
 }
 
+/** The handle a note starts a link from. */
+export function NoteLinkHandle() {
+  return (
+    <Handle
+      type="source"
+      id={LINK_OUT}
+      position={Position.Right}
+      className="link-source note-link-source"
+      isConnectableEnd={false}
+      title="Drag to an agent to send it this note"
+      onClick={stop}
+    />
+  );
+}
+
 export type LinkEdgeData = { link: Link };
 
-type Flavor = LinkKind;
-const flavorOf = (link: Link): Flavor => link.kind;
+type Flavor = "handoff" | "context" | "note";
+const flavorOf = (link: Link): Flavor => (link.from.kind === "note" ? "note" : link.kind);
 const FLAVOR = {
   handoff: { icon: Forward, label: "handoff" },
   context: { icon: BookOpen, label: "context" },
+  note: { icon: StickyNote, label: "note" },
 };
 
 const nodeId = (e: Endpoint) => (e.kind === "note" ? NOTE_PREFIX + e.id : e.id);
@@ -85,6 +105,7 @@ export function linkEdges(links: Link[] | undefined, nodeIds: ReadonlySet<string
 /** What a link does, in a sentence. */
 export function describeLink(link: Link, panes: Map<string, Located>): string {
   const to = agentLabel(panes, link.to.id);
+  if (link.from.kind === "note") return `This note goes to ${to} when it's idle.`;
   const from = agentLabel(panes, link.from.id);
   return link.kind === "handoff"
     ? `When ${from} finishes a turn, its latest output goes to ${to}.`
@@ -161,7 +182,7 @@ export function useLinking(panes: Map<string, Located>, actions: AutomationActio
   const isAgent = useCallback((id: string | null) => !!id && !!panes.get(id)?.pane.agent, [panes]);
 
   const isValidConnection: IsValidConnection = useCallback(
-    (c) => c.source !== c.target && c.targetHandle === LINK_IN && isAgent(c.target) && isAgent(c.source),
+    (c) => c.source !== c.target && c.targetHandle === LINK_IN && isAgent(c.target) && (c.source.startsWith(NOTE_PREFIX) || isAgent(c.source)),
     [isAgent],
   );
 
@@ -171,10 +192,17 @@ export function useLinking(panes: Map<string, Located>, actions: AutomationActio
       const c = dropped.current;
       dropped.current = undefined;
       if (!c || !actions) return;
+      if (c.source.startsWith(NOTE_PREFIX)) {
+        const to = agentLabel(panes, c.target);
+        void actions
+          .createLink({ kind: "note", id: c.source.slice(NOTE_PREFIX.length) }, { kind: "pane", id: c.target }, "context")
+          .then((link) => link && toast(`Note queued for ${to}`, { description: "It's sent when the agent is idle." }));
+        return;
+      }
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
       setChoice({ from: c.source, to: c.target, x: point.clientX, y: point.clientY });
     },
-    [actions],
+    [actions, panes],
   );
 
   const connectProps = {
@@ -233,3 +261,39 @@ function LinkOption({ icon: Icon, title, onClick, children }: { icon: typeof For
   );
 }
 
+/** Where a note went, shown at the bottom of the note, with Send again once it has been edited. */
+export function NoteLinks({ noteId, text }: { noteId: string; text: string }) {
+  const auto = useAutomation();
+  const links = useMemo(
+    () => (auto?.state?.links ?? []).filter((l) => l.from.kind === "note" && l.from.id === noteId),
+    [auto?.state?.links, noteId],
+  );
+  if (!auto || links.length === 0) return null;
+  const hash = textHash(text);
+  return (
+    <ul className="note-links nodrag nopan" aria-label="Sent to">
+      {links.map((l) => {
+        const edited = !!text.trim() && l.sent?.hash !== hash;
+        return (
+          <li key={l.id}>
+            <span className="note-link-target">→ {agentLabel(auto.panes, l.to.id)}</span>
+            <span className="note-link-status">{linkStatus(l, auto)}</span>
+            {edited && (
+              <button className="note-link-resend" onClick={() => void auto.actions.resendLink(l.id)}>
+                Send again
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function linkStatus(link: Link, auto: AutomationValue): string {
+  const item = auto.state?.items.find((i) => i.source.linkId === link.id);
+  if (item) return item.state === "pending" ? "waiting" : item.state === "failed" ? "failed" : "agent gone";
+  const sent = auto.state?.history.findLast((h) => h.source.linkId === link.id);
+  if (sent) return `sent ${formatAge(Date.now() - sent.deliveredAt)} ago`;
+  return link.sent ? "queued earlier" : "not sent";
+}

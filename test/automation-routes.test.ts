@@ -10,7 +10,9 @@ import { loadStore } from "../server/layout-store.ts";
 import { openQueue } from "../server/queue.ts";
 import { createRouter } from "../server/router.ts";
 import { linksRoutes } from "../server/routes/links.ts";
+import { notesRoutes } from "../server/routes/notes.ts";
 import { queueRoutes } from "../server/routes/queue.ts";
+import { textHash } from "../shared/automation.ts";
 import { fleetWith } from "./fixtures.ts";
 
 /** Serves the automation routes over fresh files, with three agents and one plain pane. */
@@ -21,7 +23,7 @@ async function serve(t: TestContext) {
   const poller = { state: () => ({ fleet, updatedAt: 1 }) };
   const queue = await openQueue({ path: join(dir, "queue.json"), view: poller.state, send: async () => {} });
   const ctx = { layoutPath, poller, automation: { queue, tick: async () => {} } } as unknown as Context;
-  const routes = [...linksRoutes(ctx), ...queueRoutes(ctx)];
+  const routes = [...linksRoutes(ctx), ...notesRoutes(ctx), ...queueRoutes(ctx)];
   const server = createServer(createRouter(routes, (_req, res) => res.end()));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
@@ -58,7 +60,7 @@ test("a handoff that would close a loop is refused", async (t) => {
   assert.equal((await call("POST", "/api/links", { from: pane("w1:p3"), to: pane("w1:p1"), kind: "context" })).status, 201, "context links can point back");
 });
 
-test("links must go from an agent to another agent", async (t) => {
+test("links must go from an agent or note to another agent", async (t) => {
   const { call, store } = await serve(t);
   for (const body of [
     { from: pane("w1:p1"), to: pane("w1:p1"), kind: "handoff" },
@@ -68,10 +70,10 @@ test("links must go from an agent to another agent", async (t) => {
     { from: pane("w1:p1"), to: { kind: "note", id: "n" }, kind: "context" },
     { from: pane("w1:p1"), to: pane("w1:p2"), kind: "other" },
     { from: { kind: "note", id: "n" }, to: pane("w1:p2"), kind: "handoff" },
-    { from: { kind: "note", id: "n" }, to: pane("w1:p2"), kind: "context" },
   ]) {
     assert.equal((await call("POST", "/api/links", body)).status, 400, JSON.stringify(body));
   }
+  assert.equal((await call("POST", "/api/links", { from: { kind: "note", id: "missing" }, to: pane("w1:p2"), kind: "context" })).status, 409);
   assert.equal((await store()).links.length, 0);
 });
 
@@ -85,6 +87,28 @@ test("a context link queues the read instructions once", async (t) => {
   assert.equal(item.source.kind, "context");
   assert.match(item.text, /herdr agent read w1:p1 --lines 200/);
   assert.ok((await store()).links[0].sent?.at);
+});
+
+test("a note link sends the note, records what it sent, and can send an edit again", async (t) => {
+  const { call, queue, store } = await serve(t);
+  const note = (await call("POST", "/api/notes", { x: 0, y: 0, text: "check the flaky test" })).body;
+  const res = await call("POST", "/api/links", { from: { kind: "note", id: note.id }, to: pane("w1:p2"), kind: "context" });
+  assert.equal(res.status, 201);
+  assert.equal(queue.data.items[0].text, "A note from the user:\n\ncheck the flaky test");
+  assert.equal((await store()).links[0].sent?.hash, textHash("check the flaky test"));
+  await call("PATCH", `/api/notes/${note.id}`, { text: "check the flaky test in CI" });
+  queue.cancelWhere(() => true);
+  assert.equal((await call("POST", `/api/links/${res.body.id}/send`)).status, 200);
+  assert.match(queue.data.items[0].text, /in CI$/);
+  assert.equal((await store()).links[0].sent?.hash, textHash("check the flaky test in CI"));
+});
+
+test("an empty note isn't linked", async (t) => {
+  const { call, queue } = await serve(t);
+  const note = (await call("POST", "/api/notes", { x: 0, y: 0 })).body;
+  const res = await call("POST", "/api/links", { from: { kind: "note", id: note.id }, to: pane("w1:p2"), kind: "context" });
+  assert.equal(res.status, 409);
+  assert.equal(queue.data.items.length, 0);
 });
 
 test("deleting a link cancels what it queued", async (t) => {

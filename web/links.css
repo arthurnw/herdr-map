@@ -1,6 +1,6 @@
-/* User links between agents: handles, edges, and edge labels. */
+/* User links between agents and from notes: handles, edges, and edge labels. */
 
-/* A dot on the right edge of agent cards starts a link. Shown on hover only. */
+/* A dot on the right edge of agent cards and notes starts a link. Shown on hover only. */
 .react-flow__handle.link-source {
   width: clamp(10px, calc(10px * var(--inv)), 36px);
   height: clamp(10px, calc(10px * var(--inv)), 36px);
@@ -11,10 +11,13 @@
   cursor: crosshair;
 }
 .react-flow__node-pane:hover .react-flow__handle.link-source,
+.react-flow__node-note:hover .react-flow__handle.link-source,
 .react-flow__handle.link-source.connectingfrom {
   opacity: 1;
   pointer-events: all;
 }
+.react-flow__handle.note-link-source { right: 8px; }
+
 /* Edge labels sit above workspaces and panes (as the link edges do) and below notes. */
 .canvas .react-flow__edgelabel-renderer { z-index: 1501; }
 
@@ -40,6 +43,7 @@
 .link-edge .link-path { stroke-width: 2; }
 .link-handoff .link-path { stroke: var(--status-working); }
 .link-context .link-path { stroke: var(--muted-foreground); stroke-dasharray: 6 4; }
+.link-note .link-path { stroke: var(--status-blocked); stroke-dasharray: 2 4; stroke-linecap: round; }
 .link-handoff .react-flow__arrowhead polyline { stroke: var(--status-working); fill: var(--status-working); }
 
 .link-label {
@@ -63,4 +67,26 @@
 .link-chip:hover { color: var(--foreground); border-color: var(--ring); }
 .link-chip svg { width: 1em; height: 1em; }
 .link-chip-handoff { border-color: color-mix(in oklab, var(--status-working) 60%, var(--border)); }
+.link-chip-note { border-color: color-mix(in oklab, var(--status-blocked) 60%, var(--border)); }
 
+/* Where a note went, at the bottom of the note. */
+.note-links {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 3px 8px 5px;
+  border-top: 1px solid color-mix(in oklab, var(--tint, var(--muted-foreground)) 25%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: default;
+}
+.note-links li { display: flex; gap: 6px; align-items: baseline; }
+.note-link-target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-link-status { color: var(--muted-foreground); white-space: nowrap; }
+.note-link-resend {
+  margin-left: auto;
+  color: var(--primary);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

@@ -44,7 +44,7 @@ export function AgentAutomation({ located }: { located: Located }) {
               {links.map((l) => (
                 <li key={l.id} className="flex items-start gap-2 text-xs">
                   <Badge variant="outline" className="font-normal">
-                    {l.kind}
+                    {l.from.kind === "note" ? "note" : l.kind}
                   </Badge>
                   <span className="min-w-0 flex-1">{describeLink(l, auto.panes)}</span>
                   <Button variant="ghost" size="icon-xs" aria-label="Remove link" onClick={() => void auto.actions.deleteLink(l.id)}>
@@ -71,7 +71,7 @@ export function AgentAutomation({ located }: { located: Located }) {
             </div>
           )}
           {links.length === 0 && (
-            <p className="text-xs text-muted-foreground">Drag from the dot on an agent's card to another agent to link them.</p>
+            <p className="text-xs text-muted-foreground">Drag from the dot on an agent's card, or a note's, to another agent to link them.</p>
           )}
         </div>
       )}
