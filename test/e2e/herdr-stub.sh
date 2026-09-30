@@ -3,7 +3,8 @@
 # screens, records every command that would change something, and refuses the rest,
 # so a test can never reach a real herdr session.
 #
-# Reads from $HERDR_STUB_DIR: snapshot.json, screens/<pane id with : as _>.txt.
+# Reads from $HERDR_STUB_DIR: snapshot.json, screens/<pane id with : as _>.txt,
+# process-info/<pane id with : as _>.json.
 # Appends input commands (focus, prompt, keys, text, rename, plugin actions) to $HERDR_STUB_DIR/actions.log.
 set -eu
 dir="${HERDR_STUB_DIR:?HERDR_STUB_DIR is not set}"
@@ -15,6 +16,11 @@ case "$1 ${2:-}" in
   "pane read")
     screen="$dir/screens/$(printf '%s' "$3" | tr ':' '_').txt"
     if [ -f "$screen" ]; then cat "$screen"; else printf 'screen of %s\n$ ' "$3"; fi
+    ;;
+  "pane process-info")
+    # `herdr pane process-info --pane <id>`; a pane without a file isn't found, as herdr reports it.
+    info="$dir/process-info/$(printf '%s' "${4:-}" | tr ':' '_').json"
+    if [ -f "$info" ]; then cat "$info"; else printf '{"error":{"code":"pane_not_found","message":"pane not found"},"id":"cli:pane:process_info"}\n'; exit 1; fi
     ;;
   "agent rename")
     # A check can make herdr refuse a rename by writing the error to rename-error.

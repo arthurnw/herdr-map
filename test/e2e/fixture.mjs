@@ -66,7 +66,9 @@ export const AGENTS = {
   },
   "w2:p4": { kind: "codex", status: "done", tokens: { summary: "Rewrite the token cache" }, session: "01a08b30-6600-7000-8000-00000000c0de" },
   "w3:p5": { kind: "codex", status: "idle", tokens: { parent: "w1:p1" } },
-  "w4:p7": { kind: "claude", status: "done", name: "stylist", session: "5a1e5a1e-0000-4000-8000-00000000c1a0" },
+  // herdr reports this agent's first session, but the conversation has moved to a background
+  // job (see PROCESS_INFO and transcripts/claude/sessions), whose transcript has the real numbers.
+  "w4:p7": { kind: "claude", status: "done", name: "stylist", session: "5a1e0bad-0000-4000-8000-00000000c1a0" },
   "w5:p9": {
     kind: "pi",
     status: "idle",
@@ -122,6 +124,22 @@ export function setStatus(snap, paneId, status) {
   s.panes.find((p) => p.pane_id === paneId).agent_status = status;
   return snap;
 }
+
+// `pane process-info` results, keyed by pane ID. Other panes aren't found.
+export const PROCESS_INFO = {
+  "w4:p7": {
+    id: "cli:pane:process_info",
+    result: {
+      type: "pane_process_info",
+      process_info: {
+        pane_id: "w4:p7",
+        shell_pid: 4700,
+        foreground_process_group_id: 4701,
+        foreground_processes: [{ pid: 4701, argv0: "claude", argv: ["claude"], name: "2.1.284", cwd: "/repos/w4" }],
+      },
+    },
+  },
+};
 
 // Screens returned by `pane read`, keyed by pane ID. Others get a generic screen.
 export const SCREENS = {

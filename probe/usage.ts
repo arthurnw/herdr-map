@@ -2,7 +2,8 @@
 // context use and recorded cost. herdr-map pipes this file to `node --input-type=module-typescript -`
 // (locally, or over SSH) with a call to `probe()` appended, so it must stay a single file
 // that imports only Node built-ins.
-import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -27,6 +28,19 @@ export interface Cursor {
   /** The reader has reached the end of the file once, so the tally covers everything it needs. */
   caughtUp?: boolean;
   tally: Tally;
+  /** Claude Code: which session the pane's process is on, and when that was last checked. */
+  claude?: ClaudeFollow;
+}
+
+export interface ClaudeFollow {
+  /** The session ID the transcript is named after. May differ from the one herdr reports. */
+  session: string;
+  /** The pane's Claude Code process, when it was found. */
+  pid?: number;
+  /** When the session was last resolved, in ms on the probe's machine. */
+  resolvedAt: number;
+  /** When the transcript last grew, in ms on the probe's machine. */
+  grewAt: number;
 }
 
 export interface ProbeRef {
@@ -37,6 +51,8 @@ export interface ProbeRef {
   sessionKind: string;
   session: string;
   cwd?: string;
+  /** herdr's agent status: `working`, `blocked`, `done`, or `idle`. */
+  status?: string;
   cursor?: Cursor;
 }
 
@@ -54,6 +70,21 @@ export interface ProbeInput {
   tailBytes?: number;
   /** Agent home directories; defaults follow each agent's own environment variable. */
   roots?: Partial<Roots>;
+  /** herdr executable on the probe's machine, for finding a Claude Code pane's process. */
+  herdr?: string;
+}
+
+/** A foreground process of a pane, as `herdr pane process-info` reports it. */
+export interface PaneProcess {
+  pid: number;
+  argv0?: string;
+  name?: string;
+}
+
+export interface ProbeDeps {
+  /** A pane's foreground processes, or undefined when they can't be read. Defaults to asking herdr. */
+  processes?: (pane: string) => PaneProcess[] | undefined;
+  now?: () => number;
 }
 
 export interface Usage {
@@ -174,6 +205,125 @@ export function locate(ref: ProbeRef, roots: Roots): string {
 }
 
 type Json = Record<string, any>;
+
+function readJson(path: string): Json | undefined {
+  try {
+    const o = JSON.parse(readFileSync(path, "utf8"));
+    return o && typeof o === "object" ? o : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function validId(v: unknown): v is string {
+  return typeof v === "string" && SESSION_ID.test(v);
+}
+
+function fileSize(path: string): number | undefined {
+  try {
+    return statSync(path).size;
+  } catch {
+    return undefined;
+  }
+}
+
+// herdr pane IDs look like `w3:p2W`.
+const PANE_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,63}$/;
+
+/** Reads a pane's foreground processes with `herdr pane process-info`, which changes nothing. */
+export function herdrProcesses(bin: string): (pane: string) => PaneProcess[] | undefined {
+  // A missing or hung herdr fails the same way for every pane, so it's given up on for the run.
+  let broken = false;
+  return (pane) => {
+    if (broken || !PANE_ID.test(pane)) return undefined;
+    try {
+      const out = execFileSync(bin, ["pane", "process-info", "--pane", pane], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
+      const ps = JSON.parse(out)?.result?.process_info?.foreground_processes;
+      return Array.isArray(ps) ? ps.filter((p) => Number.isSafeInteger(p?.pid) && p.pid > 0) : undefined;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EACCES" || code === "ETIMEDOUT") broken = true;
+      return undefined;
+    }
+  };
+}
+
+export interface ClaudeSession {
+  session: string;
+  pid: number;
+  /** Where the session started, which names its project folder. */
+  cwd?: string;
+}
+
+function looksLikeClaude(p: PaneProcess): boolean {
+  return [p.argv0, p.name].some((n) => typeof n === "string" && /(^|\/)claude[^/]*$/i.test(n));
+}
+
+function parkedJob(dir: string, jobId: string): Json | undefined {
+  let best: Json | undefined;
+  for (const f of safeList(dir)) {
+    if (!/^\d+\.json$/.test(f)) continue;
+    const o = readJson(join(dir, f));
+    if (!o || !validId(o.sessionId) || (o.jobId !== jobId && !o.sessionId.startsWith(jobId))) continue;
+    if (!best || num(o.updatedAt) > num(best.updatedAt)) best = o;
+  }
+  return best;
+}
+
+/**
+ * The session a pane's Claude Code process is on, from `sessions/<pid>.json`. herdr's session ID
+ * can be stale: when a conversation is moved to the background, the interactive process keeps
+ * its old `sessionId` and records the job as `parkedJobId`, and the background process's own
+ * entry (`jobId`) has the session that's being written.
+ */
+export function claudeSession(root: string, processes: PaneProcess[]): ClaudeSession | undefined {
+  const dir = join(root, "sessions");
+  const claudeFirst = [...processes].sort((a, b) => Number(looksLikeClaude(b)) - Number(looksLikeClaude(a)));
+  for (const p of claudeFirst) {
+    const own = readJson(join(dir, `${p.pid}.json`));
+    if (!own || !validId(own.sessionId)) continue;
+    const job = typeof own.parkedJobId === "string" && own.parkedJobId ? parkedJob(dir, own.parkedJobId) : undefined;
+    const s = job ?? own;
+    return { session: s.sessionId, pid: p.pid, cwd: typeof s.cwd === "string" ? s.cwd : undefined };
+  }
+  return undefined;
+}
+
+// A Claude Code pane's session is checked on first sight and then every minute, or every 30 s
+// while its agent is working or blocked and the transcript has stopped growing.
+export const CLAUDE_RECHECK_MS = 60_000;
+export const CLAUDE_STALL_MS = 30_000;
+
+export function claudeRecheckDue(status: string | undefined, follow: ClaudeFollow, now: number): boolean {
+  const since = now - follow.resolvedAt;
+  const stalled = (status === "working" || status === "blocked") && now - follow.grewAt >= CLAUDE_STALL_MS;
+  return since < 0 || since >= (stalled ? CLAUDE_STALL_MS : CLAUDE_RECHECK_MS);
+}
+
+/** The cursor for a Claude Code pane. When a check is due, it follows the pane's process to its current session. */
+export function claudeCursor(ref: ProbeRef, roots: Roots, now: number, processes: (pane: string) => PaneProcess[] | undefined): Cursor {
+  const cursor = ref.cursor;
+  const follow = cursor?.claude;
+  const size = cursor && fileSize(cursor.path);
+  if (cursor && follow && size !== undefined) {
+    if (size > cursor.offset) follow.grewAt = now;
+    if (!claudeRecheckDue(ref.status, follow, now)) return cursor;
+  }
+  const ps = processes(ref.pane);
+  const found = ps && claudeSession(roots.claude, ps);
+  let session = ref.session;
+  let path: string | undefined;
+  if (found && found.session !== ref.session) {
+    path = claudeTranscript(roots.claude, found.session, found.cwd ?? ref.cwd);
+    if (path) session = found.session;
+  }
+  path ??= locate(ref, roots);
+  if (cursor?.path === path) {
+    cursor.claude = { session, pid: found?.pid, resolvedAt: now, grewAt: follow?.grewAt ?? now };
+    return cursor;
+  }
+  return { path, offset: 0, tally: {}, claude: { session, pid: found?.pid, resolvedAt: now, grewAt: now } };
+}
 
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
@@ -351,10 +501,13 @@ export function summarize(kind: string, tally: Tally, piWindow: () => ReturnType
   };
 }
 
-export function probe(input: ProbeInput): ProbeOutput {
+export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
   const roots = { ...defaultRoots(), ...input.roots };
   const maxBytes = input.maxBytes ?? DEFAULT_MAX_BYTES;
   const tailBytes = input.tailBytes ?? DEFAULT_TAIL_BYTES;
+  const now = (deps.now ?? Date.now)();
+  let processes = deps.processes;
+  const paneProcesses = (pane: string) => (processes ??= herdrProcesses(input.herdr ?? "herdr"))(pane);
   let pi: ReturnType<typeof piWindows> | undefined;
   const piWindow = () => (pi ??= piWindows(roots.pi));
   let bytesRead = 0;
@@ -362,8 +515,11 @@ export function probe(input: ProbeInput): ProbeOutput {
   for (const ref of input.refs) {
     try {
       let cursor = ref.cursor;
-      const moved = ref.sessionKind === "path" && cursor?.path !== ref.session;
-      if (!cursor || moved || !existsSync(cursor.path)) cursor = { path: locate(ref, roots), offset: 0, tally: {} };
+      if (ref.kind === "claude" && ref.sessionKind === "id") cursor = claudeCursor(ref, roots, now, paneProcesses);
+      else {
+        const moved = ref.sessionKind === "path" && cursor?.path !== ref.session;
+        if (!cursor || moved || !existsSync(cursor.path)) cursor = { path: locate(ref, roots), offset: 0, tally: {} };
+      }
       bytesRead += advance(cursor, ref.kind, maxBytes - bytesRead, tailBytes, maxBytes);
       results.push({ pane: ref.pane, cursor, usage: cursor.caughtUp ? summarize(ref.kind, cursor.tally, piWindow) : undefined });
     } catch (err) {

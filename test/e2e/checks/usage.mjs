@@ -22,6 +22,7 @@ export default function usageChecks({ test, assert, card, base }) {
     await waitForText(ctx(page, "w1:p1"), "61% ctx");
     assert((await card(page, "w1:p1").locator(".usage-bar").count()) === 1, "a known window draws a bar");
     await waitForText(ctx(page, "w2:p4"), "50% ctx");
+    // herdr's session for w4:p7 is stale (4%); 85% is the background job its process moved to.
     await waitForText(card(page, "w4:p7").locator(".usage-ctx.high"), "85% ctx");
     // This Pi agent's model isn't in Pi's registry, so only tokens show.
     await waitForText(ctx(page, "w2:p3"), "43k ctx");

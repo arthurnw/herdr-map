@@ -43,7 +43,7 @@ const ctx: Context = {
     intervalMs,
     Number(args["stuck-minutes"]) * 60_000,
     // Locally, the probe runs on this server's own Node unless told otherwise.
-    args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath) },
+    args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath), herdr: args.herdr },
   ),
 };
 

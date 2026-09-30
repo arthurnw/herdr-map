@@ -9,6 +9,8 @@ export interface ProbeOptions {
   ssh?: string;
   /** Node executable on that machine. */
   node: string;
+  /** herdr executable on that machine, which the probe asks for Claude Code panes' processes. */
+  herdr?: string;
 }
 
 const PROBE_SOURCE = readFileSync(new URL("../probe/usage.ts", import.meta.url), "utf8");
@@ -159,8 +161,10 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
           sessionKind: r.sessionKind,
           session: r.session,
           cwd: r.cwd,
+          status: r.status,
           cursor: entries.get(r.pane)?.cursor,
         })),
+        ...(opts.probe.herdr && { herdr: opts.probe.herdr }),
       };
       try {
         const out = await run(input);

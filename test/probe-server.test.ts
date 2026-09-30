@@ -104,7 +104,7 @@ test("the watcher round-trips cursors, keeps numbers, and survives probe errors"
   let changes = 0;
   const logs: string[] = [];
   const w = createUsageWatcher({
-    probe: { node: "node" },
+    probe: { node: "node", herdr: "/usr/local/bin/herdr" },
     intervalMs: 1000,
     refs: () => [ref("working", Date.now())],
     onChange: () => changes++,
@@ -117,6 +117,8 @@ test("the watcher round-trips cursors, keeps numbers, and survives probe errors"
     log: (l) => logs.push(l),
   });
   await w.round();
+  assert.equal(inputs[0].herdr, "/usr/local/bin/herdr");
+  assert.equal(inputs[0].refs[0].status, "working");
   assert.equal(w.usage().get("w1:p1")!.contextTokens, 100);
   assert.equal(changes, 1);
   await w.round();

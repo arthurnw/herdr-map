@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { SCREENS, setStatus, snapshot } from "./fixture.mjs";
+import { PROCESS_INFO, SCREENS, setStatus, snapshot } from "./fixture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -32,6 +32,8 @@ const stub = join(here, "herdr-stub.sh");
 chmodSync(stub, 0o755);
 mkdirSync(join(dir, "screens"));
 for (const [id, text] of Object.entries(SCREENS)) writeFileSync(join(dir, "screens", `${id.replace(":", "_")}.txt`), text);
+mkdirSync(join(dir, "process-info"));
+for (const [id, info] of Object.entries(PROCESS_INFO)) writeFileSync(join(dir, "process-info", `${id.replace(":", "_")}.json`), JSON.stringify(info));
 const writeSnapshot = (snap) => writeFileSync(join(dir, "snapshot.json"), JSON.stringify(snap));
 writeSnapshot(snapshot());
 writeFileSync(join(dir, "actions.log"), "");

@@ -1,18 +1,24 @@
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
   advance,
+  CLAUDE_RECHECK_MS,
+  CLAUDE_STALL_MS,
+  claudeSession,
   claudeTranscript,
   claudeWindow,
   codexTranscript,
+  herdrProcesses,
   piWindows,
   probe,
   readLines,
   summarize,
   type Cursor,
+  type PaneProcess,
+  type ProbeRef,
   type Roots,
 } from "../probe/usage.ts";
 
@@ -200,7 +206,8 @@ test("probe returns usage per pane, round-trips cursors, and reports per-pane er
     { pane: "w4:p1", kind: "claude", sessionKind: "id", session: "../../etc/passwd" },
     { pane: "w5:p1", kind: "pi", sessionKind: "path", session: "relative.jsonl" },
   ];
-  const out = probe({ refs, roots });
+  const noProcesses = { processes: () => undefined };
+  const out = probe({ refs, roots }, noProcesses);
   const by = new Map(out.results.map((r) => [r.pane, r]));
   assert.deepEqual(by.get("w1:p1")!.usage, { model: "claude-opus-5-5", contextTokens: 620_001, contextWindow: 1_000_000, costUsd: undefined });
   assert.deepEqual(by.get("w2:p1")!.usage, { model: "claude-opus-5-5", contextTokens: 43_004, contextWindow: 1_000_000, costUsd: 1.25 });
@@ -210,7 +217,7 @@ test("probe returns usage per pane, round-trips cursors, and reports per-pane er
   assert.equal(out.bytesRead > 0, true);
 
   appendFileSync(piPath, lines(piAssistant(4, 43_000, 2000, 0.5)));
-  const again = probe({ refs: refs.slice(0, 2).map((r) => ({ ...r, cursor: by.get(r.pane)!.cursor })), roots });
+  const again = probe({ refs: refs.slice(0, 2).map((r) => ({ ...r, cursor: by.get(r.pane)!.cursor })), roots }, noProcesses);
   assert.equal(again.results[0].usage!.contextTokens, 620_001);
   assert.deepEqual(again.results[1].usage, { model: "claude-opus-5-5", contextTokens: 45_004, contextWindow: 1_000_000, costUsd: 1.75 });
   assert.equal(again.bytesRead, lines(piAssistant(4, 43_000, 2000, 0.5)).length, "only new bytes are read");
@@ -233,4 +240,133 @@ test("probe withholds a Pi agent's numbers until its whole transcript is read, w
     usage = r.usage;
   }
   assert.equal(usage?.costUsd, 5);
+});
+
+// Claude Code's `sessions/<pid>.json`, as an interactive process and a background job write it.
+function claudeSessions(root: string, entries: Record<number, object>) {
+  mkdirSync(join(root, "sessions"), { recursive: true });
+  for (const [pid, o] of Object.entries(entries)) writeFileSync(join(root, "sessions", `${pid}.json`), JSON.stringify({ pid: Number(pid), ...o }));
+}
+const STALE = "4041f8f1-cc9f-4f30-a548-db095b09987a";
+const LIVE = "a3dd5e25-967d-421e-a153-bd870d1d6cd6";
+const claudeProc = (pid: number): PaneProcess => ({ pid, argv0: "claude", name: "2.1.284" });
+
+test("claudeSession reads an interactive process's own session", () => {
+  const root = tempDir();
+  claudeSessions(root, { 100: { sessionId: STALE, kind: "interactive", cwd: "/repos/web" } });
+  assert.deepEqual(claudeSession(root, [claudeProc(100)]), { session: STALE, pid: 100, cwd: "/repos/web" });
+});
+
+test("claudeSession follows a parked conversation to its background job", () => {
+  const root = tempDir();
+  claudeSessions(root, {
+    100: { sessionId: STALE, kind: "interactive", parkedJobId: "a3dd5e25", cwd: "/repos/web" },
+    200: { sessionId: LIVE, kind: "bg", jobId: "a3dd5e25", status: "busy", cwd: "/repos/web" },
+    300: { sessionId: "5c0078b2-0000-4000-8000-000000000000", kind: "interactive" },
+  });
+  assert.deepEqual(claudeSession(root, [claudeProc(100)]), { session: LIVE, pid: 100, cwd: "/repos/web" });
+  // A job entry without `jobId` still matches by its session ID's prefix.
+  claudeSessions(root, { 200: { sessionId: LIVE, kind: "bg" } });
+  assert.equal(claudeSession(root, [claudeProc(100)])?.session, LIVE);
+  // A parked job that has no entry leaves the process's own session.
+  claudeSessions(root, { 100: { sessionId: STALE, kind: "interactive", parkedJobId: "0bad0bad" } });
+  assert.equal(claudeSession(root, [claudeProc(100)])?.session, STALE);
+});
+
+test("claudeSession prefers the Claude process and skips processes without a usable entry", () => {
+  const root = tempDir();
+  claudeSessions(root, { 100: { sessionId: STALE }, 200: { sessionId: LIVE }, 400: { sessionId: "../../etc/passwd" } });
+  assert.equal(claudeSession(root, [{ pid: 100, argv0: "node" }, claudeProc(200)])?.session, LIVE);
+  assert.equal(claudeSession(root, [{ pid: 999, argv0: "claude" }, { pid: 100, argv0: "node" }])?.session, STALE);
+  assert.equal(claudeSession(root, [claudeProc(400)]), undefined);
+  assert.equal(claudeSession(root, [claudeProc(999)]), undefined, "missing file");
+  assert.equal(claudeSession(join(root, "nowhere"), [claudeProc(100)]), undefined);
+});
+
+function parkedFixture() {
+  const dir = tempDir();
+  const roots: Roots = { claude: join(dir, "claude"), codex: join(dir, "codex"), pi: join(dir, "pi") };
+  const project = join(roots.claude, "projects", "-repos-web");
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(project, `${STALE}.jsonl`), lines(claude(1, 43_000, 0)));
+  writeFileSync(join(project, `${LIVE}.jsonl`), lines(claude(1, 820_000, 6_000)));
+  claudeSessions(roots.claude, {
+    100: { sessionId: STALE, kind: "interactive", parkedJobId: "a3dd5e25", cwd: "/repos/web" },
+    200: { sessionId: LIVE, kind: "bg", jobId: "a3dd5e25", cwd: "/repos/web" },
+  });
+  const ref: ProbeRef = { pane: "w2P:p1", kind: "claude", sessionKind: "id", session: STALE, cwd: "/repos/web", status: "working" };
+  return { roots, project, ref };
+}
+
+test("probe reads the transcript of the session the pane's process is on, and falls back to herdr's", () => {
+  const { roots, project, ref } = parkedFixture();
+  const calls: string[] = [];
+  const processes = (pane: string) => (calls.push(pane), [claudeProc(100)]);
+  const r = probe({ refs: [ref], roots }, { processes, now: () => 1_000_000 }).results[0];
+  assert.deepEqual(calls, ["w2P:p1"]);
+  assert.equal(r.usage?.contextTokens, 826_001);
+  assert.equal(r.cursor?.path, join(project, `${LIVE}.jsonl`));
+  assert.deepEqual(r.cursor?.claude, { session: LIVE, pid: 100, resolvedAt: 1_000_000, grewAt: 1_000_000 });
+
+  // herdr can't say, or the process's transcript isn't there yet: herdr's session is read.
+  assert.equal(probe({ refs: [ref], roots }, { processes: () => undefined }).results[0].usage?.contextTokens, 43_001);
+  claudeSessions(roots.claude, { 200: { sessionId: "a3dd5e25-0000-4000-8000-000000000000", jobId: "a3dd5e25" } });
+  const fallback = probe({ refs: [ref], roots }, { processes }).results[0];
+  assert.equal(fallback.usage?.contextTokens, 43_001);
+  assert.equal(fallback.cursor?.claude?.session, STALE);
+});
+
+test("probe re-checks a Claude pane's session only when due, and starts over when it changes", () => {
+  const { roots, project, ref } = parkedFixture();
+  claudeSessions(roots.claude, { 100: { sessionId: STALE, kind: "interactive", cwd: "/repos/web" } });
+  let calls = 0;
+  const processes = () => (calls++, [claudeProc(100)]);
+  let t = 1_000_000;
+  const run = (r: ProbeRef) => probe({ refs: [r], roots }, { processes, now: () => t }).results[0];
+
+  let res = run(ref);
+  assert.equal(res.usage?.contextTokens, 43_001);
+  assert.equal(calls, 1, "first sight");
+
+  // Working and the transcript is growing: no re-check.
+  t += 5000;
+  appendFileSync(join(project, `${STALE}.jsonl`), lines(claude(1, 44_000, 0)));
+  res = run({ ...ref, cursor: res.cursor });
+  assert.equal(calls, 1);
+  assert.equal(res.cursor?.claude?.grewAt, t);
+
+  // The conversation moves to a background job; the old transcript stops growing.
+  claudeSessions(roots.claude, { 100: { sessionId: STALE, kind: "interactive", parkedJobId: "a3dd5e25", cwd: "/repos/web" } });
+  t += CLAUDE_STALL_MS - 1;
+  res = run({ ...ref, cursor: res.cursor });
+  assert.equal(calls, 1, "not stalled for long enough yet");
+  t += 1;
+  res = run({ ...ref, cursor: res.cursor });
+  assert.equal(calls, 2, "a working agent whose transcript stalled is re-checked before the minute is up");
+  assert.equal(res.cursor?.path, join(project, `${LIVE}.jsonl`));
+  assert.equal(res.cursor?.offset, lines(claude(1, 820_000, 6_000)).length, "read from the start of the new transcript");
+  assert.equal(res.usage?.contextTokens, 826_001);
+
+  // An idle agent is re-checked once a minute.
+  const idle = { ...ref, status: "idle" };
+  t += CLAUDE_RECHECK_MS - 1;
+  res = run({ ...idle, cursor: res.cursor });
+  assert.equal(calls, 2);
+  t += 1;
+  res = run({ ...idle, cursor: res.cursor });
+  assert.equal(calls, 3);
+  assert.equal(res.usage?.contextTokens, 826_001, "the same session keeps its cursor");
+});
+
+test("herdrProcesses reads process-info, and a missing or failing herdr gives nothing", () => {
+  const dir = tempDir();
+  const bin = join(dir, "herdr");
+  const info = { result: { process_info: { foreground_processes: [{ pid: 49352, argv0: "claude", name: "2.1.284" }, { pid: -1 }] } } };
+  writeFileSync(bin, `#!/bin/sh\n[ "$1 $2 $3 $4" = "pane process-info --pane w2P:p1" ] || exit 1\necho '${JSON.stringify(info)}'\n`);
+  chmodSync(bin, 0o755);
+  const ps = herdrProcesses(bin);
+  assert.deepEqual(ps("w2P:p1"), [{ pid: 49352, argv0: "claude", name: "2.1.284" }]);
+  assert.equal(ps("w9:p9"), undefined, "herdr exits non-zero");
+  assert.equal(ps("--help"), undefined, "not a pane ID");
+  assert.equal(herdrProcesses(join(dir, "missing"))("w2P:p1"), undefined);
 });

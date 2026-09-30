@@ -1,0 +1,2 @@
+{"type":"user","sessionId":"5a1e0bad-0000-4000-8000-00000000c1a0","isSidechain":false,"message":{"role":"user","content":"Synthetic prompt for the herdr-map e2e fixture."}}
+{"type":"assistant","sessionId":"5a1e0bad-0000-4000-8000-00000000c1a0","isSidechain":false,"message":{"role":"assistant","model":"claude-fable-5-1","content":[{"type":"text","text":"Synthetic reply."}],"usage":{"input_tokens":3,"cache_read_input_tokens":40000,"cache_creation_input_tokens":3000,"output_tokens":40}}}
