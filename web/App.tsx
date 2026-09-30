@@ -55,6 +55,7 @@ import { BulkBar } from "./BulkBar.tsx";
 import { AutomationProvider, NEW_SCHEDULE_EVENT, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
 import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
 import { SubagentViewContext, useSubagentView } from "./subagents.tsx";
+import { HunkContext, useHunkView } from "./review.tsx";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 
@@ -213,7 +214,8 @@ function FleetMap() {
     [panes, focus, focusPane],
   );
 
-  const attention = useMemo(() => needsYou(panes), [panes]);
+  const hunkView = useHunkView(fleet);
+  const attention = useMemo(() => needsYou(panes, (id) => hunkView.unread(id).length), [panes, hunkView]);
   const stars = useStarsContext();
   const starred = useMemo(() => starredAgents(panes, stars.ids), [panes, stars.ids]);
   const names = useMemo(() => agentNames(panes), [panes]);
@@ -259,6 +261,7 @@ function FleetMap() {
       <NoteActionsProvider value={notes.actions}>
       <AutomationProvider value={automationValue}>
       <SubagentViewContext.Provider value={subagentView}>
+      <HunkContext.Provider value={hunkView}>
       <div className="flex h-full flex-col">
         <Toolbar
           fleet={fleet}
@@ -388,6 +391,7 @@ function FleetMap() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      </HunkContext.Provider>
       </SubagentViewContext.Provider>
       </AutomationProvider>
       </NoteActionsProvider>

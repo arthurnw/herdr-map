@@ -5,6 +5,8 @@ import type { Poller } from "./poller.ts";
 /** Server-wide settings and state shared by every route module. */
 export interface Context {
   herdr: HerdrOptions;
+  /** hunk executable where herdr runs. */
+  hunk: string;
   layoutPath: string;
   /** Terminal app to bring to the front after a focus. Unset with --no-activate. */
   activate?: string;

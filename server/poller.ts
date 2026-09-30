@@ -7,6 +7,7 @@ import { agentPaneIds, createMemoryWatcher, markMemory } from "./memory.ts";
 import { createUsageWatcher, markActivity, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
 import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
 import { createGitWatcher, markGit, workspaceDirs } from "./git.ts";
+import { createHunkWatcher, markHunk, matchReviews } from "./hunk.ts";
 
 export interface State {
   fleet?: Fleet;
@@ -28,6 +29,8 @@ export interface Poller {
   subagentTranscript(paneId: string, subagentId: string): Promise<TranscriptOutput>;
   /** The final reply of an agent's latest turn, read by the probe from its transcript. */
   lastReply(paneId: string): Promise<ReplyOutput>;
+  /** Re-reads hunk's review sessions now, after herdr-map changed one. */
+  refreshHunk(): Promise<void>;
 }
 
 // Screen reads for stuck detection cost a herdr call per working agent, so they run
@@ -69,6 +72,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
       if (usage) state = { ...state, fleet: markActivity(markUsage(state.fleet!, usage.usage()), usage.activity()), probeError: usage.error() };
       if (memory) state = { ...state, fleet: markMemory(state.fleet!, memory.memory()) };
       if (git) state = { ...state, fleet: markGit(state.fleet!, git.workspaces(workspaceDirs(snap))) };
+      if (hunk) state = { ...state, fleet: markHunk(state.fleet!, matchReviews(snap, hunk.output())) };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -107,6 +111,9 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
   // Branch, changes, and PRs, on their own slower loop; see server/git.ts.
   const git = probe && createGitWatcher({ probe, dirs: () => workspaceDirs(snap), onChange: () => void poll() });
   git?.start();
+  // hunk review sessions and their notes, on their own slower loop; see server/hunk.ts.
+  const hunk = probe && createHunkWatcher({ probe, onChange: () => void poll() });
+  hunk?.start();
 
   // SSE proxies and browsers drop idle streams; a comment line keeps them open.
   setInterval(() => {
@@ -120,5 +127,8 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     markSeen: (paneId) => clock.markSeen(paneId),
     subagentTranscript: (paneId, id) => (usage ? usage.transcript(paneId, id) : Promise.reject(new Error("the usage probe is off"))),
     lastReply: async (paneId) => (usage ? usage.reply(paneId) : { error: "the usage probe is off" }),
+    refreshHunk: async () => {
+      await hunk?.refresh();
+    },
   };
 }

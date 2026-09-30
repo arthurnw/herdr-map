@@ -1,7 +1,8 @@
-// Task progress, running subagents, and Codex reviews on agent cards, and the current task in the preview.
+// Task progress, running subagents, Codex reviews, and hunk review notes on agent cards, and the current task in the preview.
 import { ShieldCheck } from "lucide-react";
 import type { FleetAgent, TaskProgress } from "../shared/model.ts";
 import { MemoryChip } from "./memory.tsx";
+import { AgentReviewChip } from "./review.tsx";
 import { SubagentChip } from "./subagents.tsx";
 
 /** A finished list stays on the card while the turn that finished it is still on screen. */
@@ -38,7 +39,7 @@ export function TaskChip({ tasks }: { tasks: TaskProgress }) {
   );
 }
 
-/** Extras for an agent card's status line: memory, task progress, running subagents, and running Codex reviews. */
+/** Extras for an agent card's status line: memory, task progress, running subagents, running Codex reviews, and hunk review notes. */
 export function AgentActivity({ pane, agent }: { pane: string; agent: FleetAgent }) {
   const reviewing = agent.reviews?.running ?? 0;
   return (
@@ -52,6 +53,7 @@ export function AgentActivity({ pane, agent }: { pane: string; agent: FleetAgent
           {reviewing > 1 ? reviewing : ""}
         </span>
       )}
+      <AgentReviewChip pane={pane} agent={agent} />
     </>
   );
 }

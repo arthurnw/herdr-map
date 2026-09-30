@@ -10,6 +10,7 @@ import { defaultQueuePath } from "./queue.ts";
 import { createRouter } from "./router.ts";
 import { fleetRoutes } from "./routes/fleet.ts";
 import { historyRoutes } from "./routes/history.ts";
+import { hunkRoutes } from "./routes/hunk.ts";
 import { inputRoutes } from "./routes/input.ts";
 import { layoutRoutes } from "./routes/layout.ts";
 import { linksRoutes } from "./routes/links.ts";
@@ -26,6 +27,7 @@ const { values: args } = parseArgs({
   options: {
     ssh: { type: "string" },
     herdr: { type: "string", default: "herdr" },
+    hunk: { type: "string", default: "hunk" },
     host: { type: "string", default: "127.0.0.1" },
     port: { type: "string", default: "4747" },
     interval: { type: "string", default: "1500" },
@@ -43,6 +45,7 @@ const herdr: HerdrOptions = { ssh: args.ssh, bin: args.herdr! };
 const intervalMs = Number(args.interval);
 const base = {
   herdr,
+  hunk: args.hunk!,
   layoutPath: args.layout!,
   activate: args["no-activate"] ? undefined : args.activate,
   poller: createPoller(
@@ -50,7 +53,7 @@ const base = {
     intervalMs,
     Number(args["stuck-minutes"]) * 60_000,
     // Locally, the probe runs on this server's own Node unless told otherwise.
-    args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath), herdr: args.herdr },
+    args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath), herdr: args.herdr, hunk: args.hunk },
   ),
 };
 const queuePath = args.queue ?? defaultQueuePath(base.layoutPath);
@@ -62,6 +65,7 @@ const routes = [
   ...layoutRoutes(ctx),
   ...linksRoutes(ctx),
   ...historyRoutes(ctx),
+  ...hunkRoutes(ctx),
   ...metaRoutes(ctx),
   ...notesRoutes(ctx),
   ...queueRoutes(ctx),

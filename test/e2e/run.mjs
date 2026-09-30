@@ -32,6 +32,8 @@ const stub = join(here, "herdr-stub.sh");
 chmodSync(stub, 0o755);
 const psStub = join(here, "ps-stub.sh");
 chmodSync(psStub, 0o755);
+const hunkStub = join(here, "hunk-stub.sh");
+chmodSync(hunkStub, 0o755);
 writeFileSync(join(dir, "ps.txt"), `${PS_OUTPUT}\n`);
 mkdirSync(join(dir, "screens"));
 for (const [id, text] of Object.entries(SCREENS)) writeFileSync(join(dir, "screens", `${id.replace(":", "_")}.txt`), text);
@@ -49,8 +51,12 @@ const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const server = spawn(
   process.execPath,
-  [join(root, "server/index.ts"), "--port", String(port), "--herdr", stub, "--no-activate", "--layout", layoutFile, "--interval", "300"],
-  { env: { ...process.env, HERDR_STUB_DIR: dir, HERDR_MAP_PS: psStub }, stdio: ["ignore", "pipe", "pipe"] },
+  [join(root, "server/index.ts"), "--port", String(port), "--herdr", stub, "--hunk", hunkStub, "--no-activate", "--layout", layoutFile, "--interval", "300"],
+  {
+    // The hunk probe reads the plugin's index from here instead of herdr's plugin state directory.
+    env: { ...process.env, HERDR_STUB_DIR: dir, HERDR_MAP_PS: psStub, HERDR_MAP_HUNK_INDEX: join(dir, "hunk-index.json") },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
 );
 let serverLog = "";
 server.stdout.on("data", (d) => (serverLog += d));

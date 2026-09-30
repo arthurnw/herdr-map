@@ -14,6 +14,8 @@ export interface ProbeOptions {
   node: string;
   /** herdr executable on that machine, which the probe asks for Claude Code panes' processes. */
   herdr?: string;
+  /** hunk executable on that machine, which the hunk probe lists review sessions with. */
+  hunk?: string;
 }
 
 const IMPORT = /^import (type )?\{([^}]*)\} from "([^"]+)";(\n|$)/gm;

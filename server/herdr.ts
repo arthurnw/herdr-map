@@ -24,7 +24,8 @@ export function commandFor(opts: HerdrOptions, args: string[]): [string, string[
   return ["ssh", ["-o", "BatchMode=yes", opts.ssh, quoted]];
 }
 
-function run(opts: HerdrOptions, args: string[], timeoutMs = 10_000): Promise<string> {
+/** Runs `opts.bin` with `args`, over SSH when `opts.ssh` is set. */
+export function runCli(opts: HerdrOptions, args: string[], timeoutMs = 10_000): Promise<string> {
   const [cmd, argv] = commandFor(opts, args);
   return new Promise((resolve, reject) => {
     execFile(cmd, argv, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -35,7 +36,7 @@ function run(opts: HerdrOptions, args: string[], timeoutMs = 10_000): Promise<st
 }
 
 export async function snapshot(opts: HerdrOptions): Promise<Snapshot> {
-  const out = JSON.parse(await run(opts, ["api", "snapshot"]));
+  const out = JSON.parse(await runCli(opts, ["api", "snapshot"]));
   if (out.error) throw new Error(`herdr api snapshot: ${out.error.message}`);
   return out.result.snapshot as Snapshot;
 }
@@ -44,9 +45,9 @@ export type FocusTarget = { kind: "agent" | "tab" | "workspace"; id: string };
 
 export async function focus(opts: HerdrOptions, target: FocusTarget): Promise<void> {
   const id = assertId(target.id);
-  if (target.kind === "agent") await run(opts, ["agent", "focus", id]);
-  else if (target.kind === "tab") await run(opts, ["tab", "focus", id]);
-  else await run(opts, ["workspace", "focus", id]);
+  if (target.kind === "agent") await runCli(opts, ["agent", "focus", id]);
+  else if (target.kind === "tab") await runCli(opts, ["tab", "focus", id]);
+  else await runCli(opts, ["workspace", "focus", id]);
 }
 
 export type ReadSource = "visible" | "recent";
@@ -54,7 +55,7 @@ export type ReadSource = "visible" | "recent";
 /** Reads the visible screen, or `recent` scrollback for a scrollable preview. */
 export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource, lines: number): Promise<string> {
   const n = Math.min(5000, Math.max(1, Math.floor(lines) || 60));
-  return run(opts, ["pane", "read", assertId(paneId), "--source", source, "--lines", String(n)]);
+  return runCli(opts, ["pane", "read", assertId(paneId), "--source", source, "--lines", String(n)]);
 }
 
 const MAX_TEXT = 20_000;
@@ -79,17 +80,17 @@ export function assertKeys(keys: unknown): string[] {
 
 /** Submits a prompt with Enter. herdr refuses this for a blocked agent; send keys instead. */
 export async function promptAgent(opts: HerdrOptions, paneId: string, text: unknown): Promise<void> {
-  await run(opts, ["agent", "prompt", assertId(paneId), assertText(text)]);
+  await runCli(opts, ["agent", "prompt", assertId(paneId), assertText(text)]);
 }
 
 /** Sends key presses, for answering an agent's approval or question dialog. */
 export async function sendKeys(opts: HerdrOptions, paneId: string, keys: unknown): Promise<void> {
-  await run(opts, ["agent", "send-keys", assertId(paneId), ...assertKeys(keys)]);
+  await runCli(opts, ["agent", "send-keys", assertId(paneId), ...assertKeys(keys)]);
 }
 
 /** Types text into a pane without pressing Enter, for free-text answers inside a dialog. */
 export async function sendText(opts: HerdrOptions, paneId: string, text: unknown): Promise<void> {
-  await run(opts, ["pane", "send-text", assertId(paneId), assertText(text)]);
+  await runCli(opts, ["pane", "send-text", assertId(paneId), assertText(text)]);
 }
 
 /** herdr's own message from a failed command. herdr reports errors as JSON on stderr. */
@@ -107,7 +108,7 @@ export function herdrMessage(err: Error): string {
 export async function renameAgent(opts: HerdrOptions, paneId: string, name: string): Promise<void> {
   if (!AGENT_NAME.test(name)) throw new Error(`invalid agent name: ${name}`);
   try {
-    await run(opts, ["agent", "rename", assertId(paneId), name]);
+    await runCli(opts, ["agent", "rename", assertId(paneId), name]);
   } catch (err) {
     throw new Error(herdrMessage(err as Error));
   }
@@ -123,14 +124,14 @@ function assertPluginName(name: string): string {
 
 /** Whether a herdr plugin is installed and enabled. */
 export async function pluginEnabled(opts: HerdrOptions, pluginId: string): Promise<boolean> {
-  const out = JSON.parse(await run(opts, ["plugin", "list", "--json", "--plugin", assertPluginName(pluginId)]));
+  const out = JSON.parse(await runCli(opts, ["plugin", "list", "--json", "--plugin", assertPluginName(pluginId)]));
   const plugins: { plugin_id?: string; enabled?: boolean }[] = out.result?.plugins ?? [];
   return plugins.some((p) => p.plugin_id === pluginId && p.enabled);
 }
 
 /** Runs a plugin action. Actions act on the pane herdr has focused. */
 export async function invokePluginAction(opts: HerdrOptions, pluginId: string, actionId: string): Promise<void> {
-  await run(opts, ["plugin", "action", "invoke", assertPluginName(actionId), "--plugin", assertPluginName(pluginId)]);
+  await runCli(opts, ["plugin", "action", "invoke", assertPluginName(actionId), "--plugin", assertPluginName(pluginId)]);
 }
 
 const APP_NAME = /^[\w .-]{1,64}$/;

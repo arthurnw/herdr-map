@@ -1,5 +1,6 @@
 // Converts a herdr `session.snapshot` into the grouped view model the canvas renders.
 import type { WorkspaceGit } from "./git.ts";
+import type { AgentHunk, HunkReview } from "./hunk.ts";
 
 export type AgentStatus = "working" | "blocked" | "done" | "idle" | "unknown";
 
@@ -19,7 +20,7 @@ export interface SnapWorkspace {
   label: string;
   number: number;
   focused: boolean;
-  worktree?: { repo_key: string; repo_name: string; is_linked_worktree: boolean };
+  worktree?: { repo_key: string; repo_name: string; is_linked_worktree: boolean; checkout_path?: string; repo_root?: string };
 }
 
 export interface SnapTab {
@@ -94,6 +95,8 @@ export interface FleetAgent {
   tasks?: TaskProgress;
   /** Resident memory of the pane's process tree, measured by the memory probe. */
   memory?: AgentMemory;
+  /** Counts from the hunk reviews this agent owns; the notes are on its workspace's `hunk`. */
+  hunk?: AgentHunk;
 }
 
 export interface AgentMemory {
@@ -183,6 +186,8 @@ export interface FleetWorkspace {
   tabs: FleetTab[];
   /** Branch, changes, and PR of the repo its agents work in, from the git probe. */
   git?: WorkspaceGit;
+  /** Live hunk reviews of the repo this workspace works in, from the hunk probe. */
+  hunk?: HunkReview[];
 }
 
 export interface FleetGroup {

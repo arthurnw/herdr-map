@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { CircleCheck, MousePointerClick, SquareTerminal } from "lucide-react";
+import { Bot, CircleCheck, MousePointerClick, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
 import { SubagentDetail } from "./SubagentDetail.tsx";
 import { SubagentViewContext } from "./subagents.tsx";
+import { HunkContext } from "./review.tsx";
 
 interface Props {
   attention: Located[];
@@ -65,7 +66,7 @@ export function Sidebar({ attention, starred, agentNames, detail, pinned, select
         {attention.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <CircleCheck className="size-4" />
-            No blocked, stuck, or finished agents.
+            No blocked, stuck, or finished agents, or unread review notes.
           </p>
         ) : (
           <ul className="-mx-2 space-y-0.5">
@@ -111,6 +112,7 @@ interface RowProps {
 
 function AgentRow({ located: l, selected, now, onFocus, onHover, onSelect }: RowProps) {
   const agent = l.pane.agent!;
+  const unread = useContext(HunkContext).unread(l.pane.id).length;
   return (
     <li className={cn("group flex items-center rounded-md hover:bg-accent", selected && "bg-accent")}>
       <button
@@ -121,6 +123,12 @@ function AgentRow({ located: l, selected, now, onFocus, onHover, onSelect }: Row
         <StatusDot status={agent.status} />
         <span className="min-w-0 flex-1 truncate">{agent.name ?? l.workspace.label}</span>
         {agent.stuck && <StuckBadge stuck={agent.stuck} now={now} />}
+        {unread > 0 && (
+          <Badge variant="outline" className="gap-1 text-(--hunk-agent)" title={`${unread} unread hunk review note${unread === 1 ? "" : "s"}`}>
+            <Bot className="size-3" aria-hidden />
+            {unread} note{unread === 1 ? "" : "s"}
+          </Badge>
+        )}
         <span className="text-xs text-muted-foreground">{KIND_LABEL[agent.kind] ?? agent.kind}</span>
         <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{agentAge(agent, now)}</span>
       </button>

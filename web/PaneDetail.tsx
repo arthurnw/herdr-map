@@ -19,6 +19,7 @@ import { MemoryLine } from "./memory.tsx";
 import { TaskLine } from "./activity.tsx";
 import { SubagentList } from "./subagents.tsx";
 import { GitBadge } from "./git.tsx";
+import { ReviewSection } from "./review.tsx";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
@@ -163,6 +164,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
         <TaskLine agent={agent} />
         {agent && <SubagentList pane={pane.id} agent={agent} />}
         {agent?.summary && <p className="text-sm leading-snug">{agent.summary}</p>}
+        {agent && <ReviewSection located={located} pinned={pinned} />}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
