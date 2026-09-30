@@ -10,6 +10,7 @@ import {
   Position,
   useInternalNode,
   type Connection,
+  type ConnectionLineComponentProps,
   type Edge,
   type EdgeProps,
   type FinalConnectionState,
@@ -31,7 +32,7 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { textHash } from "../shared/automation.ts";
 import type { Endpoint, Link, LinkKind } from "../shared/layout-types.ts";
 import { agentLabel, useAutomation, type AutomationActions, type AutomationValue } from "./automation.tsx";
-import { attachEdge, type Side } from "./edge-geometry.ts";
+import { attachEdge, attachToPoint, type Anchor, type Side } from "./edge-geometry.ts";
 import { formatAge } from "./format.ts";
 import type { Rect } from "./layout.ts";
 import { stop } from "./organize.tsx";
@@ -124,6 +125,37 @@ const nodeRect = (n: InternalNode): Rect => ({
   h: n.measured.height ?? n.height ?? 0,
 });
 
+/** The curve of a link between two anchors, with the point to put its label on. */
+const linkPath = (ends: { source: Anchor; target: Anchor }) =>
+  getBezierPath({
+    sourceX: ends.source.x,
+    sourceY: ends.source.y,
+    sourcePosition: POSITION[ends.source.side],
+    targetX: ends.target.x,
+    targetY: ends.target.y,
+    targetPosition: POSITION[ends.target.side],
+  });
+
+/** An arrowhead marker, colored by its `className` in links.css. */
+function Arrowhead({ id, className }: { id: string; className: string }) {
+  return (
+    <defs>
+      <marker
+        id={id}
+        className={className}
+        markerWidth="16"
+        markerHeight="16"
+        viewBox="-10 -10 20 20"
+        orient="auto-start-reverse"
+        refX="0"
+        refY="0"
+      >
+        <polyline points="-5,-4 0,0 -5,4 -5,-4" strokeLinecap="round" strokeLinejoin="round" />
+      </marker>
+    </defs>
+  );
+}
+
 /**
  * A link drawn between the sides of its two cards that face each other, rather than from
  * the handles, which sit on fixed sides.
@@ -135,14 +167,7 @@ export const LinkEdge = memo((props: EdgeProps) => {
   const targetNode = useInternalNode(target);
   if (!sourceNode || !targetNode) return null;
   const ends = attachEdge(nodeRect(sourceNode), nodeRect(targetNode));
-  const [path, labelX, labelY] = getBezierPath({
-    sourceX: ends.source.x,
-    sourceY: ends.source.y,
-    sourcePosition: POSITION[ends.source.side],
-    targetX: ends.target.x,
-    targetY: ends.target.y,
-    targetPosition: POSITION[ends.target.side],
-  });
+  const [path, labelX, labelY] = linkPath(ends);
   const { link } = data as LinkEdgeData;
   const flavor = flavorOf(link);
   const { icon: Icon, label } = FLAVOR[flavor];
@@ -153,20 +178,7 @@ export const LinkEdge = memo((props: EdgeProps) => {
   const offset = vertical ? "translate(0.5em, -50%)" : "translate(-50%, -50%)";
   return (
     <>
-      <defs>
-        <marker
-          id={markerId}
-          className="link-arrowhead"
-          markerWidth="16"
-          markerHeight="16"
-          viewBox="-10 -10 20 20"
-          orient="auto-start-reverse"
-          refX="0"
-          refY="0"
-        >
-          <polyline points="-5,-4 0,0 -5,4 -5,-4" strokeLinecap="round" strokeLinejoin="round" />
-        </marker>
-      </defs>
+      <Arrowhead id={markerId} className="link-arrowhead" />
       <BaseEdge id={id} path={path} markerEnd={`url('#${markerId}')`} className="link-path" />
       <EdgeLabelRenderer>
         <div className="link-label nodrag nopan" style={{ transform: `${offset} translate(${labelX}px, ${labelY}px)` }}>
@@ -205,6 +217,25 @@ function LinkMenu({ link, auto }: { link: Link; auto: AutomationValue }) {
 }
 
 export const linkEdgeTypes = { link: LinkEdge };
+
+const PREVIEW_ARROW = "link-arrow-preview";
+
+/**
+ * The link being drawn. Over a card that takes the drop it runs between the facing sides,
+ * as the saved link will; elsewhere it runs from the source's side facing the pointer.
+ */
+function LinkConnectionLine({ fromNode, toNode, toX, toY, connectionStatus, connectionLineStyle }: ConnectionLineComponentProps) {
+  const from = nodeRect(fromNode);
+  // `toX`/`toY` are the pointer in flow coordinates unless the drop is valid; the `pointer` prop is in screen pixels.
+  const ends = toNode && connectionStatus === "valid" ? attachEdge(from, nodeRect(toNode)) : attachToPoint(from, { x: toX, y: toY });
+  const [path] = linkPath(ends);
+  return (
+    <>
+      <Arrowhead id={PREVIEW_ARROW} className="link-preview-arrowhead" />
+      <path d={path} fill="none" className="react-flow__connection-path" style={connectionLineStyle} markerEnd={`url('#${PREVIEW_ARROW}')`} />
+    </>
+  );
+}
 
 interface Choice {
   from: string;
@@ -252,6 +283,7 @@ export function useLinking(panes: Map<string, Located>, actions: AutomationActio
     nodesConnectable: true,
     connectOnClick: false,
     isValidConnection,
+    connectionLineComponent: LinkConnectionLine,
     onConnectStart: () => setLinking(true),
     onConnect: (c: Connection) => (dropped.current = c),
     onConnectEnd,

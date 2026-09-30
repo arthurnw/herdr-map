@@ -46,3 +46,8 @@ export function attachEdge(source: Rect, target: Rect): { source: Anchor; target
   const [sy, ty] = along(source.y, source.y + source.h, target.y, target.y + target.h);
   return { source: { x: edgeOf(source, from), y: sy, side: from }, target: { x: edgeOf(target, to), y: ty, side: to } };
 }
+
+/** The start and end points of an edge from `source` to a bare point, such as the pointer while a link is drawn. */
+export function attachToPoint(source: Rect, point: { x: number; y: number }): { source: Anchor; target: Anchor } {
+  return attachEdge(source, { x: point.x, y: point.y, w: 0, h: 0 });
+}

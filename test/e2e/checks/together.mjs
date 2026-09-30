@@ -31,8 +31,8 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
   const promptsTo = (pane) => actions().filter((a) => a.startsWith(`agent prompt ${pane} `));
   const savedLinks = async () => (await api("GET", "/api/links"));
 
-  /** Drags from a node's link dot onto an agent card. */
-  async function drawLink(page, fromNode, toPane) {
+  /** Drags from a node's link dot to the middle of an agent card, and holds the button down. */
+  async function dragLinkOver(page, fromNode, toPane) {
     await fromNode.hover();
     const dot = fromNode.locator(".link-source");
     const from = await dot.boundingBox();
@@ -47,6 +47,11 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
         from.y + (to.y + to.height / 2 - from.y) * t,
       );
     }
+  }
+
+  /** Drags from a node's link dot onto an agent card. */
+  async function drawLink(page, fromNode, toPane) {
+    await dragLinkOver(page, fromNode, toPane);
     await page.mouse.up();
   }
 
@@ -130,6 +135,35 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
       const dark = stroke;
       [stroke, fill] = await colors();
       assert(stroke === fill && stroke !== dark, `the arrowhead should match the edge in light mode: ${stroke} vs ${fill}`);
+    }));
+
+  test("together: while a link is drawn over a card, it ends on the side it will attach to", async (page) =>
+    withReset(async () => {
+      await dragLinkOver(page, card(page, "w2:p3"), "w2:p4");
+      const line = page.locator(".react-flow__connection-path");
+      await line.waitFor({ state: "attached", timeout: 3000 });
+      // The path's end points, in screen pixels.
+      const [start, end] = await line.evaluate((el) => {
+        const nums = el.getAttribute("d").match(/-?\d+(\.\d+)?(e-?\d+)?/g).map(Number);
+        const m = el.getScreenCTM();
+        const at = (x, y) => ({ x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f });
+        return [at(nums[0], nums[1]), at(nums.at(-2), nums.at(-1))];
+      });
+      const upper = await card(page, "w2:p3").boundingBox();
+      const lower = await card(page, "w2:p4").boundingBox();
+      const near = (a, b) => Math.abs(a - b) <= 2;
+      assert(near(start.y, upper.y + upper.height), `the line should leave the upper card's bottom: ${JSON.stringify({ start, upper })}`);
+      assert(near(end.y, lower.y), `the line should end on the lower card's top, not its middle: ${JSON.stringify({ end, lower })}`);
+      assert(end.x >= lower.x && end.x <= lower.x + lower.width, `the line should end within the lower card's span: ${JSON.stringify({ end, lower })}`);
+      const arrow = await line.evaluate((el) => !!document.getElementById(el.getAttribute("marker-end").match(/#([^')]+)/)[1]));
+      assert(arrow, "the line should have an arrowhead");
+
+      await page.mouse.up();
+      await page.getByRole("button", { name: /^Handoff/ }).click();
+      await waitFor(async () => (await savedLinks()).length === 1, "the handoff should be saved");
+      const [link] = await savedLinks();
+      assert(link.kind === "handoff" && link.from.id === "w2:p3" && link.to.id === "w2:p4", `unexpected link ${JSON.stringify(link)}`);
+      await page.locator(".react-flow__edge.link-handoff").waitFor({ state: "attached", timeout: 3000 });
     }));
 
   test("together: a context link sends the read instructions once, and its menu removes it", async (page) =>

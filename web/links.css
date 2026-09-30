@@ -48,6 +48,11 @@
 .link-note .link-path { stroke-dasharray: 2 4; stroke-linecap: round; }
 /* Each edge has its own marker, inside the edge, so the arrowhead picks up the edge's color. */
 .link-arrowhead polyline { fill: var(--link-color); stroke: var(--link-color); stroke-width: 1; }
+.link-preview-arrowhead polyline {
+  fill: var(--xy-connectionline-stroke, var(--xy-connectionline-stroke-default));
+  stroke: var(--xy-connectionline-stroke, var(--xy-connectionline-stroke-default));
+  stroke-width: 1;
+}
 
 .link-label {
   position: absolute;
