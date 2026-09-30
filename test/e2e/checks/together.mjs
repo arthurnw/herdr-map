@@ -95,6 +95,41 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
       assert(state.items.length === 0 && state.history.at(-1)?.target === "w1:p1", "the delivery should move to the history");
     }));
 
+  test("together: a handoff between stacked agents runs straight down between them, with an arrowhead in its color", async (page) =>
+    withReset(async () => {
+      // w2:p3 sits directly above w2:p4 in their tab.
+      await drawLink(page, card(page, "w2:p3"), "w2:p4");
+      await page.getByRole("button", { name: /^Handoff/ }).click();
+      const path = page.locator(".react-flow__edge.link-handoff path.link-path");
+      // A straight vertical path has no width, so Playwright never counts it as visible.
+      await path.waitFor({ state: "attached", timeout: 3000 });
+      const upper = await card(page, "w2:p3").boundingBox();
+      const lower = await card(page, "w2:p4").boundingBox();
+      assert(upper.y + upper.height <= lower.y, `the fixture agents should be stacked: ${JSON.stringify([upper, lower])}`);
+      const box = await path.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      });
+      const left = Math.min(upper.x, lower.x);
+      const right = Math.max(upper.x + upper.width, lower.x + lower.width);
+      assert(box.x >= left - 1 && box.x + box.width <= right + 1, `the edge should stay within the cards' span: ${JSON.stringify(box)}`);
+      assert(box.y >= upper.y + upper.height / 2 && box.y + box.height <= lower.y + lower.height / 2, `the edge should run between the cards: ${JSON.stringify(box)}`);
+
+      const colors = () =>
+        path.evaluate((el) => {
+          const marker = document.getElementById(el.getAttribute("marker-end").match(/#([^')]+)/)[1]);
+          return [getComputedStyle(el).stroke, marker && getComputedStyle(marker.querySelector("polyline")).fill];
+        });
+      let [stroke, fill] = await colors();
+      assert(stroke === fill, `the arrowhead should match the edge in dark mode: ${stroke} vs ${fill}`);
+      await page.getByRole("button", { name: "Theme" }).click();
+      await page.getByRole("menuitemradio", { name: "Light" }).click();
+      await page.waitForTimeout(200);
+      const dark = stroke;
+      [stroke, fill] = await colors();
+      assert(stroke === fill && stroke !== dark, `the arrowhead should match the edge in light mode: ${stroke} vs ${fill}`);
+    }));
+
   test("together: a context link sends the read instructions once, and its menu removes it", async (page) =>
     withReset(async () => {
       clearActions();

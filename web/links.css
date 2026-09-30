@@ -40,11 +40,14 @@
   background: color-mix(in oklab, var(--primary) 10%, transparent);
 }
 
-.link-edge .link-path { stroke-width: 2; }
-.link-handoff .link-path { stroke: var(--status-working); }
-.link-context .link-path { stroke: var(--muted-foreground); stroke-dasharray: 6 4; }
-.link-note .link-path { stroke: var(--status-blocked); stroke-dasharray: 2 4; stroke-linecap: round; }
-.link-handoff .react-flow__arrowhead polyline { stroke: var(--status-working); fill: var(--status-working); }
+.link-handoff { --link-color: var(--status-working); }
+.link-context { --link-color: var(--muted-foreground); }
+.link-note { --link-color: var(--status-blocked); }
+.link-edge .link-path { stroke: var(--link-color); stroke-width: 2; }
+.link-context .link-path { stroke-dasharray: 6 4; }
+.link-note .link-path { stroke-dasharray: 2 4; stroke-linecap: round; }
+/* Each edge has its own marker, inside the edge, so the arrowhead picks up the edge's color. */
+.link-arrowhead polyline { fill: var(--link-color); stroke: var(--link-color); stroke-width: 1; }
 
 .link-label {
   position: absolute;

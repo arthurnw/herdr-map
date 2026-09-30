@@ -1,0 +1,48 @@
+// Where a link edge meets its two cards: on the sides that face each other, so the edge
+// runs through the gap between the cards instead of looping around them.
+import type { Rect } from "./layout.ts";
+
+export type Side = "top" | "right" | "bottom" | "left";
+
+export interface Anchor {
+  x: number;
+  y: number;
+  side: Side;
+}
+
+/** How far apart two spans are: positive for a gap, negative for an overlap. */
+const spanGap = (a0: number, a1: number, b0: number, b1: number) => Math.max(b0 - a1, a0 - b1);
+
+/** The side of `a` that faces `b`, and the side of `b` that faces `a`. */
+export function facingSides(a: Rect, b: Rect): [Side, Side] {
+  const gapX = spanGap(a.x, a.x + a.w, b.x, b.x + b.w);
+  const gapY = spanGap(a.y, a.y + a.h, b.y, b.y + b.h);
+  if (gapY > gapX) return b.y + b.h / 2 >= a.y + a.h / 2 ? ["bottom", "top"] : ["top", "bottom"];
+  return b.x + b.w / 2 >= a.x + a.w / 2 ? ["right", "left"] : ["left", "right"];
+}
+
+/** Where along each side the edge attaches: the middle of the shared span when the sides overlap, else each side's middle. */
+function along(a0: number, a1: number, b0: number, b1: number): [number, number] {
+  const lo = Math.max(a0, b0);
+  const hi = Math.min(a1, b1);
+  if (lo <= hi) return [(lo + hi) / 2, (lo + hi) / 2];
+  return [(a0 + a1) / 2, (b0 + b1) / 2];
+}
+
+function edgeOf(r: Rect, side: Side): number {
+  if (side === "top") return r.y;
+  if (side === "bottom") return r.y + r.h;
+  if (side === "left") return r.x;
+  return r.x + r.w;
+}
+
+/** The start and end points of an edge from `source` to `target`. */
+export function attachEdge(source: Rect, target: Rect): { source: Anchor; target: Anchor } {
+  const [from, to] = facingSides(source, target);
+  if (from === "top" || from === "bottom") {
+    const [sx, tx] = along(source.x, source.x + source.w, target.x, target.x + target.w);
+    return { source: { x: sx, y: edgeOf(source, from), side: from }, target: { x: tx, y: edgeOf(target, to), side: to } };
+  }
+  const [sy, ty] = along(source.y, source.y + source.h, target.y, target.y + target.h);
+  return { source: { x: edgeOf(source, from), y: sy, side: from }, target: { x: edgeOf(target, to), y: ty, side: to } };
+}

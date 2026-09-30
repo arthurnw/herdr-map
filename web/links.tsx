@@ -7,12 +7,13 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   Handle,
-  MarkerType,
   Position,
+  useInternalNode,
   type Connection,
   type Edge,
   type EdgeProps,
   type FinalConnectionState,
+  type InternalNode,
   type IsValidConnection,
 } from "@xyflow/react";
 import { BookOpen, Forward, StickyNote, Trash2, Undo2 } from "lucide-react";
@@ -30,7 +31,9 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { textHash } from "../shared/automation.ts";
 import type { Endpoint, Link, LinkKind } from "../shared/layout-types.ts";
 import { agentLabel, useAutomation, type AutomationActions, type AutomationValue } from "./automation.tsx";
+import { attachEdge, type Side } from "./edge-geometry.ts";
 import { formatAge } from "./format.ts";
+import type { Rect } from "./layout.ts";
 import { stop } from "./organize.tsx";
 import type { Located } from "./state.ts";
 
@@ -97,7 +100,6 @@ export function linkEdges(links: Link[] | undefined, nodeIds: ReadonlySet<string
       // Above the panes and zoomed-out labels, below notes.
       zIndex: 1500,
       className: `link-edge link-${flavorOf(link)}`,
-      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
       data: { link } satisfies LinkEdgeData,
     }));
 }
@@ -112,21 +114,62 @@ export function describeLink(link: Link, panes: Map<string, Located>): string {
     : `${to} was told once how to read ${from}.`;
 }
 
+const POSITION: Record<Side, Position> = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left };
+
+// Pane cards are children of tab nodes, so their own positions are relative to the tab.
+const nodeRect = (n: InternalNode): Rect => ({
+  x: n.internals.positionAbsolute.x,
+  y: n.internals.positionAbsolute.y,
+  w: n.measured.width ?? n.width ?? 0,
+  h: n.measured.height ?? n.height ?? 0,
+});
+
+/**
+ * A link drawn between the sides of its two cards that face each other, rather than from
+ * the handles, which sit on fixed sides.
+ */
 export const LinkEdge = memo((props: EdgeProps) => {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, data } = props;
+  const { id, source, target, data } = props;
   const auto = useAutomation();
-  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
+  if (!sourceNode || !targetNode) return null;
+  const ends = attachEdge(nodeRect(sourceNode), nodeRect(targetNode));
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX: ends.source.x,
+    sourceY: ends.source.y,
+    sourcePosition: POSITION[ends.source.side],
+    targetX: ends.target.x,
+    targetY: ends.target.y,
+    targetPosition: POSITION[ends.target.side],
+  });
   const { link } = data as LinkEdgeData;
   const flavor = flavorOf(link);
   const { icon: Icon, label } = FLAVOR[flavor];
+  const markerId = `link-arrow-${link.id}`;
+  // Stacked cards can be only a few pixels apart, so the chip goes beside a vertical edge
+  // rather than on it, where it would cover both cards.
+  const vertical = ends.source.side === "top" || ends.source.side === "bottom";
+  const offset = vertical ? "translate(0.5em, -50%)" : "translate(-50%, -50%)";
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} className="link-path" />
-      <EdgeLabelRenderer>
-        <div
-          className="link-label nodrag nopan"
-          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+      <defs>
+        <marker
+          id={markerId}
+          className="link-arrowhead"
+          markerWidth="16"
+          markerHeight="16"
+          viewBox="-10 -10 20 20"
+          orient="auto-start-reverse"
+          refX="0"
+          refY="0"
         >
+          <polyline points="-5,-4 0,0 -5,4 -5,-4" strokeLinecap="round" strokeLinejoin="round" />
+        </marker>
+      </defs>
+      <BaseEdge id={id} path={path} markerEnd={`url('#${markerId}')`} className="link-path" />
+      <EdgeLabelRenderer>
+        <div className="link-label nodrag nopan" style={{ transform: `${offset} translate(${labelX}px, ${labelY}px)` }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className={`link-chip link-chip-${flavor}`} aria-label={`${label} link`} onClick={stop} onPointerDown={stop}>
