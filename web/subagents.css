@@ -109,3 +109,21 @@
 .zoom-far .subagent-chip,
 .zoom-mid .review-chip,
 .zoom-far .review-chip { display: none; }
+.subagent-chip.idle { opacity: 0.7; }
+
+/* The agent's subagents, listed in the sidebar preview. */
+.subagent-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.subagent-list button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12px;
+}
+.subagent-list button:hover { background: var(--accent); }
+.subagent-list .sub-dot { flex-shrink: 0; }
+/* Cards shown because the pointer is on their agent: look, but let clicks through. */
+.react-flow__node-subagent.peek { pointer-events: none !important; }

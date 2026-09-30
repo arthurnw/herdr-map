@@ -50,7 +50,6 @@ const NODE_PREFIX = "sub:";
 // Agent cards are the third level of nodes (workspace, tab, pane), so React Flow stacks them at
 // z 2. Cards at the same z placed before them in the node list sit under other agents' cards and
 // over workspace and tab backgrounds; raised cards go over everything but notes.
-const PANE_Z = 2;
 const RAISED_Z = 1500;
 const NONE: Node[] = [];
 
@@ -64,32 +63,38 @@ function absolutePosition(n: Node, byId: Map<string, Node>): { x: number; y: num
 }
 
 /**
- * Cards for the subagents of every agent card in `nodes`, right of that card. `below` goes before
- * the other nodes, so other agents' cards cover it; `above` goes after them. Cards of agents in
- * `raised` are above.
+ * Cards for the subagents of the agent cards in `raised` (selected) or `peek` (under the pointer),
+ * right of that card and above everything else. Other agents get none: the map is packed, so
+ * cards drawn for every agent spill over neighboring workspaces; their card shows a count chip
+ * instead. Peeked cards let clicks through to what they cover. `below` is always empty.
  */
-export function subagentNodes(nodes: Node[], now: number, raised: ReadonlySet<string>): { below: Node[]; above: Node[] } {
+export function subagentNodes(
+  nodes: Node[],
+  now: number,
+  raised: ReadonlySet<string>,
+  peek?: string,
+): { below: Node[]; above: Node[] } {
   const below: Node[] = [];
   const above: Node[] = [];
   let byId: Map<string, Node> | undefined;
   for (const n of nodes) {
-    if (n.type !== "pane" || n.className?.includes("status-filtered")) continue;
+    const up = raised.has(n.id);
+    if (n.type !== "pane" || n.className?.includes("status-filtered") || !(up || n.id === peek)) continue;
     const agent = (n.data as PaneData).pane.agent;
     if (!agent?.subagents?.length) continue;
     const tree = subagentTree(visibleSubagents(agent, now));
     if (tree.length === 0) continue;
     byId ??= new Map(nodes.map((m) => [m.id, m]));
     const origin = absolutePosition(n, byId);
-    const up = raised.has(n.id);
-    const out = up ? above : below;
+    const out = above;
     const x = origin.x + (n.width ?? 0) + OFFSET_X;
     const base = {
       type: "subagent",
       draggable: false,
       selectable: false,
       focusable: false,
-      zIndex: up ? RAISED_Z : PANE_Z,
-      className: [n.className?.includes("dim") && "dim", up && "raised"].filter(Boolean).join(" ") || undefined,
+      zIndex: RAISED_Z,
+      className: [n.className?.includes("dim") && "dim", up ? "raised" : "peek"].filter(Boolean).join(" ") || undefined,
     };
     tree.slice(0, MAX_CARDS).forEach(({ sub, depth }, i) => {
       const w = CARD_W - depth * INDENT;

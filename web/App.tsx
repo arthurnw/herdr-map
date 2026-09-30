@@ -160,8 +160,10 @@ function FleetMap() {
   const flowHandlers = notes.withNotes({ onNodesChange, onNodeDragStart, onNodeDragStop });
   const subagentView = useSubagentView(pinned);
   const openSubagentPane = subagentView.selected?.pane;
+  // Subagent cards show for the selected agent, and briefly for the one under the pointer.
+  const [peek, setPeek] = useState<string>();
   const raised = useMemo(() => new Set([pinned, openSubagentPane].filter((id) => id !== undefined)), [pinned, openSubagentPane]);
-  const subagents = useMemo(() => subagentNodes(nodes, now, raised), [nodes, now, raised]);
+  const subagents = useMemo(() => subagentNodes(nodes, now, raised, peek), [nodes, now, raised, peek]);
   const flowNodes = useMemo(
     () => [...subagents.below, ...boxSelect.nodes, ...notes.nodes, ...subagents.above],
     [boxSelect.nodes, notes.nodes, subagents],
@@ -339,7 +341,12 @@ function FleetMap() {
                 zoomOnDoubleClick={false}
                 onNodeClick={onNodeClick}
                 onPaneClick={boxSelect.onPaneClick}
-                onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
+                onNodeMouseEnter={(_, n) => {
+                  if (n.type !== "pane") return;
+                  setHovered(n.id);
+                  setPeek(n.id);
+                }}
+                onNodeMouseLeave={(_, n) => n.type === "pane" && setPeek((p) => (p === n.id ? undefined : p))}
                 onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
                 minZoom={0.05}
                 maxZoom={2.5}

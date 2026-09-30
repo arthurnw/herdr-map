@@ -1,6 +1,10 @@
 // Task progress, running subagents, and Codex reviews on agent cards, and the current task in the preview.
+import { useContext } from "react";
 import { ShieldCheck, Workflow } from "lucide-react";
 import type { FleetAgent, TaskProgress } from "../shared/model.ts";
+import { cn } from "@/lib/utils";
+import { NowContext } from "./nodes.tsx";
+import { visibleSubagents } from "./subagent-cards.ts";
 
 /** A finished list stays on the card while the turn that finished it is still on screen. */
 export function showTasks(agent: FleetAgent): boolean {
@@ -39,14 +43,20 @@ export function TaskChip({ tasks }: { tasks: TaskProgress }) {
 /** Extras for an agent card's status line: task progress, running subagents, and running Codex reviews. */
 export function AgentActivity({ agent }: { agent: FleetAgent }) {
   const reviewing = agent.reviews?.running ?? 0;
-  const running = agent.subagents?.filter((s) => s.status === "running").length ?? 0;
+  const now = useContext(NowContext);
+  const subs = visibleSubagents(agent, now);
+  const running = subs.filter((s) => s.status === "running").length;
+  const title =
+    `${subs.length} subagent${subs.length === 1 ? "" : "s"}` +
+    (running ? `, ${running} running` : "") +
+    ". Hover or select the agent to see them.";
   return (
     <>
       {showTasks(agent) && <TaskChip tasks={agent.tasks!} />}
-      {running > 0 && (
-        <span className="subagent-chip" title={`${running} subagent${running === 1 ? "" : "s"} running. Select the agent to bring their cards forward.`}>
+      {subs.length > 0 && (
+        <span className={cn("subagent-chip", running === 0 && "idle")} title={title}>
           <Workflow aria-hidden />
-          {running}
+          {running > 0 ? `${running}/${subs.length}` : subs.length}
         </span>
       )}
       {reviewing > 0 && (

@@ -4,10 +4,10 @@
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { NodeProps } from "@xyflow/react";
 import { cn } from "@/lib/utils";
-import type { SubagentInfo } from "../shared/model.ts";
+import type { FleetAgent, SubagentInfo } from "../shared/model.ts";
 import { formatAge } from "./format.ts";
 import { NowContext } from "./nodes.tsx";
-import type { SubagentData } from "./subagent-cards.ts";
+import { visibleSubagents, type SubagentData } from "./subagent-cards.ts";
 import { formatCost, formatTokens } from "./usage.tsx";
 
 export { subagentNodes, type SubagentData } from "./subagent-cards.ts";
@@ -80,3 +80,30 @@ export const SubagentNode = memo(({ data }: NodeProps) => {
     </div>
   );
 });
+
+/** The agent's subagents as a short list in the sidebar preview; a row opens its transcript. */
+export function SubagentList({ pane, agent }: { pane: string; agent: FleetAgent }) {
+  const now = useContext(NowContext);
+  const view = useContext(SubagentViewContext);
+  const subs = visibleSubagents(agent, now);
+  if (subs.length === 0 || !view) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">Subagents</p>
+      <ul className="subagent-list">
+        {subs.map((s) => (
+          <li key={s.id}>
+            <button className={cn(`sub-${s.status}`)} onClick={() => view.open(pane, s.id)} title="Read its transcript">
+              <span className="sub-dot" aria-hidden />
+              <span className="font-medium">{subagentLabel(s)}</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.description}</span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {[s.status, subagentDuration(s, now)].filter(Boolean).join(" · ")}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

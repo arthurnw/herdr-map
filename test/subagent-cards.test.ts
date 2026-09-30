@@ -47,32 +47,31 @@ function mapNodes(subagents: SubagentInfo[], className?: string): Node[] {
   ];
 }
 
-test("cards go right of their agent's card, indented by depth, beneath other agents unless raised", () => {
+test("cards show only for the selected or pointed-at agent, right of its card and indented by depth", () => {
   const subs: SubagentInfo[] = [{ id: "a", status: "running" }, { id: "a1", status: "running", parent: "a" }];
-  const { below, above } = subagentNodes(mapNodes(subs), NOW, new Set());
-  assert.equal(above.length, 0);
+  const none = subagentNodes(mapNodes(subs), NOW, new Set());
+  assert.equal(none.above.length + none.below.length, 0, "no cards for an agent that isn't selected or pointed at");
+  const peek = subagentNodes(mapNodes(subs), NOW, new Set(), "w1:p1");
+  assert.equal(peek.below.length, 0);
   assert.deepEqual(
-    below.map((n) => [n.id, n.position.x, n.position.y, n.zIndex, n.parentId]),
+    peek.above.map((n) => [n.id, n.position.x, n.position.y, n.zIndex, n.className]),
     [
-      ["sub:w1:p1:a", 100 + 12 + 2 + 276 + 10, 200 + 30 + 24, 2, undefined],
-      ["sub:w1:p1:a1", 100 + 12 + 2 + 276 + 10 + 14, 200 + 30 + 24 + 68, 2, undefined],
+      ["sub:w1:p1:a", 100 + 12 + 2 + 276 + 10, 200 + 30 + 24, 1500, "peek"],
+      ["sub:w1:p1:a1", 100 + 12 + 2 + 276 + 10 + 14, 200 + 30 + 24 + 68, 1500, "peek"],
     ],
   );
   const raised = subagentNodes(mapNodes(subs), NOW, new Set(["w1:p1"]));
-  assert.equal(raised.below.length, 0);
-  assert.deepEqual(raised.above.map((n) => [n.zIndex, n.className]), [
-    [1500, "raised"],
-    [1500, "raised"],
-  ]);
+  assert.deepEqual(raised.above.map((n) => n.className), ["raised", "raised"]);
 });
 
 test("a long list ends with a count of the rest; filtered agents get no cards; no subagents means the same empty lists", () => {
   const many = Array.from({ length: MAX_CARDS + 3 }, (_, i): SubagentInfo => ({ id: `s${i}`, status: "running" }));
-  const { below } = subagentNodes(mapNodes(many), NOW, new Set());
-  assert.equal(below.length, MAX_CARDS + 1);
-  assert.deepEqual(below.at(-1)!.data, { pane: "w1:p1", depth: 0, more: 3 });
-  assert.equal(subagentNodes(mapNodes(many, "status-filtered"), NOW, new Set()).below.length, 0);
-  assert.equal(subagentNodes(mapNodes(many, "dim"), NOW, new Set()).below[0].className, "dim");
+  const sel = new Set(["w1:p1"]);
+  const { above } = subagentNodes(mapNodes(many), NOW, sel);
+  assert.equal(above.length, MAX_CARDS + 1);
+  assert.deepEqual(above.at(-1)!.data, { pane: "w1:p1", depth: 0, more: 3 });
+  assert.equal(subagentNodes(mapNodes(many, "status-filtered"), NOW, sel).above.length, 0);
+  assert.equal(subagentNodes(mapNodes(many, "dim"), NOW, sel).above[0].className, "dim raised");
   const a = subagentNodes(mapNodes([]), NOW, new Set());
   const b = subagentNodes(mapNodes([]), NOW + 5000, new Set());
   assert.equal(a.below, b.below);
