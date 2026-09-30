@@ -142,8 +142,18 @@ function FleetMap() {
     [setDetached, patchWorkspaces, patchGroup],
   );
 
+  // Applies to the workspaces on the map, so hidden ones keep their own state.
+  const collapseAll = useCallback(
+    (collapsed: boolean) => {
+      const ids = layout.nodes.filter((n) => n.type === "workspace").map((n) => (n.data as WorkspaceData).workspace.id);
+      if (ids.length) void patchWorkspaces({ ids, collapsed });
+    },
+    [layout.nodes, patchWorkspaces],
+  );
+
   const notes = useNotes();
-  useLayoutUndo(setSaved);
+  const { lastDeletedAt, undoDelete } = notes;
+  useLayoutUndo(setSaved, useMemo(() => ({ lastDeletedAt, undoDelete }), [lastDeletedAt, undoDelete]));
   const flowHandlers = notes.withNotes({ onNodesChange, onNodeDragStart, onNodeDragStop });
   const flowNodes = useMemo(() => [...boxSelect.nodes, ...notes.nodes], [boxSelect.nodes, notes.nodes]);
 
@@ -240,6 +250,7 @@ function FleetMap() {
           onAgentsOnly={setAgentsOnly}
           agentPanesOnly={agentPanesOnly}
           onAgentPanesOnly={setAgentPanesOnly}
+          onCollapseAll={collapseAll}
           layoutMenu={layoutMenu}
           alerts={alerts}
           onAlerts={setAlerts}
@@ -255,7 +266,11 @@ function FleetMap() {
           agentPanesOnly={agentPanesOnly}
           onAgentPanesOnly={setAgentPanesOnly}
           layoutMenu={layoutMenu}
-          extraCommands={[{ value: "note:new", label: "New note", run: notes.createInView }]}
+          extraCommands={[
+            { value: "note:new", label: "New note", run: notes.createInView },
+            { value: "workspaces:collapse-all", label: "Collapse all workspaces", run: () => collapseAll(true) },
+            { value: "workspaces:expand-all", label: "Expand all workspaces", run: () => collapseAll(false) },
+          ]}
         />
         {error && (
           <Alert variant="destructive" className="rounded-none border-x-0 border-t-0">

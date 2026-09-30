@@ -39,6 +39,8 @@ interface ToolbarProps {
   onAgentsOnly: (v: boolean) => void;
   agentPanesOnly: boolean;
   onAgentPanesOnly: (v: boolean) => void;
+  /** Collapses every workspace on the map to its header, or expands them all. */
+  onCollapseAll?: (collapsed: boolean) => void;
   layoutMenu: LayoutMenuProps;
   alerts: AlertSettings;
   onAlerts: (patch: Partial<AlertSettings>) => void;
@@ -138,7 +140,7 @@ function SearchBox({ query, onQuery, onEnter }: { query: string; onQuery: (q: st
   );
 }
 
-function ViewMenu({ agentsOnly, onAgentsOnly, agentPanesOnly, onAgentPanesOnly }: ToolbarProps) {
+function ViewMenu({ agentsOnly, onAgentsOnly, agentPanesOnly, onAgentPanesOnly, onCollapseAll }: ToolbarProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -155,6 +157,14 @@ function ViewMenu({ agentsOnly, onAgentsOnly, agentPanesOnly, onAgentPanesOnly }
         <DropdownMenuCheckboxItem checked={agentsOnly} onCheckedChange={onAgentsOnly}>
           Only workspaces with agents
         </DropdownMenuCheckboxItem>
+        {onCollapseAll && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => onCollapseAll(true)}>Collapse all to their headers</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onCollapseAll(false)}>Expand all</DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -109,8 +109,9 @@
 
 /* Sticky notes: a drag bar with color and delete buttons over a plain text area. */
 .react-flow__node-note { cursor: default; }
+/* No default --tint here: the .tint-* classes set it, and a default on .note would
+   override them because it comes later with the same specificity. */
 .note {
-  --tint: var(--muted-foreground);
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -133,7 +134,7 @@
   height: 22px;
   padding: 2px 4px;
   cursor: grab;
-  background: color-mix(in oklab, var(--tint) 14%, transparent);
+  background: color-mix(in oklab, var(--tint, var(--muted-foreground)) 14%, transparent);
 }
 .react-flow__node-note.dragging .note-bar { cursor: grabbing; }
 .note-button {

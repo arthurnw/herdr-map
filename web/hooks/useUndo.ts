@@ -1,7 +1,7 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 import type { SavedLayout } from "../layout.ts";
-import { layoutWritten } from "../state.ts";
+import { lastLayoutWriteAt, layoutWritten } from "../state.ts";
 import { useShortcut } from "./useShortcut.ts";
 
 /**
@@ -10,9 +10,18 @@ import { useShortcut } from "./useShortcut.ts";
  * both lists, so they survive reloads and every open tab shares them; this applies the
  * layout it returns. Typing in a field keeps the field's own undo.
  */
-export function useLayoutUndo(setSaved: Dispatch<SetStateAction<SavedLayout | undefined>>) {
+export function useLayoutUndo(
+  setSaved: Dispatch<SetStateAction<SavedLayout | undefined>>,
+  /** Deleted notes this tab can bring back; ⌘Z restores one when it's newer than the last layout change. */
+  notes?: { lastDeletedAt(): number | undefined; undoDelete(): boolean },
+) {
   const step = useCallback(
     async (direction: "undo" | "redo") => {
+      const deletedAt = notes?.lastDeletedAt();
+      if (direction === "undo" && deletedAt !== undefined && deletedAt > lastLayoutWriteAt() && notes!.undoDelete()) {
+        toast("Note restored");
+        return;
+      }
       try {
         await layoutWritten();
         const res = await fetch(`/api/layout/${direction}`, { method: "POST" });
@@ -27,7 +36,7 @@ export function useLayoutUndo(setSaved: Dispatch<SetStateAction<SavedLayout | un
         toast.error(`Couldn't ${direction}`, { description: (err as Error).message });
       }
     },
-    [setSaved],
+    [setSaved, notes],
   );
 
   const undo = () => void step("undo");

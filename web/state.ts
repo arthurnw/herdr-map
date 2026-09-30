@@ -32,8 +32,15 @@ export function paneTarget(pane: FleetPane, tabId: string): FocusTarget {
 }
 
 let layoutWrite: Promise<unknown> = Promise.resolve();
+let layoutWriteAt = 0;
+
+/** When this tab last saved a layout change; ⌘Z compares it with note deletions. */
+export function lastLayoutWriteAt(): number {
+  return layoutWriteAt;
+}
 
 export async function putLayout(layout: SavedLayout) {
+  layoutWriteAt = Date.now();
   const write = fetch("/api/layout", {
     method: "PUT",
     headers: { "content-type": "application/json" },

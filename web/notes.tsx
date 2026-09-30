@@ -117,6 +117,18 @@ export function useNotes() {
     }
   }, []);
 
+  // Deleted notes, newest last, so ⌘Z and the toast's Undo can bring them back.
+  const deleted = useRef<{ note: Note; at: number }[]>([]);
+
+  const restore = useCallback(
+    (note: Note) => {
+      deleted.current = deleted.current.filter((d) => d.note !== note);
+      const { x, y, w, h, text, color } = note;
+      void create({ x, y, w, h, text, color: isColor(color) ? color : null });
+    },
+    [create],
+  );
+
   const remove = useCallback(
     (id: string) => {
       const note = latest.current.find((n) => n.id === id);
@@ -125,12 +137,22 @@ export function useNotes() {
       setNotes((prev) => prev.filter((n) => n.id !== id));
       send(notePath(id), "DELETE").catch((err: Error) => toast.error("Couldn't delete the note", { description: err.message }));
       if (note?.text.trim()) {
-        const { x, y, w, h, text, color } = note;
-        toast("Note deleted", { action: { label: "Undo", onClick: () => void create({ x, y, w, h, text, color: isColor(color) ? color : null }) } });
+        deleted.current = [...deleted.current.slice(-19), { note, at: Date.now() }];
+        toast("Note deleted", { action: { label: "Undo", onClick: () => restore(note) } });
       }
     },
-    [create],
+    [restore],
   );
+
+  /** When the newest note that can be restored was deleted, if any. */
+  const lastDeletedAt = useCallback(() => deleted.current.at(-1)?.at, []);
+  /** Brings back the most recently deleted note; false when there is none. */
+  const undoDelete = useCallback(() => {
+    const last = deleted.current.at(-1);
+    if (!last) return false;
+    restore(last.note);
+    return true;
+  }, [restore]);
 
   const actions = useMemo(() => ({ edit, flush, remove }), [edit, flush, remove]);
 
@@ -208,7 +230,7 @@ export function useNotes() {
     },
   });
 
-  return { nodes, actions, createInView, onCanvasDoubleClick, withNotes };
+  return { nodes, actions, createInView, onCanvasDoubleClick, withNotes, lastDeletedAt, undoDelete };
 }
 
 export const NoteNode = memo(({ data }: NodeProps) => {
