@@ -24,7 +24,7 @@ interface DetailProps {
 export function SubagentDetail({ located, id, now, onBack }: DetailProps) {
   const agent = located.pane.agent;
   const live = agent?.subagents?.find((s) => s.id === id);
-  // The card can clear while its transcript is open; keep showing what it last said.
+  // The subagent can drop off the list while its transcript is open; keep showing what it last said.
   const last = useRef(live);
   if (live) last.current = live;
   const sub = live ?? last.current;

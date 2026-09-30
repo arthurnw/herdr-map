@@ -1,11 +1,10 @@
-// Subagent cards, their transcripts, and task progress, from the synthetic transcripts in
+// Subagent lists, their transcripts, and task progress, from the synthetic transcripts in
 // ../transcripts and the Codex rollouts fixture.mjs writes at startup.
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { CODEX_CHILD, CODEX_GRANDCHILD, TRANSCRIPTS } from "../fixture.mjs";
+import { TRANSCRIPTS } from "../fixture.mjs";
 
 const CLAUDE_SESSION = "1fcd536a-ca43-43bf-8d03-a6ed74098343";
-const CLAUDE_SUB = "ae2e0000000000001";
 
 export default function subagentChecks({ test, assert, card, actions, clearActions }) {
   // The probe runs every 5 s, so a change can take a full round to show.
@@ -20,47 +19,50 @@ export default function subagentChecks({ test, assert, card, actions, clearActio
     throw new Error(`expected ${what}, got ${JSON.stringify(last)}`);
   }
   const textOf = async (locator) => ((await locator.count()) ? await locator.first().textContent() : "");
-  const subCard = (page, paneId, id) => page.locator(`.react-flow__node-subagent[data-id="sub:${paneId}:${id}"]`);
+  const chip = (page, paneId) => card(page, paneId).locator(".subagent-chip");
+  const popover = (page) => page.locator('[data-slot="popover-content"][aria-label="Subagents"]');
+  const row = (page, text) => popover(page).locator(".subagent-row", { hasText: text });
+  const transcript = (page) => page.locator('aside [aria-label="Subagent transcript"]');
+  async function openList(page, paneId) {
+    await waitFor(async () => (await chip(page, paneId).count()) > 0, `a subagent chip on ${paneId}`);
+    await chip(page, paneId).click();
+    await popover(page).waitFor();
+  }
 
-  test("a running subagent shows as a card beside its agent", async (page) => {
-    const sub = subCard(page, "w1:p1", CLAUDE_SUB);
-    // The agent card shows a count; the cards themselves appear only on hover or selection.
-    await waitFor(async () => (await textOf(card(page, "w1:p1").locator(".subagent-chip"))) === "1/1" || (await textOf(card(page, "w1:p1").locator(".subagent-chip"))), "a 1/1 subagent chip");
-    assert((await sub.count()) === 0, "no card until the agent is hovered or selected");
+  test("subagents aren't drawn on the map; the agent card counts them", async (page) => {
+    await waitFor(async () => (await textOf(chip(page, "w1:p1"))) === "1/1" || (await textOf(chip(page, "w1:p1"))), "a 1/1 subagent chip");
     await card(page, "w1:p1").hover();
-    await waitFor(async () => {
-      const t = await textOf(sub);
-      return (t.includes("Explore") && t.includes("running") && t.includes("Map the auth middleware") && t.includes("12k tokens · 2 tools")) || t;
-    }, "a running Explore card");
-    const parent = await card(page, "w1:p1").boundingBox();
-    const box = await sub.boundingBox();
-    assert(box.x >= parent.x + parent.width, "the card sits right of its agent's card");
-    assert((await page.locator(".react-flow__node-pane .pane.agent").count()) === 6, "subagent cards aren't agent cards");
-    // A card shown on hover may cover the next workspace's agent, so it lets clicks through.
-    const neighbor = await card(page, "w2:p3").boundingBox();
-    const hit = (b) => page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest(".react-flow__node")?.dataset.id, [b.x + b.width / 2, b.y + 10]);
-    assert((await hit(neighbor)) === "w2:p3", "a hover-only card doesn't block the agent under it");
     await card(page, "w1:p1").click({ modifiers: ["Alt"] });
-    await page.locator(".react-flow__node-subagent.raised").first().waitFor();
-    assert((await hit(neighbor)) === `sub:w1:p1:${CLAUDE_SUB}`, "selecting the agent brings its subagent cards forward");
+    await page.getByRole("button", { name: "Unpin" }).waitFor();
+    assert((await page.locator(".react-flow__node-subagent").count()) === 0, "no subagent nodes on the canvas");
+    assert((await page.locator(".react-flow__node-pane .pane.agent").count()) === 6, "only agent cards");
   });
 
-  test("clicking a subagent card shows its transcript without focusing anything", async (page) => {
-    const sub = subCard(page, "w1:p1", CLAUDE_SUB);
-    await card(page, "w1:p1").click({ modifiers: ["Alt"] });
-    await sub.waitFor({ timeout: 12_000 });
+  test("the chip lists the agent's subagents, and a row pins the agent and shows the transcript, focusing nothing", async (page) => {
+    await waitFor(async () => (await chip(page, "w1:p1").count()) > 0, "a subagent chip");
     clearActions();
-    await sub.click();
-    const transcript = page.locator('aside [aria-label="Subagent transcript"]');
+    await openList(page, "w1:p1");
+    const explore = row(page, "Explore");
     await waitFor(async () => {
-      const t = await textOf(transcript);
+      const t = await textOf(explore);
+      return (t.includes("running") && t.includes("Map the auth middleware") && t.includes("12k tokens · 2 tools")) || t;
+    }, "a running Explore row");
+    assert(actions().length === 0, `opening the list must not focus the terminal, got ${actions()}`);
+    assert((await page.getByRole("button", { name: "Unpin" }).count()) === 0, "opening the list doesn't select the agent");
+    await explore.click();
+    await waitFor(async () => {
+      const t = await textOf(transcript(page));
       return (t.includes("→ Grep authMiddleware") && t.trimEnd().endsWith("Synthetic finding: the middleware lives in src/auth.ts.")) || t;
     }, "the subagent's messages, newest last");
     assert(actions().length === 0, `clicking a subagent must not focus the terminal, got ${actions()}`);
-    assert((await sub.locator(".subagent.selected").count()) === 1, "the open card is outlined");
+    await popover(page).waitFor({ state: "detached" });
+    await openList(page, "w1:p1");
+    assert((await row(page, "Explore").and(page.locator(".selected")).count()) === 1, "the open subagent's row is marked");
+    await page.keyboard.press("Escape");
+    await popover(page).waitFor({ state: "detached" });
     await page.getByRole("button", { name: /Back to lead/ }).click();
     await page.getByRole("button", { name: "Unpin" }).waitFor();
-    assert((await transcript.count()) === 0, "Back returns to the agent's preview");
+    assert((await transcript(page).count()) === 0, "Back returns to the agent's preview");
   });
 
   test("the preview lists the agent's subagents, and a row opens its transcript", async (page) => {
@@ -80,29 +82,35 @@ export default function subagentChecks({ test, assert, card, actions, clearActio
   });
 
   test("Codex subagents show as a tree, and approval reviews as a chip", async (page) => {
-    const child = subCard(page, "w2:p4", CODEX_CHILD);
-    const grandchild = subCard(page, "w2:p4", CODEX_GRANDCHILD);
-    await card(page, "w2:p4").click({ modifiers: ["Alt"] });
-    await waitFor(async () => (await child.count()) > 0 && (await grandchild.count()) > 0, "both Codex subagent cards");
+    await openList(page, "w2:p4");
+    const child = row(page, "reviewer");
+    const grandchild = row(page, "Noether");
+    await waitFor(async () => (await child.count()) > 0 && (await grandchild.count()) > 0, "both Codex subagent rows");
     const c = await textOf(child);
-    assert(c.includes("reviewer") && c.includes("running") && c.includes("token cache review") && c.includes("42k tokens · 1 tool"), `unexpected card: ${c}`);
+    assert(c.includes("running") && c.includes("token cache review") && c.includes("42k tokens · 1 tool"), `unexpected row: ${c}`);
     const g = await textOf(grandchild);
-    assert(g.includes("Noether") && g.includes("done · 40s") && g.includes("lint"), `unexpected nested card: ${g}`);
+    assert(g.includes("done · 40s") && g.includes("lint"), `unexpected nested row: ${g}`);
+    const depths = await popover(page).locator("li").evaluateAll((els) => els.map((el) => [el.dataset.depth, el.textContent]));
+    const i = depths.findIndex(([, t]) => t.includes("reviewer"));
+    assert(depths[i][0] === "0" && depths[i + 1]?.[0] === "1" && depths[i + 1][1].includes("Noether"), `the nested subagent follows its parent: ${JSON.stringify(depths)}`);
     const [cb, gb] = [await child.boundingBox(), await grandchild.boundingBox()];
     assert(gb.x > cb.x && gb.y > cb.y, "the nested subagent is indented under its parent");
     assert((await card(page, "w2:p4").locator(".review-chip").count()) === 1, "a running review shows as a chip");
     await child.click();
     await waitFor(async () => {
-      const text = await textOf(page.locator('aside [aria-label="Subagent transcript"]'));
+      const text = await textOf(transcript(page));
       return (text.includes("Synthetic review note.") && !text.includes("Synthetic parent history.")) || text;
     }, "the Codex subagent's own messages, without the history it copied from its parent");
+    await page.getByRole("button", { name: /Back to/ }).click();
+    const nested = await page.locator("aside .subagent-list li").evaluateAll((els) => els.map((el) => [el.dataset.depth, el.textContent]));
+    assert(nested.some(([d, t]) => d === "1" && t.includes("Noether")), `the preview nests it too: ${JSON.stringify(nested)}`);
   });
 
   // Last: the notification stays in the transcript for the rest of the run.
   test("a finished background subagent turns done with the numbers it reported", async (page) => {
-    const sub = subCard(page, "w1:p1", CLAUDE_SUB);
-    await card(page, "w1:p1").click({ modifiers: ["Alt"] });
-    await sub.waitFor({ timeout: 12_000 });
+    await openList(page, "w1:p1");
+    const explore = row(page, "Explore");
+    await explore.waitFor();
     const note = {
       type: "queue-operation",
       operation: "enqueue",
@@ -111,9 +119,10 @@ export default function subagentChecks({ test, assert, card, actions, clearActio
     };
     appendFileSync(join(TRANSCRIPTS, "claude", "projects", "-repos-w1", `${CLAUDE_SESSION}.jsonl`), `${JSON.stringify(note)}\n`);
     await waitFor(async () => {
-      const t = await textOf(sub);
+      const t = await textOf(explore);
       return (t.includes("done") && t.includes("15k tokens · 3 tools")) || t;
-    }, "a done card");
-    assert((await sub.locator(".subagent.sub-done").count()) === 1, "the card takes the done color");
+    }, "a done row");
+    assert((await explore.and(page.locator(".sub-done")).count()) === 1, "the row takes the done color");
+    assert((await textOf(chip(page, "w1:p1"))) === "1", "the chip counts it without a running share");
   });
 }

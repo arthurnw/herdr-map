@@ -1,10 +1,7 @@
 // Task progress, running subagents, and Codex reviews on agent cards, and the current task in the preview.
-import { useContext } from "react";
-import { ShieldCheck, Workflow } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import type { FleetAgent, TaskProgress } from "../shared/model.ts";
-import { cn } from "@/lib/utils";
-import { NowContext } from "./nodes.tsx";
-import { visibleSubagents } from "./subagent-cards.ts";
+import { SubagentChip } from "./subagents.tsx";
 
 /** A finished list stays on the card while the turn that finished it is still on screen. */
 export function showTasks(agent: FleetAgent): boolean {
@@ -41,24 +38,12 @@ export function TaskChip({ tasks }: { tasks: TaskProgress }) {
 }
 
 /** Extras for an agent card's status line: task progress, running subagents, and running Codex reviews. */
-export function AgentActivity({ agent }: { agent: FleetAgent }) {
+export function AgentActivity({ pane, agent }: { pane: string; agent: FleetAgent }) {
   const reviewing = agent.reviews?.running ?? 0;
-  const now = useContext(NowContext);
-  const subs = visibleSubagents(agent, now);
-  const running = subs.filter((s) => s.status === "running").length;
-  const title =
-    `${subs.length} subagent${subs.length === 1 ? "" : "s"}` +
-    (running ? `, ${running} running` : "") +
-    ". Hover or select the agent to see them.";
   return (
     <>
       {showTasks(agent) && <TaskChip tasks={agent.tasks!} />}
-      {subs.length > 0 && (
-        <span className={cn("subagent-chip", running === 0 && "idle")} title={title}>
-          <Workflow aria-hidden />
-          {running > 0 ? `${running}/${subs.length}` : subs.length}
-        </span>
-      )}
+      <SubagentChip pane={pane} agent={agent} />
       {reviewing > 0 && (
         <span className="review-chip" title={`Codex is reviewing ${reviewing === 1 ? "an approval" : `${reviewing} approvals`}`}>
           <ShieldCheck aria-hidden />

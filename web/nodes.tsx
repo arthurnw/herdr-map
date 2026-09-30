@@ -192,7 +192,7 @@ export const PaneNode = memo(({ data }: NodeProps) => {
         <span className="agent-dot" />
         {agent.status} · {agentAge(agent, now)}
         {agent.usage && <UsageMeter usage={agent.usage} />}
-        <AgentActivity agent={agent} />
+        <AgentActivity pane={pane.id} agent={agent} />
       </div>
       {agent.stuck && <StuckMarker stuck={agent.stuck} now={now} />}
       {agent.summary && <div className="agent-summary">{agent.summary}</div>}
