@@ -46,7 +46,7 @@ export function AutomationControls({ now }: { now: number }) {
         <TooltipContent>
           {paused
             ? "Nothing is sent automatically. Click to resume queued prompts and links."
-            : "Click to stop all automatic sends, including handoffs."}
+            : "Click to stop all automatic sends: handoffs and context links."}
         </TooltipContent>
       </Tooltip>
       <Popover open={open} onOpenChange={setOpen}>

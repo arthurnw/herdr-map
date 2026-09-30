@@ -55,6 +55,7 @@ test("a handoff that would close a loop is refused", async (t) => {
   const loop = await call("POST", "/api/links", { from: pane("w1:p3"), to: pane("w1:p1"), kind: "handoff" });
   assert.equal(loop.status, 409);
   assert.match(loop.body.error, /loop/);
+  assert.equal((await call("POST", "/api/links", { from: pane("w1:p3"), to: pane("w1:p1"), kind: "context" })).status, 201, "context links can point back");
 });
 
 test("links must go from an agent to another agent", async (t) => {
@@ -72,6 +73,18 @@ test("links must go from an agent to another agent", async (t) => {
     assert.equal((await call("POST", "/api/links", body)).status, 400, JSON.stringify(body));
   }
   assert.equal((await store()).links.length, 0);
+});
+
+test("a context link queues the read instructions once", async (t) => {
+  const { call, queue, store } = await serve(t);
+  const res = await call("POST", "/api/links", { from: pane("w1:p1"), to: pane("w1:p2"), kind: "context" });
+  assert.equal(res.status, 201);
+  assert.equal(queue.data.items.length, 1);
+  const [item] = queue.data.items;
+  assert.equal(item.target, "w1:p2");
+  assert.equal(item.source.kind, "context");
+  assert.match(item.text, /herdr agent read w1:p1 --lines 200/);
+  assert.ok((await store()).links[0].sent?.at);
 });
 
 test("deleting a link cancels what it queued", async (t) => {

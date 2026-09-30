@@ -146,7 +146,11 @@ function parseLink(l: unknown): Link | undefined {
   const from = parseEndpoint(l.from);
   const to = parseEndpoint(l.to);
   if (!from || !to || !Number.isFinite(l.createdAt)) return undefined;
-  return { id: l.id, from, to, kind: l.kind, createdAt: l.createdAt as number };
+  const link: Link = { id: l.id, from, to, kind: l.kind, createdAt: l.createdAt as number };
+  if (isObject(l.sent) && Number.isFinite(l.sent.at)) {
+    link.sent = { at: l.sent.at as number };
+  }
+  return link;
 }
 
 /** Parses each entry and drops invalid ones and repeated ids (first one wins). */

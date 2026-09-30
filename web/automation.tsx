@@ -65,6 +65,7 @@ export function useAutomationState() {
       createLink: (from: Endpoint, to: Endpoint, kind: LinkKind) =>
         run("Couldn't link them", "POST", "/api/links", { from, to, kind }),
       deleteLink: (id: string) => run("Couldn't remove the link", "DELETE", `/api/links/${encodeURIComponent(id)}`),
+      resendLink: (id: string) => run("Couldn't send it again", "POST", `/api/links/${encodeURIComponent(id)}/send`),
     }),
     [run],
   );

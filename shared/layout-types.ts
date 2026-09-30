@@ -48,6 +48,8 @@ export interface Link {
   to: Endpoint;
   kind: LinkKind;
   createdAt: number;
+  /** When a context link last queued its message for the target. */
+  sent?: { at: number };
 }
 
 export interface LayoutStore {

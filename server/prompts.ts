@@ -1,4 +1,4 @@
-// The text herdr-map sends to agents for handoffs.
+// The text herdr-map sends to agents for handoffs and context links.
 import type { PaneInfo } from "./agents.ts";
 
 /** Scrollback lines read from an agent that finished a turn. */
@@ -29,4 +29,11 @@ export function handoffPrompt(from: PaneInfo | undefined, fromId: string, output
       ? `Its latest output:\n\n${trimOutput(output) || "(empty)"}`
       : `herdr-map couldn't read its output (${output.error}). Read it with: herdr agent read ${fromId} --lines 200`;
   return `Handoff from ${who}, which just finished a turn. ${body}`;
+}
+
+export function contextPrompt(from: PaneInfo | undefined, fromId: string): string {
+  return (
+    `For context, you can read the work of ${describe(from, fromId)} at any time. ` +
+    `Run \`herdr agent read ${fromId} --lines 200\` when it would help. No need to reply to this message.`
+  );
 }

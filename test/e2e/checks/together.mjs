@@ -1,4 +1,4 @@
-// Agents working together: handoff edges and the queue's pause.
+// Agents working together: handoff edges, context links, and the queue's pause.
 export default function togetherChecks({ test, assert, card, actions, clearActions, writeSnapshot, snapshot, setStatus, base }) {
   const api = async (method, path, body) => {
     const res = await fetch(base + path, {
@@ -91,6 +91,23 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
       assert(promptsTo("w1:p1").length === 1, `the same turn must not hand off twice: ${promptsTo("w1:p1")}`);
       const state = await api("GET", "/api/automation");
       assert(state.items.length === 0 && state.history.at(-1)?.target === "w1:p1", "the delivery should move to the history");
+    }));
+
+  test("together: a context link sends the read instructions once, and its menu removes it", async (page) =>
+    withReset(async () => {
+      clearActions();
+      await drawLink(page, card(page, "w3:p5"), "w5:p9");
+      await page.getByRole("button", { name: /^Context link/ }).click();
+      await waitFor(() => promptsTo("w5:p9").length > 0, "the context link should prompt the target");
+      assert(promptsTo("w5:p9")[0].includes("herdr agent read w3:p5 --lines 200"), `unexpected prompt: ${promptsTo("w5:p9")}`);
+      await page.waitForTimeout(3000);
+      assert(promptsTo("w5:p9").length === 1, `a context link sends once: ${promptsTo("w5:p9")}`);
+      const edge = page.locator(".react-flow__edge.link-context");
+      await edge.waitFor({ timeout: 3000 });
+      await page.getByRole("button", { name: "context link" }).click();
+      await page.getByRole("menuitem", { name: "Remove link" }).click();
+      await waitFor(async () => (await savedLinks()).length === 0, "Remove link should delete the link");
+      await edge.waitFor({ state: "detached", timeout: 3000 });
     }));
 
   test("together: pausing stops delivery until resumed", async (page) =>

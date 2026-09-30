@@ -1,5 +1,5 @@
-// Handoff links the user draws between agent cards. They are stored in the layout file
-// and drawn as their own edges, apart from the lineage edges in layout.ts.
+// Links the user draws between agent cards: handoffs and context links. They are stored
+// in the layout file and drawn as their own edges, apart from the lineage edges in layout.ts.
 import { memo, useCallback, useRef, useState } from "react";
 import {
   BaseEdge,
@@ -14,7 +14,7 @@ import {
   type FinalConnectionState,
   type IsValidConnection,
 } from "@xyflow/react";
-import { Forward, Trash2 } from "lucide-react";
+import { BookOpen, Forward, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -58,7 +58,7 @@ type Flavor = LinkKind;
 const flavorOf = (link: Link): Flavor => link.kind;
 const FLAVOR = {
   handoff: { icon: Forward, label: "handoff" },
-  context: { icon: Forward, label: "link" },
+  context: { icon: BookOpen, label: "context" },
 };
 
 const nodeId = (e: Endpoint) => (e.kind === "note" ? NOTE_PREFIX + e.id : e.id);
@@ -86,7 +86,9 @@ export function linkEdges(links: Link[] | undefined, nodeIds: ReadonlySet<string
 export function describeLink(link: Link, panes: Map<string, Located>): string {
   const to = agentLabel(panes, link.to.id);
   const from = agentLabel(panes, link.from.id);
-  return `When ${from} finishes a turn, its latest output goes to ${to}.`;
+  return link.kind === "handoff"
+    ? `When ${from} finishes a turn, its latest output goes to ${to}.`
+    : `${to} was told once how to read ${from}.`;
 }
 
 export const LinkEdge = memo((props: EdgeProps) => {
@@ -124,6 +126,12 @@ function LinkMenu({ link, auto }: { link: Link; auto: AutomationValue }) {
     <DropdownMenuContent align="center" className="w-64" onClick={stop} onPointerDown={stop}>
       <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{describeLink(link, auto.panes)}</DropdownMenuLabel>
       <DropdownMenuSeparator />
+      {link.kind === "context" && (
+        <DropdownMenuItem onSelect={() => void auto.actions.resendLink(link.id)}>
+          <Undo2 aria-hidden />
+          Send again
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem variant="destructive" onSelect={() => void auto.actions.deleteLink(link.id)}>
         <Trash2 aria-hidden />
         Remove link
@@ -197,6 +205,9 @@ export function useLinking(panes: Map<string, Located>, actions: AutomationActio
             </p>
             <LinkOption icon={Forward} title="Handoff" onClick={() => choose("handoff")}>
               When {agentLabel(panes, choice.from)} finishes a turn, send its latest output to {agentLabel(panes, choice.to)}.
+            </LinkOption>
+            <LinkOption icon={BookOpen} title="Context link" onClick={() => choose("context")}>
+              Tell {agentLabel(panes, choice.to)} once how to read {agentLabel(panes, choice.from)} when it needs to.
             </LinkOption>
             <Button variant="ghost" size="sm" className="w-full" onClick={() => setChoice(undefined)}>
               Cancel
