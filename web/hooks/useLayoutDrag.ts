@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useReactFlow, type Node, type NodeChange } from "@xyflow/react";
-import { isDetachedDrop, type GroupData, type Rect, type SavedLayout, type WorkspaceData } from "../layout.ts";
-import { putLayout } from "../state.ts";
+import {
+  emptyLayout,
+  isDetachedDrop,
+  snapCard,
+  type CardDrag,
+  type GroupData,
+  type Rect,
+  type SavedLayout,
+  type WorkspaceData,
+  type WorkspacePositions,
+} from "../layout.ts";
+import { putLayout, type Located } from "../state.ts";
 
 function nodeRect(n: Node): Rect {
   return { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
@@ -13,7 +23,7 @@ function bounds(rects: Rect[]): Rect {
   return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
 }
 
-/** The saved workspace positions, loaded once from the server. Undefined until loaded. */
+/** The saved workspace and card positions, loaded once from the server. Undefined until loaded. */
 export function useSavedLayout() {
   const [saved, setSaved] = useState<SavedLayout>();
 
@@ -21,18 +31,19 @@ export function useSavedLayout() {
     fetch("/api/layout")
       .then((res) => res.json())
       .then((layout: SavedLayout) => setSaved(layout))
-      .catch(() => setSaved({}));
+      .catch(() => setSaved(emptyLayout()));
   }, []);
 
   return [saved, setSaved] as const;
 }
 
 const NONE: ReadonlySet<string> = new Set();
+const NO_PANES: ReadonlyMap<string, Located> = new Map();
 
 /**
- * Workspace and group dragging over the laid-out `nodes`, plus reading and applying whole
- * layouts. Settled positions are written back to the server. `selected` holds the node IDs
- * of box-selected workspaces, which move together.
+ * Workspace, group, and agent card dragging over the laid-out `nodes`, plus reading and
+ * applying whole layouts. Settled positions are written back to the server. `selected` holds
+ * the node IDs of box-selected workspaces, which move together.
  */
 export function useLayoutDrag(
   nodes: Node[],
@@ -41,27 +52,53 @@ export function useLayoutDrag(
   selected: ReadonlySet<string> = NONE,
   /** Told which workspace IDs a drag is moving, and `undefined` when it ends. */
   setDragging: (ids: ReadonlySet<string> | undefined) => void = () => {},
+  /** Told where a dragged agent card is, and `undefined` when it's dropped. */
+  setCardDrag: (drag: CardDrag | undefined) => void = () => {},
+  /** Every pane in the fleet, including hidden ones; saved card positions for other panes are dropped. */
+  panes: ReadonlyMap<string, Located> = NO_PANES,
 ) {
   // Bumped after a drag or reset; the effect below writes the settled layout.
   const [saveTick, setSaveTick] = useState(0);
   const { fitView } = useReactFlow();
 
+  // An empty map means the fleet hasn't loaded, not that every pane is gone.
+  const withLivePanes = useCallback(
+    (layout: SavedLayout): SavedLayout =>
+      panes.size === 0
+        ? layout
+        : { ...layout, cards: Object.fromEntries(Object.entries(layout.cards).filter(([id]) => panes.has(id))) },
+    [panes],
+  );
+
   useEffect(() => {
-    if (saveTick > 0 && saved) void putLayout(saved);
+    if (saveTick > 0 && saved) void putLayout(withLivePanes(saved));
     // Only a new tick should trigger a write, not every drag frame.
   }, [saveTick]);
+
+  const setWorkspaces = useCallback(
+    (fn: (prev: WorkspacePositions) => WorkspacePositions) =>
+      setSaved((prev) => {
+        const base = prev ?? emptyLayout();
+        return { ...base, workspaces: fn(base.workspaces) };
+      }),
+    [setSaved],
+  );
 
   // Dragging a workspace moves it; dragging a group box moves its attached workspaces.
   // The first drag freezes the automatic layout by saving every current position.
   // Group drags apply offsets from the drag start, so repeated change events can't compound.
-  const groupDrag = useRef<{ id: string; origin: { x: number; y: number }; members: SavedLayout }>(undefined);
+  const groupDrag = useRef<{ id: string; origin: { x: number; y: number }; members: WorkspacePositions }>(undefined);
   // Dragging one of several box-selected workspaces moves the others by the same offset.
-  const bulkDrag = useRef<{ id: string; origin: { x: number; y: number }; members: SavedLayout }>(undefined);
+  const bulkDrag = useRef<{ id: string; origin: { x: number; y: number }; members: WorkspacePositions }>(undefined);
 
   const onNodeDragStart = useCallback(
     (_: unknown, node: Node) => {
+      if (node.type === "pane") {
+        setCardDrag({ id: node.id, ...node.position });
+        return;
+      }
       if (node.type === "workspace" && selected.has(node.id) && selected.size > 1) {
-        const members: SavedLayout = {};
+        const members: WorkspacePositions = {};
         for (const n of nodes) {
           if (n.type !== "workspace" || n.id === node.id || !selected.has(n.id)) continue;
           const data = n.data as WorkspaceData;
@@ -75,7 +112,7 @@ export function useLayoutDrag(
         setDragging(ids);
       }
       if (node.type !== "group-box") return;
-      const members: SavedLayout = {};
+      const members: WorkspacePositions = {};
       for (const n of nodes) {
         if (n.type !== "workspace") continue;
         const id = (n.data as WorkspaceData).workspace.id;
@@ -83,23 +120,29 @@ export function useLayoutDrag(
       }
       groupDrag.current = { id: node.id, origin: { ...node.position }, members };
     },
-    [nodes, selected, setDragging],
+    [nodes, selected, setDragging, setCardDrag],
   );
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      const byId = new Map(nodes.map((n) => [n.id, n]));
       const moves = changes.filter((c) => c.type === "position" && c.position);
-      if (moves.length === 0) return;
+      const isCard = (c: NodeChange) => byId.get((c as { id: string }).id)?.type === "pane";
+      // A card's drag position stays out of the saved layout until the drop, so its tab keeps its size.
+      for (const c of moves) {
+        if (c.type === "position" && c.position && isCard(c)) setCardDrag({ id: c.id, ...snapCard(c.position) });
+      }
+      const workspaceMoves = moves.filter((c) => !isCard(c));
+      if (workspaceMoves.length === 0) return;
       const bulk = bulkDrag.current;
-      setSaved((prev) => {
-        const next: SavedLayout = { ...prev };
-        const byId = new Map(nodes.map((n) => [n.id, n]));
+      setWorkspaces((prev) => {
+        const next: WorkspacePositions = { ...prev };
         if (Object.keys(next).length === 0) {
           for (const n of nodes) {
             if (n.type === "workspace") next[(n.data as WorkspaceData).workspace.id] = { ...n.position };
           }
         }
-        for (const change of moves) {
+        for (const change of workspaceMoves) {
           if (change.type !== "position" || !change.position) continue;
           const node = byId.get(change.id);
           if (!node) continue;
@@ -122,15 +165,28 @@ export function useLayoutDrag(
         return next;
       });
     },
-    [nodes, setSaved],
+    [nodes, setWorkspaces, setCardDrag],
   );
 
   const onNodeDragStop = useCallback(
     (_: unknown, node: Node) => {
+      if (node.type === "pane") {
+        const mates = nodes.filter((n) => n.type === "pane" && n.parentId === node.parentId && n.id !== node.id);
+        setSaved((prev) => {
+          if (!prev) return prev;
+          const cards = { ...prev.cards };
+          // The first move in a tab pins the other cards where they are, so they don't restack.
+          for (const n of mates) cards[n.id] ??= { ...n.position };
+          cards[node.id] = snapCard(node.position);
+          return { ...prev, cards };
+        });
+        setCardDrag(undefined);
+        setSaveTick((t) => t + 1);
+        return;
+      }
       // Read before the ref is cleared below; the updater runs later.
       const bulk = bulkDrag.current;
-      setSaved((prev) => {
-        if (!prev) return prev;
+      setWorkspaces((prev) => {
         const next = { ...prev };
         if (node.type === "workspace") {
           const wsId = (n: Node) => (n.data as WorkspaceData).workspace.id;
@@ -159,7 +215,7 @@ export function useLayoutDrag(
       setDragging(undefined);
       setSaveTick((t) => t + 1);
     },
-    [nodes, setSaved, selected, setDragging],
+    [nodes, setSaved, setWorkspaces, selected, setDragging, setCardDrag],
   );
 
   // Takes workspaces out of their repo box, or puts them back, without dragging. Removed
@@ -176,7 +232,7 @@ export function useLayoutDrag(
         if (!ids.has(id(n)) || data(n).detached === detach) continue;
         byGroup.set(data(n).groupKey, [...(byGroup.get(data(n).groupKey) ?? []), n]);
       }
-      const moved: SavedLayout = {};
+      const moved: WorkspacePositions = {};
       const returned: string[] = [];
       for (const [groupKey, members] of byGroup) {
         if (!detach) {
@@ -192,8 +248,8 @@ export function useLayoutDrag(
         for (const m of members) moved[id(m)] = { x: m.position.x + dx, y: m.position.y + dy, detached: true };
       }
       if (Object.keys(moved).length === 0 && returned.length === 0) return;
-      setSaved((prev) => {
-        const next: SavedLayout = { ...prev };
+      setWorkspaces((prev) => {
+        const next: WorkspacePositions = { ...prev };
         if (Object.keys(next).length === 0) {
           for (const n of workspaces) next[id(n)] = { ...n.position };
         }
@@ -203,19 +259,31 @@ export function useLayoutDrag(
       });
       setSaveTick((t) => t + 1);
     },
-    [nodes, setSaved],
+    [nodes, setWorkspaces],
+  );
+
+  /** Puts a tab's cards back in the default stack. */
+  const restackCards = useCallback(
+    (tabId: string) => {
+      const inTab = (paneId: string) =>
+        panes.get(paneId)?.tabId === tabId || nodes.some((n) => n.id === paneId && n.parentId === `tab:${tabId}`);
+      setSaved((prev) => prev && { ...prev, cards: Object.fromEntries(Object.entries(prev.cards).filter(([id]) => !inTab(id))) });
+      setSaveTick((t) => t + 1);
+    },
+    [nodes, panes, setSaved],
   );
 
   // Saved positions for hidden workspaces are kept alongside the ones on screen.
   const currentPositions = useCallback((): SavedLayout => {
-    const out: SavedLayout = { ...saved };
+    const base = saved ?? emptyLayout();
+    const workspaces: WorkspacePositions = { ...base.workspaces };
     for (const n of nodes) {
       if (n.type !== "workspace") continue;
       const data = n.data as WorkspaceData;
-      out[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
+      workspaces[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
     }
-    return out;
-  }, [saved, nodes]);
+    return withLivePanes({ ...base, workspaces });
+  }, [saved, nodes, withLivePanes]);
 
   const applyLayout = useCallback(
     (next: SavedLayout) => {
@@ -226,5 +294,5 @@ export function useLayoutDrag(
     [setSaved, fitView],
   );
 
-  return { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout, setDetached };
+  return { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout, setDetached, restackCards };
 }

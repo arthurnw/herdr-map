@@ -120,7 +120,7 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     assert(actions().length === 0, `typing in a note must not run shortcuts, got ${actions()}`);
     await page.waitForTimeout(900);
     assert(store().notes?.[0]?.text === "Check the deploy", `the text should be saved, got ${JSON.stringify(store().notes)}`);
-    assert(Object.keys(store().current ?? {}).length === 0, "adding a note must not freeze the automatic layout");
+    assert(Object.keys(store().current?.workspaces ?? {}).length === 0, "adding a note must not freeze the automatic layout");
 
     const start = await note.boundingBox();
     const before = store().notes[0];
@@ -131,7 +131,7 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     await page.waitForTimeout(400);
     const after = store().notes[0];
     assert(after.x > before.x && after.y > before.y, `dragging the bar should move the note, ${JSON.stringify([before, after])}`);
-    assert(Object.keys(store().current ?? {}).length === 0, "moving a note must not save workspace positions");
+    assert(Object.keys(store().current?.workspaces ?? {}).length === 0, "moving a note must not save workspace positions");
     assert(actions().length === 0, `moving a note must not focus anything, got ${actions()}`);
 
     await note.hover();
@@ -187,26 +187,26 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     for (let i = 1; i <= 6; i++) await page.mouse.move(start.x + 40 + i * 15, start.y + 8 + i * 15);
     await page.mouse.up();
     await page.waitForTimeout(400);
-    const moved = store().current.w4;
+    const moved = store().current.workspaces.w4;
     assert(moved, "the drag should save positions");
 
     await page.keyboard.press("Meta+z");
     await page.waitForTimeout(400);
-    assert(Object.keys(store().current).length === 0, `undo should return to the automatic layout, got ${JSON.stringify(store().current)}`);
+    assert(Object.keys(store().current.workspaces).length === 0, `undo should return to the automatic layout, got ${JSON.stringify(store().current)}`);
     const back = await ws(page, "w4").boundingBox();
     assert(Math.abs(back.x - start.x) < 1 && Math.abs(back.y - start.y) < 1, "the workspace should be back where it was");
 
     await page.keyboard.press("Meta+Shift+z");
     await page.waitForTimeout(400);
-    assert(JSON.stringify(store().current.w4) === JSON.stringify(moved), "redo should bring the move back");
+    assert(JSON.stringify(store().current.workspaces.w4) === JSON.stringify(moved), "redo should bring the move back");
 
     await menu(page, "w3", "api-billing");
     await page.getByRole("menuitem", { name: "Take out of the api box" }).click();
     await page.waitForTimeout(400);
-    assert(store().current.w3?.detached, "the menu should detach w3");
+    assert(store().current.workspaces.w3?.detached, "the menu should detach w3");
     await page.keyboard.press("Control+z");
     await page.waitForTimeout(400);
-    assert(!store().current.w3?.detached, "Ctrl+Z should undo taking it out of the box");
+    assert(!store().current.workspaces.w3?.detached, "Ctrl+Z should undo taking it out of the box");
     assert((await ws(page, "w3").locator(".ws-repo-tag").count()) === 0, "the map should show it back in the box");
 
     // In a note, ⌘Z is the text field's own undo.
@@ -249,7 +249,7 @@ export default ({ test, assert, layoutFile, actions, clearActions }) => {
     await bar.getByRole("button", { name: "Expand" }).click();
     await bar.getByRole("button", { name: "Take out of box" }).click();
     await page.waitForTimeout(500);
-    const cur = () => store().current ?? {};
+    const cur = () => store().current?.workspaces ?? {};
     assert(cur().w1?.detached && cur().w2?.detached && !cur().w3?.detached, `both should leave the box, got ${JSON.stringify(cur())}`);
     const [a2, b2] = await Promise.all(["w1", "w2"].map((id) => ws(page, id).boundingBox()));
     assert(Math.round(b2.x - a2.x) === Math.round(b.x - a.x), "workspaces taken out together keep their arrangement");

@@ -1,6 +1,6 @@
 import { createContext, memo, useContext, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { ChevronsDownUp, ChevronsUpDown, Ellipsis, FolderGit2, Group, Palette, Star, Ungroup } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Ellipsis, FolderGit2, Group, Palette, Rows3, Star, Ungroup } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,7 +81,7 @@ function WorkspaceMenu({ data, onAddTag }: { data: WorkspaceData; onAddTag: () =
   const actions = useContext(WorkspaceActions);
   // Set by Add tag. The tag input opens once the menu has closed, so the menu can't take focus back.
   const addTag = useRef(false);
-  const { workspace: ws, groupLabel, detached, groupMates, collapsed } = data;
+  const { workspace: ws, groupLabel, detached, groupMates, collapsed, arrangedTabs } = data;
   if (!actions) return null;
   return (
     <DropdownMenu>
@@ -105,6 +105,18 @@ function WorkspaceMenu({ data, onAddTag }: { data: WorkspaceData; onAddTag: () =
           {collapsed ? <ChevronsUpDown aria-hidden /> : <ChevronsDownUp aria-hidden />}
           {collapsed ? "Expand" : "Collapse to header"}
         </DropdownMenuItem>
+        {arrangedTabs?.length === 0 && (
+          <DropdownMenuItem disabled>
+            <Rows3 aria-hidden />
+            Restack cards
+          </DropdownMenuItem>
+        )}
+        {arrangedTabs?.map((t) => (
+          <DropdownMenuItem key={t.id} onSelect={() => actions.restackCards(t.id)}>
+            <Rows3 aria-hidden />
+            {ws.tabs.length > 1 ? `Restack cards in “${t.label}”` : "Restack cards"}
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Palette aria-hidden />

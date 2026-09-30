@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildFleet, StatusClock } from "../shared/model.ts";
-import { isDetachedDrop, layoutFleet, WS_HEADER } from "../web/layout.ts";
-import { snapshotFixture } from "./fixtures.ts";
+import { isDetachedDrop, layoutFleet, snapCard, WS_HEADER, type LayoutOptions } from "../web/layout.ts";
+import { fleetWith, snapshotFixture } from "./fixtures.ts";
 
 function fleet() {
   const snap = snapshotFixture();
@@ -140,4 +140,72 @@ test("a collapsed workspace is drawn as its header, and its repo box shrinks", (
   assert.ok(find(closed.nodes, "group:/r/api/.git").height! < find(open.nodes, "group:/r/api/.git").height!);
   // The lineage edge into the collapsed workspace's agent goes away with the pane.
   assert.deepEqual(closed.edges, []);
+});
+
+// Agent cards in the agent-panes view: stacked rows at x 2 and y 24, 100, 176 for three agents.
+const cardsView = (opts: Partial<LayoutOptions> = {}) =>
+  layoutFleet(fleetWith({ "w1:p1": "idle", "w1:p2": "idle", "w1:p3": "idle" }), { agentsOnly: true, agentPanesOnly: true, ...opts });
+const node = (nodes: ReturnType<typeof layoutFleet>["nodes"], id: string) => nodes.find((n) => n.id === id)!;
+
+test("saved card positions move cards within their tab, and the tab and workspace grow to hold them", () => {
+  const stacked = cardsView();
+  const moved = cardsView({ cards: { "w1:p1": { x: 2, y: 24 }, "w1:p2": { x: 290, y: 24 }, "w1:p3": { x: 2, y: 100 } } });
+  assert.deepEqual(node(moved.nodes, "w1:p2").position, { x: 290, y: 24 });
+  assert.equal(node(moved.nodes, "w1:p2").draggable, undefined, "cards are draggable in this view");
+  for (const id of ["w1:p1", "w1:p2", "w1:p3"]) {
+    assert.equal(node(moved.nodes, id).width, node(stacked.nodes, id).width, "cards keep their size");
+    assert.equal(node(moved.nodes, id).height, node(stacked.nodes, id).height, "cards keep their size");
+  }
+  const card = node(moved.nodes, "w1:p2");
+  assert.equal(node(moved.nodes, "tab:w1:t1").width, 290 + card.width! + 2);
+  assert.equal(node(moved.nodes, "tab:w1:t1").height, node(stacked.nodes, "tab:w1:t1").height, "no taller than it needs");
+  assert.ok(node(moved.nodes, "ws:w1").width! > node(stacked.nodes, "ws:w1").width!);
+
+  const low = cardsView({ cards: { "w1:p1": { x: 2, y: 600 } } });
+  const tab = node(low.nodes, "tab:w1:t1");
+  assert.ok(tab.height! >= 600 + card.height!, "a card moved down makes the tab taller");
+  assert.ok(node(low.nodes, "ws:w1").height! > tab.height!, "and its workspace");
+});
+
+test("cards without a saved position go below the lowest saved card", () => {
+  const { nodes } = cardsView({ cards: { "w1:p1": { x: 290, y: 24 }, "w1:p3": { x: 2, y: 200 } } });
+  const p2 = node(nodes, "w1:p2");
+  const p3 = node(nodes, "w1:p3");
+  assert.equal(p2.position.x, 2);
+  assert.equal(p2.position.y, p3.position.y + p3.height! + 4);
+});
+
+test("saved cards stay inside the tab body, and dragged ones snap to an 8px grid", () => {
+  const { nodes } = cardsView({ cards: { "w1:p1": { x: -50, y: 0 } } });
+  assert.deepEqual(node(nodes, "w1:p1").position, { x: 2, y: 24 });
+  assert.deepEqual(snapCard({ x: 13, y: 20 }), { x: 10, y: 24 });
+  assert.deepEqual(snapCard({ x: 300, y: 107 }), { x: 298, y: 104 });
+  assert.deepEqual(snapCard({ x: -400, y: -400 }), { x: 2, y: 24 });
+});
+
+test("while a card is dragged, it follows the drag and its tab keeps its size", () => {
+  const stacked = cardsView();
+  const { nodes } = cardsView({ cardDrag: { id: "w1:p2", x: 600, y: 24 } });
+  assert.deepEqual(node(nodes, "w1:p2").position, { x: 600, y: 24 });
+  assert.equal(node(nodes, "tab:w1:t1").width, node(stacked.nodes, "tab:w1:t1").width);
+  assert.equal(node(nodes, "ws:w1").width, node(stacked.nodes, "ws:w1").width);
+});
+
+test("the full layout ignores saved card positions and keeps panes fixed", () => {
+  const f = () => fleetWith({ "w1:p1": "idle", "w1:p2": "idle" });
+  const cards = { "w1:p2": { x: 600, y: 300 } };
+  const plain = layoutFleet(f(), { agentsOnly: true });
+  const full = layoutFleet(f(), { agentsOnly: true, cards });
+  assert.deepEqual(node(full.nodes, "w1:p2").position, node(plain.nodes, "w1:p2").position);
+  assert.equal(node(full.nodes, "tab:w1:t1").width, node(plain.nodes, "tab:w1:t1").width);
+  assert.equal(node(full.nodes, "w1:p2").draggable, false);
+  assert.equal((node(full.nodes, "ws:w1").data as { arrangedTabs?: unknown }).arrangedTabs, undefined);
+});
+
+test("a workspace lists the tabs whose cards were moved", () => {
+  const arranged = (opts: Partial<LayoutOptions>) => (node(cardsView(opts).nodes, "ws:w1").data as { arrangedTabs?: unknown }).arrangedTabs;
+  assert.deepEqual(arranged({}), []);
+  assert.deepEqual(arranged({ cards: { "w1:p2": { x: 290, y: 24 } } }), [{ id: "w1:t1", label: "1" }]);
+  // Positions of panes elsewhere don't count.
+  assert.deepEqual(arranged({ cards: { "w9:p1": { x: 290, y: 24 } } }), []);
 });

@@ -18,7 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { layoutFleet, type PaneData, type TabData, type WorkspaceData } from "./layout.ts";
+import { isCustomLayout, layoutFleet, type CardDrag, type PaneData, type TabData, type WorkspaceData } from "./layout.ts";
 import { NowContext, nodeTypes } from "./nodes.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import {
@@ -84,6 +84,7 @@ function FleetMap() {
   const { meta, patchWorkspaces, patchGroup } = useMeta();
   const tagsOf = useCallback((wsId: string) => meta?.workspaces[wsId]?.tags ?? [], [meta]);
   const [dragging, setDragging] = useState<ReadonlySet<string>>();
+  const [cardDrag, setCardDrag] = useState<CardDrag>();
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
   const fitted = useRef(false);
@@ -95,11 +96,20 @@ function FleetMap() {
       fleet && saved && meta
         ? layoutFleet(
             fleet,
-            { agentsOnly, agentPanesOnly, hiddenStatuses, dragging, workspaceMeta: meta.workspaces, groupMeta: meta.groups },
-            saved,
+            {
+              agentsOnly,
+              agentPanesOnly,
+              hiddenStatuses,
+              dragging,
+              workspaceMeta: meta.workspaces,
+              groupMeta: meta.groups,
+              cards: saved.cards,
+              cardDrag,
+            },
+            saved.workspaces,
           )
         : { nodes: [], edges: [] },
-    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, dragging, saved, meta],
+    [fleet, agentsOnly, agentPanesOnly, hiddenStatuses, dragging, cardDrag, saved, meta],
   );
 
   const nodes = useMemo(() => {
@@ -126,23 +136,19 @@ function FleetMap() {
     nodes,
   );
   const boxSelect = useBoxSelect(shownNodes);
-  const { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout, setDetached } = useLayoutDrag(
-    layout.nodes,
-    saved,
-    setSaved,
-    boxSelect.selected,
-    setDragging,
-  );
+  const { onNodeDragStart, onNodesChange, onNodeDragStop, currentPositions, applyLayout, setDetached, restackCards } =
+    useLayoutDrag(layout.nodes, saved, setSaved, boxSelect.selected, setDragging, setCardDrag, panes);
   const workspaceActions = useMemo(
     () => ({
       setDetached,
+      restackCards,
       setCollapsed: (ids: string[], collapsed: boolean) => void patchWorkspaces({ ids, collapsed }),
       setWorkspaceColor: (ids: string[], color: TintColor | null) => void patchWorkspaces({ ids, color }),
       setGroupColor: (groupKey: string, color: TintColor | null) => void patchGroup({ key: groupKey, color }),
       addTag: (ids: string[], tag: string) => void patchWorkspaces({ ids, addTags: [tag] }),
       removeTag: (ids: string[], tag: string) => void patchWorkspaces({ ids, removeTags: [tag] }),
     }),
-    [setDetached, patchWorkspaces, patchGroup],
+    [setDetached, restackCards, patchWorkspaces, patchGroup],
   );
 
   // Applies to the workspaces on the map, so hidden ones keep their own state.
@@ -172,7 +178,7 @@ function FleetMap() {
     [layout.edges, automation.state?.links, flowNodes],
   );
 
-  const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
+  const layoutMenu = { currentPositions, isCustom: !!saved && isCustomLayout(saved), onApply: applyLayout };
 
   useEffect(() => {
     if (!fitted.current && layout.nodes.length > 0) {

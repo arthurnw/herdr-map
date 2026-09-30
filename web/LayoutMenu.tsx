@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
-import type { SavedLayout } from "./layout.ts";
+import { emptyLayout, type SavedLayout } from "./layout.ts";
 import { formatAge } from "./nodes.tsx";
 
 export interface NamedLayout {
@@ -28,7 +28,7 @@ export async function saveNamed(name: string, layout: SavedLayout) {
 }
 
 export interface LayoutMenuProps {
-  /** Positions of every visible workspace as currently drawn. */
+  /** Positions of every visible workspace as currently drawn, and the saved card positions. */
   currentPositions: () => SavedLayout;
   isCustom: boolean;
   onApply: (layout: SavedLayout) => void;
@@ -162,7 +162,7 @@ export function LayoutMenu({ currentPositions, isCustom, onApply }: LayoutMenuPr
             size="sm"
             className="w-full gap-1.5"
             disabled={!isCustom}
-            onClick={() => void replaceWith({}, "Reset to the automatic layout")}
+            onClick={() => void replaceWith(emptyLayout(), "Reset to the automatic layout")}
           >
             <RotateCcw className="size-3.5" />
             Reset to automatic layout

@@ -100,7 +100,7 @@ export default function ({ test, assert, card, needsYouRow, actions, clearAction
     assert(moved(a, a2)[0] > 20 && moved(a, a2)[1] > 20, `api should move, moved ${moved(a, a2)}`);
     assert(JSON.stringify(moved(a, a2)) === JSON.stringify(moved(b, b2)), `api-auth should move with api: ${moved(a, a2)} vs ${moved(b, b2)}`);
     assert(JSON.stringify(moved(c, c2)) === "[0,0]", `api-billing wasn't selected and should stay, moved ${moved(c, c2)}`);
-    const saved = JSON.parse(readFileSync(layoutFile, "utf8")).current;
+    const saved = JSON.parse(readFileSync(layoutFile, "utf8")).current.workspaces;
     assert(saved.w1 && saved.w2 && saved.w3, `the drag should save every position, got ${JSON.stringify(saved)}`);
     assert(!saved.w1.detached && !saved.w2.detached, `workspaces moved together near their repo should stay in it, got ${JSON.stringify(saved)}`);
     assert(actions().length === 0, `a drag must not focus anything, got ${actions()}`);

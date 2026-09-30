@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 // Taking workspaces out of their repo box and putting them back.
 export default ({ test, assert, layoutFile, actions, clearActions }) => {
   const ws = (page, id) => page.locator(`.react-flow__node-workspace[data-id="ws:${id}"]`);
-  const saved = () => JSON.parse(readFileSync(layoutFile, "utf8")).current;
+  const saved = () => JSON.parse(readFileSync(layoutFile, "utf8")).current.workspaces;
 
   test("the header menu takes a workspace out of its repo box and puts it back", async (page) => {
     clearActions();

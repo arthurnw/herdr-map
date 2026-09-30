@@ -23,7 +23,8 @@
 .react-flow__node-workspace,
 .react-flow__node-group-box { cursor: grab; }
 .react-flow__node-workspace.dragging,
-.react-flow__node-group-box.dragging { cursor: grabbing; }
+.react-flow__node-group-box.dragging,
+.react-flow__node-pane.dragging { cursor: grabbing; }
 .react-flow__node-ws-label { pointer-events: none !important; }
 .react-flow__handle { opacity: 0; pointer-events: none; }
 

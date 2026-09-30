@@ -10,6 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { STATUSES, type Fleet, type FleetWorkspace } from "../shared/model.ts";
 import { activeRegistrations, useShortcut } from "./hooks/useShortcut.ts";
+import { emptyLayout } from "./layout.ts";
 import { PREVIOUS, saveNamed, type LayoutMenuProps } from "./LayoutMenu.tsx";
 import { agentAge, NowContext } from "./nodes.tsx";
 import { agentMatches, commandMatches, parseQuery, shortcutLabel, workspaceItemMatches } from "./palette.ts";
@@ -151,7 +152,7 @@ export function CommandPalette(props: Props) {
   const resetLayout = async () => {
     try {
       if (layoutMenu.isCustom) await saveNamed(PREVIOUS, layoutMenu.currentPositions());
-      layoutMenu.onApply({});
+      layoutMenu.onApply(emptyLayout());
       toast.success("Reset to the automatic layout");
     } catch (err) {
       toast.error("Layout change failed", { description: (err as Error).message });

@@ -7,8 +7,11 @@
 // Until the user drags something, positions come from an automatic packing. After
 // that, every workspace position is saved, and new workspaces are placed next to
 // the other members of their group.
+//
+// In the agent-panes view, agent cards can also be dragged within their tab. A tab grows
+// to hold its cards, and its workspace grows with it.
 import type { Edge, Node } from "@xyflow/react";
-import type { GroupMeta, WorkspaceMeta } from "../shared/layout-types.ts";
+import type { CardPositions, GroupMeta, SavedLayout, WorkspaceMeta, WorkspacePositions } from "../shared/layout-types.ts";
 import type { AgentStatus, Fleet, FleetGroup, FleetPane, FleetTab, FleetWorkspace } from "../shared/model.ts";
 
 export const TAB_W = 300;
@@ -43,22 +46,42 @@ export interface LayoutOptions {
   workspaceMeta?: Record<string, WorkspaceMeta>;
   /** Saved metadata keyed by repo group key. */
   groupMeta?: Record<string, GroupMeta>;
+  /** Saved agent card positions relative to their tabs, keyed by pane ID. The full layout ignores them. */
+  cards?: CardPositions;
+  /** The card being dragged, drawn at its drag position while its tab keeps its size from before the drag. */
+  cardDrag?: CardDrag;
 }
+
+export type CardDrag = { id: string; x: number; y: number };
 
 // When only agent panes are drawn, each agent gets a full-width row so names and
 // statuses have room for long lines.
 const COMPACT_TAB_W = 280;
 const COMPACT_ROW_H = 76;
 const COMPACT_BODY_H = 120;
+// Space between a card and its tab's edges; stacked cards are twice this apart.
+const CARD_INSET = 2;
+const CARD_GRID = 8;
 
-export interface SavedPosition {
-  x: number;
-  y: number;
-  detached?: boolean;
+export type { CardPositions, SavedLayout, WorkspacePositions } from "../shared/layout-types.ts";
+export { emptyLayout } from "../shared/layout-types.ts";
+
+/** True when anything has been moved by hand, so the layout is no longer automatic. */
+export function isCustomLayout(layout: SavedLayout): boolean {
+  return Object.keys(layout.workspaces).length > 0 || Object.keys(layout.cards).length > 0;
 }
 
-/** Saved workspace positions keyed by workspace ID. Empty means automatic layout. */
-export type SavedLayout = Record<string, SavedPosition>;
+// Cards stay below their tab's header and inside its left edge. The right and bottom are
+// open, because the tab grows to hold its cards.
+function clampCard(p: { x: number; y: number }): { x: number; y: number } {
+  return { x: Math.max(CARD_INSET, p.x), y: Math.max(TAB_HEADER + CARD_INSET, p.y) };
+}
+
+/** Where a dragged card lands: inside its tab, on an 8px grid that starts at the first card's spot. */
+export function snapCard(p: { x: number; y: number }): { x: number; y: number } {
+  const snap = (v: number, origin: number) => origin + Math.round((v - origin) / CARD_GRID) * CARD_GRID;
+  return clampCard({ x: snap(p.x, CARD_INSET), y: snap(p.y, TAB_HEADER + CARD_INSET) });
+}
 
 export type GroupData = { group: FleetGroup; memberIds: string[]; color?: string };
 /** What dropping a dragged workspace will do: leave its repo box, or go back into it. */
@@ -77,6 +100,8 @@ export type WorkspaceData = {
   collapsed: boolean;
   color?: string;
   tags: string[];
+  /** Tabs whose cards were moved by hand; set only in the agent-panes view. */
+  arrangedTabs?: { id: string; label: string }[];
 };
 export type TabData = { tab: FleetTab; workspaceId: string };
 export type PaneData = { pane: FleetPane };
@@ -94,13 +119,21 @@ interface Placed extends Rect {
   detached: boolean;
 }
 
-/** A tab as drawn. Compact tabs hold only agent panes, stacked as equal-height rows. */
-type ViewTab = FleetTab & { compact?: boolean };
+/** Where a compact tab's cards go, relative to the tab, and the size that holds them. */
+interface CardArrangement {
+  w: number;
+  h: number;
+  card: { w: number; h: number };
+  slots: Record<string, { x: number; y: number }>;
+  /** Some cards have saved positions. */
+  arranged: boolean;
+}
+
+/** A tab as drawn. Compact tabs hold only agent panes, stacked as equal-height rows unless moved. */
+type ViewTab = FleetTab & { compact?: CardArrangement };
 
 function tabSize(tab: ViewTab) {
-  if (tab.compact) {
-    return { w: COMPACT_TAB_W, h: TAB_HEADER + Math.max(COMPACT_BODY_H, COMPACT_ROW_H * tab.panes.length) };
-  }
+  if (tab.compact) return { w: tab.compact.w, h: tab.compact.h };
   const body = Math.min(TAB_MAX_H, Math.max(TAB_MIN_H, TAB_W / tab.aspect));
   return { w: TAB_W, h: TAB_HEADER + body };
 }
@@ -123,16 +156,42 @@ function collapsedSize(ws: FleetWorkspace) {
 
 type SizeOf = (ws: FleetWorkspace) => { w: number; h: number };
 
-/** Keeps a tab's agent panes in their on-screen order (left to right, then top to bottom). */
-function compactTab(tab: FleetTab, shown: (p: FleetPane) => boolean): ViewTab | undefined {
+/**
+ * Keeps a tab's agent panes in their on-screen order (left to right, then top to bottom),
+ * one row each. Cards with a saved position go there instead, and once a tab has any, the
+ * others stack below the lowest one so a new agent never lands on a moved card.
+ */
+function compactTab(tab: FleetTab, shown: (p: FleetPane) => boolean, cards: CardPositions): ViewTab | undefined {
   const agents = tab.panes
     .filter(shown)
     .sort((a, b) => a.rect.x - b.rect.x || a.rect.y - b.rect.y);
   if (agents.length === 0) return undefined;
   const n = agents.length;
+  const bodyH = Math.max(COMPACT_BODY_H, COMPACT_ROW_H * n);
+  const card = { w: COMPACT_TAB_W - CARD_INSET * 2, h: bodyH / n - CARD_INSET * 2 };
+  const saved = agents.filter((p) => cards[p.id]);
+  let below = saved.length ? Math.max(...saved.map((p) => clampCard(cards[p.id]).y + card.h + CARD_INSET * 2)) : 0;
+  const slots: CardArrangement["slots"] = {};
+  agents.forEach((p, i) => {
+    if (cards[p.id]) {
+      slots[p.id] = clampCard(cards[p.id]);
+    } else if (saved.length > 0) {
+      slots[p.id] = { x: CARD_INSET, y: below };
+      below += card.h + CARD_INSET * 2;
+    } else {
+      slots[p.id] = { x: CARD_INSET, y: TAB_HEADER + (i * bodyH) / n + CARD_INSET };
+    }
+  });
+  const placed = Object.values(slots);
   return {
     ...tab,
-    compact: true,
+    compact: {
+      w: Math.max(COMPACT_TAB_W, ...placed.map((s) => s.x + card.w + CARD_INSET)),
+      h: Math.max(TAB_HEADER + bodyH, ...placed.map((s) => s.y + card.h + CARD_INSET)),
+      card,
+      slots,
+      arranged: saved.length > 0,
+    },
     panes: agents.map((p, i) => ({ ...p, rect: { x: 0, y: i / n, w: 1, h: 1 / n } })),
   };
 }
@@ -158,7 +217,7 @@ function visibleGroups(fleet: Fleet, opts: LayoutOptions): FleetGroup[] {
           opts.agentPanesOnly
             ? {
                 ...ws,
-                tabs: ws.tabs.map((t) => compactTab(t, shown)).filter((t): t is ViewTab => t !== undefined),
+                tabs: ws.tabs.map((t) => compactTab(t, shown, opts.cards ?? {})).filter((t): t is ViewTab => t !== undefined),
               }
             : ws,
         )
@@ -210,7 +269,7 @@ function autoPositions(groups: FleetGroup[], sizeOf: SizeOf): Map<string, { x: n
   return out;
 }
 
-function placeWorkspaces(groups: FleetGroup[], saved: SavedLayout, sizeOf: SizeOf): Placed[] {
+function placeWorkspaces(groups: FleetGroup[], saved: WorkspacePositions, sizeOf: SizeOf): Placed[] {
   const all = groups.flatMap((group) => group.workspaces.map((ws) => ({ ws, group, ...sizeOf(ws) })));
   if (Object.keys(saved).length === 0) {
     const auto = autoPositions(groups, sizeOf);
@@ -271,7 +330,7 @@ export function isDetachedDrop(dropped: Rect, otherMembers: Rect[]): boolean {
 export function layoutFleet(
   fleet: Fleet,
   opts: LayoutOptions,
-  saved: SavedLayout = {},
+  saved: WorkspacePositions = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const groups = visibleGroups(fleet, opts);
   const meta = opts.workspaceMeta ?? {};
@@ -329,6 +388,9 @@ export function layoutFleet(
       collapsed: isCollapsed(p.ws),
       color: meta[p.ws.id]?.color,
       tags: meta[p.ws.id]?.tags ?? [],
+      arrangedTabs: opts.agentPanesOnly
+        ? p.ws.tabs.filter((t: ViewTab) => t.compact?.arranged).map((t) => ({ id: t.id, label: t.label }))
+        : undefined,
     };
     nodes.push({
       id: wsNode,
@@ -372,8 +434,23 @@ export function layoutFleet(
         data: { tab, workspaceId: p.ws.id } satisfies TabData,
       });
       const bodyH = tb.h - TAB_HEADER;
+      const arrangement = (tab as ViewTab).compact;
       for (const pane of tab.panes) {
         paneIds.add(pane.id);
+        if (arrangement) {
+          const drag = opts.cardDrag?.id === pane.id ? opts.cardDrag : undefined;
+          nodes.push({
+            id: pane.id,
+            type: "pane",
+            parentId: tabNode,
+            position: drag ? { x: drag.x, y: drag.y } : arrangement.slots[pane.id],
+            width: arrangement.card.w,
+            height: arrangement.card.h,
+            className: filtered(pane) ? "status-filtered" : undefined,
+            data: { pane } satisfies PaneData,
+          });
+          continue;
+        }
         nodes.push({
           id: pane.id,
           type: "pane",

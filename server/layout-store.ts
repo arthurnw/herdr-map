@@ -1,7 +1,9 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { emptyLayout } from "../shared/layout-types.ts";
 import type {
+  CardPositions,
   Endpoint,
   GroupMeta,
   LayoutStore,
@@ -10,11 +12,13 @@ import type {
   Note,
   SavedLayout,
   WorkspaceMeta,
+  WorkspacePositions,
 } from "../shared/layout-types.ts";
 
 export type { LayoutStore, NamedLayout, SavedLayout } from "../shared/layout-types.ts";
+export { emptyLayout } from "../shared/layout-types.ts";
 
-export const LAYOUT_VERSION = 2;
+export const LAYOUT_VERSION = 3;
 export const HISTORY_LIMIT = 50;
 
 export function defaultLayoutPath(): string {
@@ -28,7 +32,11 @@ function isObject(value: unknown): value is Obj {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isPosition(p: unknown): p is SavedLayout[string] {
+function isCardPosition(p: unknown): p is CardPositions[string] {
+  return isObject(p) && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
+function isPosition(p: unknown): p is WorkspacePositions[string] {
   return (
     isObject(p) &&
     Number.isFinite(p.x) &&
@@ -38,7 +46,13 @@ function isPosition(p: unknown): p is SavedLayout[string] {
 }
 
 export function isSavedLayout(value: unknown): value is SavedLayout {
-  return isObject(value) && Object.values(value).every(isPosition);
+  return (
+    isObject(value) &&
+    isObject(value.workspaces) &&
+    Object.values(value.workspaces).every(isPosition) &&
+    isObject(value.cards) &&
+    Object.values(value.cards).every(isCardPosition)
+  );
 }
 
 const RESERVED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
@@ -63,14 +77,14 @@ function isId(value: unknown): value is string {
 }
 
 export function emptyStore(): LayoutStore {
-  return { version: 2, current: {}, named: {}, workspaces: {}, groups: {}, notes: [], links: [], history: [] };
+  return { version: 3, current: emptyLayout(), named: {}, workspaces: {}, groups: {}, notes: [], links: [], history: [] };
 }
 
 // The parsers below copy valid entries one by one, so a single bad value costs only
 // that entry rather than the whole file.
 
-function parseLayout(value: unknown): SavedLayout {
-  const out: SavedLayout = {};
+function parseWorkspacePositions(value: unknown): WorkspacePositions {
+  const out: WorkspacePositions = {};
   if (!isObject(value)) return out;
   for (const [id, p] of Object.entries(value)) {
     if (!isRecordKey(id) || !isPosition(p)) continue;
@@ -79,12 +93,28 @@ function parseLayout(value: unknown): SavedLayout {
   return out;
 }
 
-function parseNamed(value: unknown): Record<string, NamedLayout> {
+function parseCardPositions(value: unknown): CardPositions {
+  const out: CardPositions = {};
+  if (!isObject(value)) return out;
+  for (const [id, p] of Object.entries(value)) {
+    if (isRecordKey(id) && isCardPosition(p)) out[id] = { x: p.x, y: p.y };
+  }
+  return out;
+}
+
+/** Layouts before v3 were just the workspace positions (`flat`); v3 adds card positions beside them. */
+function parseLayout(value: unknown, flat: boolean): SavedLayout {
+  if (flat) return { workspaces: parseWorkspacePositions(value), cards: {} };
+  if (!isObject(value)) return emptyLayout();
+  return { workspaces: parseWorkspacePositions(value.workspaces), cards: parseCardPositions(value.cards) };
+}
+
+function parseNamed(value: unknown, flat: boolean): Record<string, NamedLayout> {
   const out: Record<string, NamedLayout> = {};
   if (!isObject(value)) return out;
   for (const [name, e] of Object.entries(value)) {
     if (isLayoutName(name) && isObject(e) && Number.isFinite(e.savedAt) && isObject(e.layout)) {
-      out[name] = { savedAt: e.savedAt as number, layout: parseLayout(e.layout) };
+      out[name] = { savedAt: e.savedAt as number, layout: parseLayout(e.layout, flat) };
     }
   }
   return out;
@@ -181,24 +211,25 @@ function parseStore(value: unknown): ReadResult {
   if (!isObject(value)) return { store: emptyStore(), fileVersion: LAYOUT_VERSION };
   // v1 files from before named layouts existed hold just the current layout.
   if (!("current" in value) && !("version" in value)) {
-    return { store: { ...emptyStore(), current: parseLayout(value) }, fileVersion: 1 };
+    return { store: { ...emptyStore(), current: parseLayout(value, true) }, fileVersion: 1 };
   }
+  const fileVersion = Number.isFinite(value.version) ? (value.version as number) : 1;
+  const flat = fileVersion < 3;
+  const layouts = (list: unknown[]) => list.filter(isObject).map((l) => parseLayout(l, flat));
   return {
     store: {
-      version: 2,
-      current: parseLayout(value.current),
-      named: parseNamed(value.named),
+      version: 3,
+      current: parseLayout(value.current, flat),
+      named: parseNamed(value.named, flat),
       workspaces: parseRecord(value.workspaces, parseWorkspaceMeta),
       groups: parseRecord(value.groups, parseGroupMeta),
       notes: parseList(value.notes, parseNote),
       links: parseList(value.links, parseLink),
-      history: Array.isArray(value.history) ? value.history.filter(isObject).map(parseLayout) : [],
+      history: Array.isArray(value.history) ? layouts(value.history) : [],
       // Left out when empty, so files written before redo existed read back unchanged.
-      ...(Array.isArray(value.future) && value.future.length > 0
-        ? { future: value.future.filter(isObject).map(parseLayout) }
-        : {}),
+      ...(Array.isArray(value.future) && value.future.length > 0 ? { future: layouts(value.future) } : {}),
     },
-    fileVersion: Number.isFinite(value.version) ? (value.version as number) : 1,
+    fileVersion,
   };
 }
 
@@ -255,8 +286,10 @@ export function pushHistory(store: LayoutStore, layout: SavedLayout, limit = HIS
   if (store.history.length > limit) store.history.splice(0, store.history.length - limit);
 }
 
-/** True when two layouts place the same workspaces at the same spots, in or out of their boxes. */
-export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
+function samePositions<P extends { x: number; y: number; detached?: boolean }>(
+  a: Record<string, P>,
+  b: Record<string, P>,
+): boolean {
   const ids = Object.keys(a);
   if (ids.length !== Object.keys(b).length) return false;
   return ids.every((id) => {
@@ -264,6 +297,14 @@ export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
     const q = b[id];
     return q !== undefined && p.x === q.x && p.y === q.y && !!p.detached === !!q.detached;
   });
+}
+
+/**
+ * True when two layouts place the same workspaces at the same spots, in or out of their boxes,
+ * and the same cards at the same spots in their tabs.
+ */
+export function sameLayout(a: SavedLayout, b: SavedLayout): boolean {
+  return samePositions(a.workspaces, b.workspaces) && samePositions(a.cards, b.cards);
 }
 
 /**

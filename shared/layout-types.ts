@@ -1,7 +1,20 @@
 // Shape of layout.json, shared by the server (which persists it) and the web UI.
 
 /** Canvas position per workspace id. `detached` workspaces sit outside their repo group. */
-export type SavedLayout = Record<string, { x: number; y: number; detached?: boolean }>;
+export type WorkspacePositions = Record<string, { x: number; y: number; detached?: boolean }>;
+
+/** Agent card position relative to its tab, per herdr pane id. Only the agent-panes view uses them. */
+export type CardPositions = Record<string, { x: number; y: number }>;
+
+/** An arrangement: what `current`, named layouts, and undo history each hold. Empty means automatic. */
+export interface SavedLayout {
+  workspaces: WorkspacePositions;
+  cards: CardPositions;
+}
+
+export function emptyLayout(): SavedLayout {
+  return { workspaces: {}, cards: {} };
+}
 
 export interface NamedLayout {
   /** Epoch milliseconds. */
@@ -56,7 +69,7 @@ export interface Link {
 }
 
 export interface LayoutStore {
-  version: 2;
+  version: 3;
   /** The layout in use. */
   current: SavedLayout;
   /** Layouts the user saved by name to restore later. */

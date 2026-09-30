@@ -162,7 +162,7 @@ test("dragging saves the layout, and layouts save, reset, and restore", async (p
   await page.waitForTimeout(400);
   assert(actions().length === 0, "a drag must not focus anything");
   const saved = JSON.parse(readFileSync(layoutFile, "utf8"));
-  assert(Object.keys(saved.current).length > 0, "a drag should save positions");
+  assert(Object.keys(saved.current.workspaces).length > 0, "a drag should save positions");
   await page.getByRole("button", { name: "Layouts" }).click();
   await page.getByPlaceholder("Layout name").fill("e2e");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -170,7 +170,10 @@ test("dragging saves the layout, and layouts save, reset, and restore", async (p
   await page.getByRole("button", { name: "Reset to automatic layout" }).click();
   await page.waitForTimeout(400);
   const store = JSON.parse(readFileSync(layoutFile, "utf8"));
-  assert(Object.keys(store.current).length === 0, "reset should clear the current layout");
+  assert(
+    Object.keys(store.current.workspaces).length === 0 && Object.keys(store.current.cards).length === 0,
+    "reset should clear the current layout",
+  );
   assert(store.named.e2e && store.named["Previous layout"], "save and reset should both store named layouts");
 });
 

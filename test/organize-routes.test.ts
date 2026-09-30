@@ -137,27 +137,43 @@ test("rejects bad notes", async (t) => {
 
 test("PUT /api/layout records history, and undo and redo step through it", async (t) => {
   const { call, store } = await serve(t);
-  const a = { w1: { x: 0, y: 0 } };
-  const b = { w1: { x: 50, y: 0 } };
-  const c = { w1: { x: 50, y: 0, detached: true } };
+  const empty = { workspaces: {}, cards: {} };
+  const a = { workspaces: { w1: { x: 0, y: 0 } }, cards: {} };
+  const b = { workspaces: { w1: { x: 50, y: 0 } }, cards: {} };
+  const c = { workspaces: { w1: { x: 50, y: 0, detached: true } }, cards: {} };
   for (const layout of [a, b, b, c]) await call("PUT", "/api/layout", layout);
   // The repeated b changed nothing, so it isn't an undo step.
-  assert.deepEqual((await store()).history, [{}, a, b]);
+  assert.deepEqual((await store()).history, [empty, a, b]);
 
   const undone = await call("POST", "/api/layout/undo");
   assert.deepEqual(undone, { status: 200, body: { layout: b, undo: 2, redo: 1 } });
   assert.deepEqual((await call("GET", "/api/layout")).body, b);
   await call("POST", "/api/layout/undo");
   await call("POST", "/api/layout/undo");
-  assert.deepEqual((await call("GET", "/api/layout")).body, {});
-  const empty = await call("POST", "/api/layout/undo");
-  assert.equal(empty.status, 409);
-  assert.equal(empty.body.redo, 3);
+  assert.deepEqual((await call("GET", "/api/layout")).body, empty);
+  const none = await call("POST", "/api/layout/undo");
+  assert.equal(none.status, 409);
+  assert.equal(none.body.redo, 3);
 
   assert.deepEqual((await call("POST", "/api/layout/redo")).body.layout, a);
   assert.deepEqual((await call("POST", "/api/layout/redo")).body.layout, b);
   // A new change after undoing drops what was left to redo.
-  await call("PUT", "/api/layout", { w1: { x: 9, y: 9 } });
+  await call("PUT", "/api/layout", { workspaces: { w1: { x: 9, y: 9 } }, cards: {} });
   assert.equal((await call("POST", "/api/layout/redo")).status, 409);
   assert.equal((await store()).future, undefined);
+});
+
+test("PUT /api/layout saves card positions, undoes them, and refuses a flat layout", async (t) => {
+  const { call } = await serve(t);
+  const moved = { workspaces: {}, cards: { "w2:p4": { x: 282, y: 24 } } };
+  assert.equal((await call("PUT", "/api/layout", { w1: { x: 0, y: 0 } })).status, 400);
+  assert.equal((await call("PUT", "/api/layout", { workspaces: {}, cards: { "w2:p4": { x: 1 } } })).status, 400);
+  await call("PUT", "/api/layout", moved);
+  assert.deepEqual((await call("GET", "/api/layout")).body, moved);
+  await call("PUT", "/api/layouts/wide", moved);
+  assert.deepEqual((await call("GET", "/api/layouts")).body.wide.layout, moved);
+  // Reset sends the empty layout, which clears the cards and can be undone.
+  await call("PUT", "/api/layout", { workspaces: {}, cards: {} });
+  assert.deepEqual((await call("GET", "/api/layout")).body.cards, {});
+  assert.deepEqual((await call("POST", "/api/layout/undo")).body.layout, moved);
 });
