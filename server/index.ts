@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
 import { parseArgs } from "node:util";
+import { createAutomation } from "./automation.ts";
 import type { Context } from "./context.ts";
 import type { HerdrOptions } from "./herdr.ts";
 import { serveStatic } from "./http.ts";
 import { defaultLayoutPath } from "./layout-store.ts";
 import { createPoller } from "./poller.ts";
+import { defaultQueuePath } from "./queue.ts";
 import { createRouter } from "./router.ts";
 import { fleetRoutes } from "./routes/fleet.ts";
 import { historyRoutes } from "./routes/history.ts";
@@ -12,6 +14,7 @@ import { inputRoutes } from "./routes/input.ts";
 import { layoutRoutes } from "./routes/layout.ts";
 import { metaRoutes } from "./routes/meta.ts";
 import { notesRoutes } from "./routes/notes.ts";
+import { queueRoutes } from "./routes/queue.ts";
 import { readRoutes } from "./routes/read.ts";
 import { renameRoutes } from "./routes/rename.ts";
 import { zoetropeRoutes } from "./routes/zoetrope.ts";
@@ -27,6 +30,7 @@ const { values: args } = parseArgs({
     activate: { type: "string", default: "Ghostty" },
     "no-activate": { type: "boolean", default: false },
     layout: { type: "string", default: defaultLayoutPath() },
+    queue: { type: "string" },
     "probe-node": { type: "string" },
     "no-probe": { type: "boolean", default: false },
   },
@@ -34,7 +38,7 @@ const { values: args } = parseArgs({
 
 const herdr: HerdrOptions = { ssh: args.ssh, bin: args.herdr! };
 const intervalMs = Number(args.interval);
-const ctx: Context = {
+const base = {
   herdr,
   layoutPath: args.layout!,
   activate: args["no-activate"] ? undefined : args.activate,
@@ -46,6 +50,8 @@ const ctx: Context = {
     args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath), herdr: args.herdr },
   ),
 };
+const queuePath = args.queue ?? defaultQueuePath(base.layoutPath);
+const ctx: Context = { ...base, automation: await createAutomation({ ...base, queuePath }) };
 
 const routes = [
   ...fleetRoutes(ctx),
@@ -54,6 +60,7 @@ const routes = [
   ...historyRoutes(ctx),
   ...metaRoutes(ctx),
   ...notesRoutes(ctx),
+  ...queueRoutes(ctx),
   ...readRoutes(ctx),
   ...renameRoutes(ctx),
   ...zoetropeRoutes(ctx),
@@ -64,4 +71,5 @@ server.listen(Number(args.port), args.host, () => {
   const source = herdr.ssh ? `ssh ${herdr.ssh}` : "local herdr";
   console.log(`herdr-map on http://${args.host}:${args.port} (${source}, every ${intervalMs}ms)`);
   void ctx.poller.poll();
+  ctx.automation.start();
 });

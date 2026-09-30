@@ -1,3 +1,4 @@
+import type { Automation } from "./automation.ts";
 import type { HerdrOptions } from "./herdr.ts";
 import type { Poller } from "./poller.ts";
 
@@ -8,4 +9,6 @@ export interface Context {
   /** Terminal app to bring to the front after a focus. Unset with --no-activate. */
   activate?: string;
   poller: Poller;
+  /** The prompt queue. */
+  automation: Automation;
 }

@@ -10,6 +10,7 @@ import { StarButton } from "./stars.tsx";
 import { ZoetropeButton } from "./zoetrope.tsx";
 import { agentAge, formatAge } from "./format.ts";
 import { ReplyBox } from "./ReplyBox.tsx";
+import { AgentAutomation } from "./AgentAutomation.tsx";
 import { hasDialogHint } from "../shared/dialog.ts";
 import type { Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
@@ -177,6 +178,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
       </div>
 
       {agent && <ReplyBox located={located} screen={screen} onSent={afterSend} />}
+      {agent && <AgentAutomation located={located} />}
 
       {!pinned && (
         <p className="text-xs text-muted-foreground">

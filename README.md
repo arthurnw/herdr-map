@@ -86,10 +86,18 @@ Logs go to `~/Library/Logs/herdr-map.log`. The first click that brings your term
 | `--activate APP` | `Ghostty` | macOS app to bring forward after a focus. |
 | `--no-activate` | off | Skip app activation. |
 | `--layout FILE` | `~/.config/herdr-map/layout.json` | Where the current and named layouts are saved. |
+| `--queue FILE` | `queue.json` next to the layout file | Where the prompt queue, its recent deliveries, and the pause are saved. |
 | `--probe-node BIN` | `node` on the SSH host; this server's Node locally | Node.js 23.6 or newer that runs the context and cost reader where the agents are. |
 | `--no-probe` | off | Don't read agent transcripts; cards show no context or cost. |
 
 Status ages start when herdr-map first sees a status. Ages that began before the server started are lower bounds and show a trailing `+`.
+
+## Automation
+
+herdr-map sends nothing to an agent on its own. A prompt you queue waits in the queue until its agent is free.
+
+- **The queue** (toolbar **Queue**, with a count of waiting prompts) holds each prompt until its agent is idle or done, then sends it with `herdr agent prompt`. It never sends to a working or blocked agent, sends one prompt per agent at a time, oldest first, and waits at least 5 seconds and one fresh snapshot before that agent's next one. A failed send is retried after 5, 20, and 60 seconds, then marked failed with herdr's error; **Retry** starts over. **Send now** moves a prompt to the front for its agent and lets it through the pause, but still waits for the agent to be idle. A prompt whose pane is gone stays listed as "Agent gone" for an hour. The popover also lists the last 50 prompts sent, with time and target. **Send when idle**, under **Automation** in an agent's preview, queues a prompt by hand. The queue is saved to `--queue` and survives restarts.
+- **Pause**: **Automation on** in the toolbar (or **Pause automation** in the ⌘K palette) turns into an amber **Automation paused**. While paused, nothing leaves the queue except by **Send now**. The pause is saved.
 
 ## Lineage
 

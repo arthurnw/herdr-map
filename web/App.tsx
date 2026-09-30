@@ -52,6 +52,7 @@ import { useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
+import { AutomationProvider, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 
@@ -157,6 +158,12 @@ function FleetMap() {
   const flowHandlers = notes.withNotes({ onNodesChange, onNodeDragStart, onNodeDragStop });
   const flowNodes = useMemo(() => [...boxSelect.nodes, ...notes.nodes], [boxSelect.nodes, notes.nodes]);
 
+  const automation = useAutomationState();
+  const automationValue = useMemo(
+    () => ({ state: automation.state, actions: automation.actions, panes }),
+    [automation.state, automation.actions, panes],
+  );
+
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
 
   useEffect(() => {
@@ -236,6 +243,7 @@ function FleetMap() {
     <NowContext.Provider value={now}>
       <WorkspaceActions.Provider value={workspaceActions}>
       <NoteActionsProvider value={notes.actions}>
+      <AutomationProvider value={automationValue}>
       <div className="flex h-full flex-col">
         <Toolbar
           fleet={fleet}
@@ -254,6 +262,7 @@ function FleetMap() {
           layoutMenu={layoutMenu}
           alerts={alerts}
           onAlerts={setAlerts}
+          now={now}
         />
         <CommandPalette
           fleet={fleet}
@@ -270,6 +279,10 @@ function FleetMap() {
             { value: "note:new", label: "New note", run: notes.createInView },
             { value: "workspaces:collapse-all", label: "Collapse all workspaces", run: () => collapseAll(true) },
             { value: "workspaces:expand-all", label: "Expand all workspaces", run: () => collapseAll(false) },
+            automation.state?.paused
+              ? { value: "automation:resume", label: "Resume automation", run: () => void automation.actions.setPaused(false) }
+              : { value: "automation:pause", label: "Pause automation", run: () => void automation.actions.setPaused(true) },
+            { value: "automation:queue", label: "Show the queue", run: () => window.dispatchEvent(new Event(OPEN_QUEUE_EVENT)) },
           ]}
         />
         {error && (
@@ -352,6 +365,7 @@ function FleetMap() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      </AutomationProvider>
       </NoteActionsProvider>
       </WorkspaceActions.Provider>
     </NowContext.Provider>

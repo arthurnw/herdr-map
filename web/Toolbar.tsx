@@ -24,6 +24,7 @@ import { notificationPermission, playChime, type AlertSettings } from "./alerts.
 import { PaletteButton } from "./CommandPalette.tsx";
 import { useShortcut } from "./hooks/useShortcut.ts";
 import { LayoutMenu, type LayoutMenuProps } from "./LayoutMenu.tsx";
+import { AutomationControls } from "./queue.tsx";
 import { StatusDot } from "./status.tsx";
 
 interface ToolbarProps {
@@ -44,6 +45,7 @@ interface ToolbarProps {
   layoutMenu: LayoutMenuProps;
   alerts: AlertSettings;
   onAlerts: (patch: Partial<AlertSettings>) => void;
+  now: number;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -57,6 +59,7 @@ export function Toolbar(props: ToolbarProps) {
       <StatusFilter fleet={props.fleet} hidden={props.hiddenStatuses} onToggle={props.onToggleStatus} />
       <SearchBox query={props.query} onQuery={props.onQuery} onEnter={props.onSearchEnter} />
       <div className="ml-auto flex items-center gap-1.5">
+        <AutomationControls now={props.now} />
         <PaletteButton />
         <ViewMenu {...props} />
         <LayoutMenu {...props.layoutMenu} />

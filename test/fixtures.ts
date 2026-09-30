@@ -1,4 +1,4 @@
-import type { Snapshot } from "../shared/model.ts";
+import type { AgentStatus, Fleet, FleetPane, Snapshot } from "../shared/model.ts";
 
 // A two-repo session: one agent tab with a hunk split, one spawned child agent,
 // and a shell-only workspace.
@@ -70,6 +70,30 @@ export function snapshotFixture(): Snapshot {
         panes: [
           { pane_id: "w1:p1", rect: { x: 0, y: 0, width: 120, height: 50 } },
           { pane_id: "w1:p2", rect: { x: 120, y: 0, width: 80, height: 50 } },
+        ],
+      },
+    ],
+  };
+}
+
+/** A one-workspace fleet with an agent per entry, keyed by pane id; `null` makes a pane without an agent. */
+export function fleetWith(statuses: Record<string, AgentStatus | null>): Fleet {
+  const panes: FleetPane[] = Object.entries(statuses).map(([id, status]) => ({
+    id,
+    rect: { x: 0, y: 0, w: 1, h: 1 },
+    title: "agent",
+    focused: false,
+    ...(status && { agent: { kind: "claude", name: `agent-${id.replace(":", "-")}`, status, since: 0, sinceApprox: false } }),
+  }));
+  return {
+    version: "0.9.1",
+    counts: { working: 0, blocked: 0, done: 0, idle: 0, unknown: 0 },
+    groups: [
+      {
+        key: "__other__",
+        label: "Other workspaces",
+        workspaces: [
+          { id: "w1", label: "api", number: 1, focused: false, linkedWorktree: false, agentCount: panes.length, tabs: [{ id: "w1:t1", label: "1", focused: false, aspect: 2, panes }] },
         ],
       },
     ],
