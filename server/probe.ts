@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fleetPanes, type AgentStatus, type AgentUsage, type Fleet, type FleetAgent, type Snapshot } from "../shared/model.ts";
+import type { MemoryInput, MemoryOutput } from "../probe/memory.ts";
 import type { ReplyOutput, ReplyRequest } from "../probe/reply.ts";
 import type { Activity, Subagent, TranscriptOutput, TranscriptRequest } from "../probe/subagents.ts";
 import type { Cursor, ProbeInput, ProbeOutput, ProbeRef, Usage } from "../probe/usage.ts";
@@ -40,7 +41,7 @@ export function bundleProbe(sources: string[]): string {
   return [...imports, ...bodies].join("\n");
 }
 
-const PROBE_SOURCE = bundleProbe(["../probe/usage.ts", "../probe/subagents.ts", "../probe/reply.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")));
+const PROBE_SOURCE = bundleProbe(["../probe/usage.ts", "../probe/subagents.ts", "../probe/reply.ts", "../probe/memory.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")));
 
 /** The probe reads its script from stdin, so nothing has to be installed on the remote. */
 export function probeCommand(opts: ProbeOptions): [string, string[]] {
@@ -60,6 +61,11 @@ export function transcriptScript(req: TranscriptRequest): string {
 /** The probe source with a call that prints the final reply of an agent's latest turn. */
 export function replyScript(req: ReplyRequest): string {
   return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(finalReply(${JSON.stringify(req)})));\n`;
+}
+
+/** The probe source with a call that prints the memory use of agent panes' process trees. */
+export function memoryScript(input: MemoryInput): string {
+  return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(memoryUse(${JSON.stringify(input)})));\n`;
 }
 
 function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: number): Promise<T> {
@@ -106,6 +112,10 @@ export function readTranscript(opts: ProbeOptions, req: TranscriptRequest, timeo
 
 export function readReply(opts: ProbeOptions, req: ReplyRequest, timeoutMs = 10_000): Promise<ReplyOutput> {
   return runScript(opts, replyScript(req), timeoutMs);
+}
+
+export function readMemory(opts: ProbeOptions, input: MemoryInput, timeoutMs = 20_000): Promise<MemoryOutput> {
+  return runScript(opts, memoryScript(input), timeoutMs);
 }
 
 /** An agent pane whose session herdr knows. */

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { PROCESS_INFO, SCREENS, setStatus, snapshot } from "./fixture.mjs";
+import { PROCESS_INFO, PS_OUTPUT, SCREENS, setStatus, snapshot } from "./fixture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -30,6 +30,9 @@ function freePort() {
 const dir = mkdtempSync(join(tmpdir(), "herdr-map-e2e-"));
 const stub = join(here, "herdr-stub.sh");
 chmodSync(stub, 0o755);
+const psStub = join(here, "ps-stub.sh");
+chmodSync(psStub, 0o755);
+writeFileSync(join(dir, "ps.txt"), `${PS_OUTPUT}\n`);
 mkdirSync(join(dir, "screens"));
 for (const [id, text] of Object.entries(SCREENS)) writeFileSync(join(dir, "screens", `${id.replace(":", "_")}.txt`), text);
 mkdirSync(join(dir, "process-info"));
@@ -47,7 +50,7 @@ const base = `http://127.0.0.1:${port}`;
 const server = spawn(
   process.execPath,
   [join(root, "server/index.ts"), "--port", String(port), "--herdr", stub, "--no-activate", "--layout", layoutFile, "--interval", "300"],
-  { env: { ...process.env, HERDR_STUB_DIR: dir }, stdio: ["ignore", "pipe", "pipe"] },
+  { env: { ...process.env, HERDR_STUB_DIR: dir, HERDR_MAP_PS: psStub }, stdio: ["ignore", "pipe", "pipe"] },
 );
 let serverLog = "";
 server.stdout.on("data", (d) => (serverLog += d));

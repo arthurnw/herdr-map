@@ -3,6 +3,7 @@ import { buildFleet, StatusClock, type Fleet, type Snapshot } from "../shared/mo
 import { snapshot, type HerdrOptions } from "./herdr.ts";
 import type { ReplyOutput } from "../probe/reply.ts";
 import type { TranscriptOutput } from "../probe/subagents.ts";
+import { agentPaneIds, createMemoryWatcher, markMemory } from "./memory.ts";
 import { createUsageWatcher, markActivity, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
 import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
 
@@ -34,6 +35,8 @@ const STUCK_POLLS = 10;
 
 // Transcript reads run on their own slower loop; see server/probe.ts.
 const PROBE_INTERVAL_MS = 5000;
+// Memory figures move slowly, and each run asks herdr once per agent pane.
+const MEMORY_INTERVAL_MS = 15_000;
 
 export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: number, probe?: ProbeOptions): Poller {
   const clock = new StatusClock();
@@ -63,6 +66,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
       const fleet = buildFleet(snap, clock.observe(snap.agents, now, snap.focused_pane_id));
       state = { fleet: markStuck(fleet, watcher.stuck()), updatedAt: now };
       if (usage) state = { ...state, fleet: markActivity(markUsage(state.fleet!, usage.usage()), usage.activity()), probeError: usage.error() };
+      if (memory) state = { ...state, fleet: markMemory(state.fleet!, memory.memory()) };
     } catch (err) {
       state = { ...state, error: (err as Error).message };
     }
@@ -93,6 +97,11 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     probe &&
     createUsageWatcher({ probe, intervalMs: PROBE_INTERVAL_MS, refs: () => sessionRefs(snap, state.fleet), onChange: () => void poll() });
   usage?.start();
+
+  const memory =
+    probe &&
+    createMemoryWatcher({ probe, intervalMs: MEMORY_INTERVAL_MS, panes: () => agentPaneIds(state.fleet), onChange: () => void poll() });
+  memory?.start();
 
   // SSE proxies and browsers drop idle streams; a comment line keeps them open.
   setInterval(() => {

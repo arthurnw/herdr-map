@@ -89,6 +89,23 @@ export interface FleetAgent {
   reviews?: { running: number; done: number };
   /** Progress through the agent's own todo list. */
   tasks?: TaskProgress;
+  /** Resident memory of the pane's process tree, measured by the memory probe. */
+  memory?: AgentMemory;
+}
+
+export interface AgentMemory {
+  bytes: number;
+  processes: number;
+  /** The heaviest commands in the tree by basename, heaviest first. */
+  top: { name: string; bytes: number; count: number }[];
+}
+
+/** Memory across the agent panes the probe measured, each process counted once. */
+export interface FleetMemory {
+  bytes: number;
+  agents: number;
+  /** Physical memory of the machine the agents run on. */
+  machineBytes?: number;
 }
 
 export interface SubagentInfo {
@@ -174,6 +191,7 @@ export interface Fleet {
   groups: FleetGroup[];
   counts: Record<AgentStatus, number>;
   focusedPaneId?: string;
+  memory?: FleetMemory;
 }
 
 export interface StatusMark {

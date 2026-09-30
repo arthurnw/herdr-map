@@ -114,6 +114,7 @@ export interface ProbeInput {
 export interface PaneProcess {
   pid: number;
   argv0?: string;
+  argv?: string[];
   name?: string;
 }
 
@@ -286,18 +287,38 @@ export function herdrCaller(bin: string): HerdrCall {
   };
 }
 
-/** Reads a pane's foreground processes with `herdr pane process-info`, which changes nothing. */
-export function herdrProcesses(bin: string, call = herdrCaller(bin)): (pane: string) => PaneProcess[] | undefined {
+/** A pane's processes as `herdr pane process-info` reports them. */
+export interface ProcessInfo {
+  /** The shell herdr started in the pane. */
+  shellPid?: number;
+  foreground: PaneProcess[];
+}
+
+const validPid = (pid: unknown): pid is number => Number.isSafeInteger(pid) && (pid as number) > 0;
+
+export function parseProcessInfo(out: string): ProcessInfo | undefined {
+  try {
+    const info = JSON.parse(out)?.result?.process_info;
+    const ps = info?.foreground_processes;
+    if (!Array.isArray(ps)) return undefined;
+    return { ...(validPid(info.shell_pid) && { shellPid: info.shell_pid }), foreground: ps.filter((p) => validPid(p?.pid)) };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Reads a pane's shell and foreground processes with `herdr pane process-info`, which changes nothing. */
+export function herdrProcessInfo(bin: string, call = herdrCaller(bin)): (pane: string) => ProcessInfo | undefined {
   return (pane) => {
     const out = PANE_ID.test(pane) ? call(["pane", "process-info", "--pane", pane]) : undefined;
-    if (out === undefined) return undefined;
-    try {
-      const ps = JSON.parse(out)?.result?.process_info?.foreground_processes;
-      return Array.isArray(ps) ? ps.filter((p) => Number.isSafeInteger(p?.pid) && p.pid > 0) : undefined;
-    } catch {
-      return undefined;
-    }
+    return out === undefined ? undefined : parseProcessInfo(out);
   };
+}
+
+/** Reads a pane's foreground processes with `herdr pane process-info`, which changes nothing. */
+export function herdrProcesses(bin: string, call = herdrCaller(bin)): (pane: string) => PaneProcess[] | undefined {
+  const info = herdrProcessInfo(bin, call);
+  return (pane) => info(pane)?.foreground;
 }
 
 /** Reads a pane's visible screen with `herdr pane read`, which changes nothing. */

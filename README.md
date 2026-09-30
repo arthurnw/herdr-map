@@ -91,7 +91,7 @@ Logs go to `~/Library/Logs/herdr-map.log`. The first click that brings your term
 | `--layout FILE` | `~/.config/herdr-map/layout.json` | Where the current and named layouts are saved. |
 | `--queue FILE` | `queue.json` next to the layout file | Where the prompt queue, its recent deliveries, the pause, and scheduled prompts are saved. |
 | `--probe-node BIN` | `node` on the SSH host; this server's Node locally | Node.js 23.6 or newer that runs the context and cost reader where the agents are. |
-| `--no-probe` | off | Don't read agent transcripts; cards show no context, cost, subagents, or tasks. |
+| `--no-probe` | off | Don't read agent transcripts or measure memory; cards show no context, cost, subagents, tasks, or memory. |
 
 Status ages start when herdr-map first sees a status. Ages that began before the server started are lower bounds and show a trailing `+`.
 
@@ -139,9 +139,13 @@ The same reader finds each agent's subagents and todo list in the transcripts it
 - **What's read.** Subagent transcripts are followed from saved offsets, like the agents' own, with whatever is left of the 16 MB per run. An agent is read while one of its subagents runs, even when the agent itself is idle, since background subagents outlive their parent's turn. A subagent that never reports finishing is dropped after 30 minutes without writing, and a finished one 30 minutes after it ended.
 - **Transcripts** for the sidebar come from `GET /api/subagent?pane=<pane>&id=<subagent>`, which asks the reader for the last 256 KB of a transcript it reported, as text. The browser never sees file paths, and other files can't be requested.
 
+## Memory
+
+- **Memory per agent** is measured every 15 seconds, on its own loop, by `probe/memory.ts`, sent the same way as the transcript reader. It takes each agent pane's shell from herdr (read-only `pane process-info`) and one `ps -A -o pid=,ppid=,rss=,comm=` call, and sums resident memory over the shell and everything under it, MCP servers included, counting each process once. Cards show the figure (amber above 2 GB), the preview lists the heaviest commands, and the toolbar shows the total across agents and its share of the machine's memory, with the five heaviest agents in its tooltip.
+
 ## Development
 
-`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, key, rename, and plugin action it would have sent, and refuses anything else. It never reaches a real herdr session. The usage probe reads synthetic transcripts from `test/e2e/transcripts/` instead of your own.
+`npm run test:e2e` runs herdr-map against `test/e2e/herdr-stub.sh`, which serves a made-up snapshot from `test/e2e/fixture.mjs`, records every focus, prompt, key, rename, and plugin action it would have sent, and refuses anything else. It never reaches a real herdr session. The usage probe reads synthetic transcripts from `test/e2e/transcripts/` instead of your own. The memory probe's `ps` is `test/e2e/ps-stub.sh` (set with `HERDR_MAP_PS`), which prints a canned process table.
 
 The UI uses [shadcn/ui](https://ui.shadcn.com) components (in `web/components/ui`, added with `npx shadcn@latest add <name>`) on Tailwind CSS v4. Canvas node styles and the zoom-adaptive text rules live in `web/canvas.css`.
 

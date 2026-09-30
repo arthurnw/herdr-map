@@ -35,3 +35,12 @@
 }
 .zoom-far .usage-bar > span,
 .zoom-far .usage-bar.high > span { background: #fff; }
+
+/* Memory figure on agent cards, from the memory probe. */
+.mem-chip {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.mem-chip.high { color: var(--stuck); font-weight: 600; }
+.zoom-mid .mem-chip,
+.zoom-far .mem-chip { display: none; }

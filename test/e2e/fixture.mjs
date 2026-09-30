@@ -176,7 +176,38 @@ export const PROCESS_INFO = {
       },
     },
   },
+  ...processInfo("w2:p3", 4300, "pi"),
+  ...processInfo("w2:p4", 4400, "codex"),
+  ...processInfo("w5:p9", 4900, "pi"),
 };
+
+function processInfo(pane, shell, argv0) {
+  const fg = { pid: shell + 1, argv0, argv: [argv0], name: argv0, cwd: `/repos/${pane.split(":")[0]}` };
+  const process_info = { pane_id: pane, shell_pid: shell, foreground_process_group_id: shell + 1, foreground_processes: [fg] };
+  return { [pane]: { id: "cli:pane:process_info", result: { type: "pane_process_info", process_info } } };
+}
+
+// What the memory probe's `ps` prints (test/e2e/ps-stub.sh): pid, parent, RSS in KiB, command.
+// It matches PROCESS_INFO; w1:p1 and w3:p5 have no process info, so they show no memory.
+const MIB = 1024;
+export const PS_OUTPUT = [
+  [1, 0, 12, "/sbin/launchd"],
+  // stylist (w4:p7): Claude Code with two MCP servers, over the 2 GB mark.
+  [4700, 900, 6, "-zsh"],
+  [4701, 4700, 1400, "/opt/homebrew/bin/claude"],
+  [4702, 4701, 450, "node"],
+  [4703, 4701, 350, "node"],
+  [4300, 900, 5, "-zsh"],
+  [4301, 4300, 260, "pi"],
+  [4400, 900, 5, "-zsh"],
+  [4401, 4400, 150, "codex"],
+  [4402, 4401, 40, "codex"],
+  [4900, 900, 5, "-zsh"],
+  [4901, 4900, 330, "pi"],
+  [900, 1, 80, "herdr"],
+]
+  .map(([pid, ppid, mb, comm]) => `${String(pid).padStart(5)} ${String(ppid).padStart(5)} ${String(mb * MIB).padStart(8)} ${comm}`)
+  .join("\n");
 
 // Screens returned by `pane read`, keyed by pane ID. Others get a generic screen.
 export const SCREENS = {
