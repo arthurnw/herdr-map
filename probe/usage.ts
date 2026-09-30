@@ -1,8 +1,8 @@
 // Reads agent transcripts on the machine where the agents run and returns each agent's
 // context use and recorded cost, and its subagents and task progress (probe/subagents.ts).
-// herdr-map joins the two files and pipes them to `node --input-type=module-typescript -`
-// (locally, or over SSH) with a call to `probe()` appended, so they import only Node
-// built-ins and each other.
+// herdr-map joins the probe files and pipes them to `node --input-type=module-typescript -`
+// (locally, or over SSH) with a call to `probe()` (or another entry point) appended, so they
+// import only Node built-ins and each other.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
@@ -433,20 +433,24 @@ function shownText(v: unknown, out: string[]) {
   else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (!HIDDEN_FIELDS.has(k)) shownText(x, out);
 }
 
-/** The text of the main-thread messages in the last `bytes` of a Claude Code transcript, reduced by `screenText`. */
-export function transcriptText(path: string, bytes = SCREEN_TAIL_BYTES): string {
+/** The last `bytes` of a file as text, from the first line start. `truncated` is set when the file is longer. */
+export function tailText(path: string, bytes: number): { text: string; truncated: boolean } {
   const fd = openSync(path, "r");
-  let text: string;
   try {
     const size = fstatSync(fd).size;
     const n = Math.min(size, bytes);
     const buf = Buffer.alloc(n);
     readSync(fd, buf, 0, n, size - n);
-    text = buf.toString("utf8");
-    if (n < size) text = text.slice(text.indexOf("\n") + 1);
+    const text = buf.toString("utf8");
+    return n < size ? { text: text.slice(text.indexOf("\n") + 1), truncated: true } : { text, truncated: false };
   } finally {
     closeSync(fd);
   }
+}
+
+/** The text of the main-thread messages in the last `bytes` of a Claude Code transcript, reduced by `screenText`. */
+export function transcriptText(path: string, bytes = SCREEN_TAIL_BYTES): string {
+  const { text } = tailText(path, bytes);
   const out: string[] = [];
   for (const line of text.split("\n")) {
     if (!line.includes('"message"')) continue;
@@ -779,19 +783,17 @@ export function summarize(kind: string, tally: Tally, piWindow: () => ReturnType
   };
 }
 
-export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
-  const roots = { ...defaultRoots(), ...input.roots };
-  const maxBytes = input.maxBytes ?? DEFAULT_MAX_BYTES;
-  const tailBytes = input.tailBytes ?? DEFAULT_TAIL_BYTES;
-  const now = (deps.now ?? Date.now)();
+/**
+ * Each ref's transcript: its cursor's, or the one its session names, or for a Claude Code pane
+ * the one its process is on or its screen matches. A cursor with an empty path found nothing.
+ */
+export function findCursors(input: ProbeInput, roots: Roots, now: number, deps: ProbeDeps = {}): { cursor?: Cursor; error?: string }[] {
   const bin = input.herdr ?? "herdr";
   let call: HerdrCall | undefined;
   let processes = deps.processes;
   const paneProcesses = (pane: string) => (processes ??= herdrProcesses(bin, (call ??= herdrCaller(bin))))(pane);
   let screen = deps.screen;
   const paneScreen = (pane: string) => (screen ??= herdrScreen(bin, (call ??= herdrCaller(bin))))(pane);
-  let pi: ReturnType<typeof piWindows> | undefined;
-  const piWindow = () => (pi ??= piWindows(roots.pi));
   const isClaude = (ref: ProbeRef) => ref.kind === "claude" && ref.sessionKind === "id";
 
   const found = input.refs.map((ref): { cursor?: Cursor; error?: string } => {
@@ -822,6 +824,17 @@ export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
       found[i].error = (err as Error).message;
     }
   });
+  return found;
+}
+
+export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
+  const roots = { ...defaultRoots(), ...input.roots };
+  const maxBytes = input.maxBytes ?? DEFAULT_MAX_BYTES;
+  const tailBytes = input.tailBytes ?? DEFAULT_TAIL_BYTES;
+  const now = (deps.now ?? Date.now)();
+  let pi: ReturnType<typeof piWindows> | undefined;
+  const piWindow = () => (pi ??= piWindows(roots.pi));
+  const found = findCursors(input, roots, now, deps);
 
   let bytesRead = 0;
   const results = input.refs.map((ref, i): ProbeResult => {

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { buildFleet, fleetPanes, StatusClock } from "../shared/model.ts";
+import type { ReplyRequest } from "../probe/reply.ts";
 import type { ProbeInput, ProbeOutput } from "../probe/usage.ts";
 import {
   bundleProbe,
@@ -16,6 +17,7 @@ import {
   probeScript,
   RECENT_MS,
   RETRY_MS,
+  readReply,
   readTranscript,
   runProbe,
   sessionRefs,
@@ -194,6 +196,43 @@ test("the joined probe reads a Claude subagent through stdin, and its transcript
   const s = out.results[0].subagents![0];
   assert.deepEqual([s.status, s.type, s.tokens, s.path], ["running", "Explore", 42, sub]);
   assert.deepEqual(await readTranscript({ node: process.execPath }, { path: sub, kind: "claude" }), { text: "Looking.", truncated: false });
+});
+
+test("the joined probe returns an agent's final reply through stdin", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "herdr-map-probe-"));
+  const path = join(dir, "pi.jsonl");
+  const msg = (role: string, text: string) => JSON.stringify({ type: "message", message: { role, content: [{ type: "text", text }] } });
+  writeFileSync(path, [msg("user", "Fix it."), msg("assistant", "Fixed.")].join("\n") + "\n");
+  const ref = { pane: "w1:p1", kind: "pi", sessionKind: "path", session: path };
+  assert.deepEqual(await readReply({ node: process.execPath }, { ref }), { text: "Fixed.", path });
+  assert.deepEqual(await readReply({ node: process.execPath }, { ref: { ...ref, session: "relative.jsonl" } }), { error: "session path is not absolute" });
+});
+
+test("the watcher asks for a reply from the transcript it last read, or has the probe find one", async () => {
+  const asked: ReplyRequest[] = [];
+  let cursorPath = "/t/s.jsonl";
+  const other = { ...ref("idle", 0), pane: "w2:p1", session: "s-other" };
+  const w = createUsageWatcher({
+    probe: { node: "node", herdr: "/usr/local/bin/herdr" },
+    intervalMs: 1000,
+    refs: () => [ref("done", Date.now()), other],
+    onChange: () => undefined,
+    run: async (input) => ({ results: input.refs.map((r) => ({ pane: r.pane, cursor: { path: r.pane === "w1:p1" ? cursorPath : "", offset: 0, tally: {} } })), bytesRead: 0 }),
+    reply: async (req) => (asked.push(req), { text: "Done.", path: req.path }),
+  });
+  assert.deepEqual(await w.reply("w9:p9"), { error: "herdr reports no session for this agent" });
+  assert.equal(asked.length, 0);
+  await w.reply("w1:p1");
+  assert.equal(asked[0].path, undefined, "nothing read yet: the probe looks the transcript up");
+  assert.deepEqual(asked[0].claimed, ["s-other"]);
+  assert.equal(asked[0].herdr, "/usr/local/bin/herdr");
+  await w.round();
+  assert.deepEqual(await w.reply("w1:p1"), { text: "Done.", path: "/t/s.jsonl" });
+  assert.equal(asked[1].path, "/t/s.jsonl");
+  assert.equal(asked[1].claimed, undefined);
+  assert.equal(asked[1].ref.cursor?.path, "/t/s.jsonl");
+  await w.reply("w2:p1");
+  assert.equal(asked[2].path, undefined, "a failed screen match leaves an empty path, looked up again");
 });
 
 test("markActivity sets subagents without their transcript paths", () => {

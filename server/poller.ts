@@ -1,6 +1,7 @@
 import type { ServerResponse } from "node:http";
 import { buildFleet, StatusClock, type Fleet, type Snapshot } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
+import type { ReplyOutput } from "../probe/reply.ts";
 import type { TranscriptOutput } from "../probe/subagents.ts";
 import { createUsageWatcher, markActivity, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
 import { createStuckWatcher, markStuck, workingPanes } from "./stuck.ts";
@@ -23,6 +24,8 @@ export interface Poller {
   markSeen(paneId: string): void;
   /** The end of a subagent's transcript, read by the probe. */
   subagentTranscript(paneId: string, subagentId: string): Promise<TranscriptOutput>;
+  /** The final reply of an agent's latest turn, read by the probe from its transcript. */
+  lastReply(paneId: string): Promise<ReplyOutput>;
 }
 
 // Screen reads for stuck detection cost a herdr call per working agent, so they run
@@ -102,5 +105,6 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     clients,
     markSeen: (paneId) => clock.markSeen(paneId),
     subagentTranscript: (paneId, id) => (usage ? usage.transcript(paneId, id) : Promise.reject(new Error("the usage probe is off"))),
+    lastReply: async (paneId) => (usage ? usage.reply(paneId) : { error: "the usage probe is off" }),
   };
 }

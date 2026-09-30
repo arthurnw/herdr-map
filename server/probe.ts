@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fleetPanes, type AgentStatus, type AgentUsage, type Fleet, type FleetAgent, type Snapshot } from "../shared/model.ts";
+import type { ReplyOutput, ReplyRequest } from "../probe/reply.ts";
 import type { Activity, Subagent, TranscriptOutput, TranscriptRequest } from "../probe/subagents.ts";
 import type { Cursor, ProbeInput, ProbeOutput, ProbeRef, Usage } from "../probe/usage.ts";
 import { commandFor } from "./herdr.ts";
@@ -39,7 +40,7 @@ export function bundleProbe(sources: string[]): string {
   return [...imports, ...bodies].join("\n");
 }
 
-const PROBE_SOURCE = bundleProbe(["../probe/usage.ts", "../probe/subagents.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")));
+const PROBE_SOURCE = bundleProbe(["../probe/usage.ts", "../probe/subagents.ts", "../probe/reply.ts"].map((f) => readFileSync(new URL(f, import.meta.url), "utf8")));
 
 /** The probe reads its script from stdin, so nothing has to be installed on the remote. */
 export function probeCommand(opts: ProbeOptions): [string, string[]] {
@@ -54,6 +55,11 @@ export function probeScript(input: ProbeInput): string {
 /** The probe source with a call that prints the end of a subagent's transcript as text. */
 export function transcriptScript(req: TranscriptRequest): string {
   return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(subagentTranscript(${JSON.stringify(req)})));\n`;
+}
+
+/** The probe source with a call that prints the final reply of an agent's latest turn. */
+export function replyScript(req: ReplyRequest): string {
+  return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(finalReply(${JSON.stringify(req)})));\n`;
 }
 
 function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: number): Promise<T> {
@@ -96,6 +102,10 @@ export function runProbe(opts: ProbeOptions, input: ProbeInput, timeoutMs = 20_0
 
 export function readTranscript(opts: ProbeOptions, req: TranscriptRequest, timeoutMs = 10_000): Promise<TranscriptOutput> {
   return runScript(opts, transcriptScript(req), timeoutMs);
+}
+
+export function readReply(opts: ProbeOptions, req: ReplyRequest, timeoutMs = 10_000): Promise<ReplyOutput> {
+  return runScript(opts, replyScript(req), timeoutMs);
 }
 
 /** An agent pane whose session herdr knows. */
@@ -192,6 +202,7 @@ export interface UsageWatcherOptions {
   onChange: () => void;
   run?: (input: ProbeInput) => Promise<ProbeOutput>;
   read?: (req: TranscriptRequest) => Promise<TranscriptOutput>;
+  reply?: (req: ReplyRequest) => Promise<ReplyOutput>;
   log?: (line: string) => void;
 }
 
@@ -203,9 +214,22 @@ export interface UsageWatcherOptions {
 export function createUsageWatcher(opts: UsageWatcherOptions) {
   const run = opts.run ?? ((input: ProbeInput) => runProbe(opts.probe, input));
   const read = opts.read ?? ((req: TranscriptRequest) => readTranscript(opts.probe, req));
+  const reply = opts.reply ?? ((req: ReplyRequest) => readReply(opts.probe, req));
   const log = opts.log ?? ((line: string) => console.error(line));
   const entries = new Map<string, Entry>();
   let lastError: string | undefined;
+
+  /** Sessions of Claude Code panes other than `sent`, so the probe doesn't match another pane's screen to them. */
+  function claimedBy(refs: SessionRef[], sent: Set<string>): string[] | undefined {
+    const claimed = refs
+      .filter((r) => r.kind === "claude" && !sent.has(r.pane))
+      .flatMap((r) => [r.session, entries.get(r.pane)?.cursor?.claude?.session ?? r.session]);
+    return claimed.length > 0 ? [...new Set(claimed)] : undefined;
+  }
+
+  function probeRef(r: SessionRef): ProbeRef {
+    return { pane: r.pane, kind: r.kind, sessionKind: r.sessionKind, session: r.session, cwd: r.cwd, status: r.status, cursor: entries.get(r.pane)?.cursor };
+  }
 
   async function round() {
     let changed = false;
@@ -223,23 +247,11 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
       // Working agents first, so they get the byte budget when many transcripts are behind.
       .sort((a, b) => Number(b.status === "working") - Number(a.status === "working"));
     if (due.length > 0) {
-      // Sessions of Claude Code panes left out of this run, so the probe doesn't match another pane's screen to them.
-      const sent = new Set(due.map((r) => r.pane));
-      const claimed = refs
-        .filter((r) => r.kind === "claude" && !sent.has(r.pane))
-        .flatMap((r) => [r.session, entries.get(r.pane)?.cursor?.claude?.session ?? r.session]);
+      const claimed = claimedBy(refs, new Set(due.map((r) => r.pane)));
       const input: ProbeInput = {
-        refs: due.map((r): ProbeRef => ({
-          pane: r.pane,
-          kind: r.kind,
-          sessionKind: r.sessionKind,
-          session: r.session,
-          cwd: r.cwd,
-          status: r.status,
-          cursor: entries.get(r.pane)?.cursor,
-        })),
+        refs: due.map(probeRef),
         ...(opts.probe.herdr && { herdr: opts.probe.herdr }),
-        ...(claimed.length > 0 && { claimed: [...new Set(claimed)] }),
+        ...(claimed && { claimed }),
       };
       try {
         const out = await run(input);
@@ -309,6 +321,24 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
       if (!e?.kind || !s) throw new Error("no such subagent");
       if (!s.path) throw new Error("this subagent has no transcript");
       return read({ path: s.path, kind: e.kind, ...(s.fromOrdinal !== undefined && { fromOrdinal: s.fromOrdinal }) });
+    },
+    /**
+     * The final reply of a pane's latest turn, from the transcript the probe last read for it,
+     * or looked up as a probe run would when there's none yet.
+     */
+    async reply(pane: string): Promise<ReplyOutput> {
+      const refs = opts.refs();
+      const ref = refs.find((r) => r.pane === pane);
+      if (!ref) return { error: "herdr reports no session for this agent" };
+      const e = entries.get(pane);
+      const path = e?.session === ref.session ? e.cursor?.path : undefined;
+      const claimed = path ? undefined : claimedBy(refs, new Set([pane]));
+      return reply({
+        ref: probeRef(ref),
+        ...(path && { path }),
+        ...(opts.probe.herdr && { herdr: opts.probe.herdr }),
+        ...(claimed && { claimed }),
+      });
     },
     error: () => lastError,
   };

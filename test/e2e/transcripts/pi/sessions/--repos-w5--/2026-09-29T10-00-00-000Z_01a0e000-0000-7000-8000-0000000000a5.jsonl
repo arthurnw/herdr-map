@@ -4,3 +4,7 @@
 {"type":"message","message":{"role":"assistant","provider":"openai-codex","model":"gpt-6-luna","content":[{"type":"text","text":"Synthetic reply."}],"usage":{"input":5,"output":30,"cacheRead":50000,"cacheWrite":4000,"cost":{"total":0.75}}}}
 {"type":"usage","kind":"cache_warm","provider":"openai-codex","model":"gpt-6-luna","usage":{"input":1,"output":1,"cacheRead":54000,"cacheWrite":0,"cost":{"total":0.5}}}
 {"type":"message","message":{"role":"assistant","provider":"openai-codex","model":"gpt-6-luna","content":[{"type":"text","text":"Synthetic reply."}],"usage":{"input":5,"output":30,"cacheRead":100000,"cacheWrite":8800,"cost":{"total":0.5}}}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Synthetic follow-up prompt."}]}}
+{"type":"message","message":{"role":"assistant","provider":"openai-codex","model":"gpt-6-luna","content":[{"type":"thinking","thinking":"Synthetic thinking."},{"type":"text","text":"Synthetic narration before a tool call."},{"type":"toolCall","id":"call-e2e","name":"read","arguments":{"path":"README.md"}}]}}
+{"type":"message","message":{"role":"toolResult","toolCallId":"call-e2e","content":[{"type":"text","text":"Synthetic tool output."}]}}
+{"type":"message","message":{"role":"assistant","provider":"openai-codex","model":"gpt-6-luna","content":[{"type":"text","text":"Synthetic final reply: the redesign is ready for review."}]}}

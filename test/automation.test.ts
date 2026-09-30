@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { describeTiming, isTiming, nextRun, scheduleStep, textHash } from "../shared/automation.ts";
 import { FINISH_GRACE_MS, type AgentStatus } from "../shared/model.ts";
 import { indexPanes } from "../server/agents.ts";
-import { TurnWatcher } from "../server/automation.ts";
+import { handoffOutput, TurnWatcher } from "../server/automation.ts";
 import { handoffPrompt, HANDOFF_CHARS, trimOutput } from "../server/prompts.ts";
 import { openQueue } from "../server/queue.ts";
 import { addSchedule, editSchedule, removeSchedule, runSchedules, setArmed } from "../server/schedules.ts";
@@ -49,11 +49,35 @@ test("blocked counts as part of a turn", () => {
 
 test("handoff prompts name the agent and keep the end of long output", () => {
   const info = indexPanes(fleetWith({ "w1:p1": "done" })).get("w1:p1");
-  const text = handoffPrompt(info, "w1:p1", "line\n".repeat(5000) + "the result\n\n");
+  const text = handoffPrompt(info, "w1:p1", { screen: "line\n".repeat(5000) + "the result\n\n" });
   assert.match(text, /^Handoff from "agent-w1-p1" \(claude\) in workspace "api", pane w1:p1/);
+  assert.match(text, /Its latest output \(from its terminal, no transcript found\):/);
   assert.ok(text.endsWith("the result"));
   assert.ok(trimOutput("x\n".repeat(HANDOFF_CHARS)).length <= HANDOFF_CHARS);
   assert.match(handoffPrompt(info, "w1:p1", { error: "timeout" }), /herdr agent read w1:p1/);
+});
+
+test("a handoff sends the final reply, noting when it was trimmed", () => {
+  const info = indexPanes(fleetWith({ "w1:p1": "done" })).get("w1:p1");
+  assert.equal(
+    handoffPrompt(info, "w1:p1", { reply: "Fixed the flaky test." }),
+    'Handoff from "agent-w1-p1" (claude) in workspace "api", pane w1:p1, which just finished a turn. Its final reply:\n\nFixed the flaky test.',
+  );
+  assert.match(handoffPrompt(info, "w1:p1", { reply: "…end", trimmed: true }), /Its final reply \(trimmed to its last 8,000 characters\):\n\n…end$/);
+});
+
+test("a handoff falls back to the terminal only when the transcript has no reply", async () => {
+  const screens: string[] = [];
+  const readScreen = async (pane: string) => (screens.push(pane), "screen text");
+  assert.deepEqual(await handoffOutput("w1:p1", async () => ({ text: "The reply.", path: "/t.jsonl" }), readScreen), { reply: "The reply." });
+  assert.deepEqual(await handoffOutput("w1:p1", async () => ({ text: "…", trimmed: true }), readScreen), { reply: "…", trimmed: true });
+  assert.deepEqual(screens, [], "the terminal isn't read when the transcript has the reply");
+  for (const lastReply of [async () => ({ path: "/t.jsonl" }), async () => ({ error: "transcript not found" }), () => Promise.reject(new Error("probe timed out"))]) {
+    assert.deepEqual(await handoffOutput("w1:p1", lastReply, readScreen), { screen: "screen text" });
+  }
+  assert.deepEqual(screens, ["w1:p1", "w1:p1", "w1:p1"]);
+  const broken = async () => Promise.reject(new Error("herdr is gone"));
+  assert.deepEqual(await handoffOutput("w1:p1", async () => ({}), broken), { error: "herdr is gone" });
 });
 
 test("interval and daily timings", () => {

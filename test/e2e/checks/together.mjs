@@ -60,7 +60,7 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
     }
   }
 
-  test("together: a handoff edge prompts the target with the source's output once it's idle", async (page) =>
+  test("together: a handoff edge prompts the target with the source's final reply once it's idle", async (page) =>
     withReset(async () => {
       // w5:p9 (A) is working and w1:p1 (B, "lead") is working in the fixture.
       writeSnapshot(setStatus(snapshot(), "w5:p9", "working"));
@@ -87,8 +87,10 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
       writeSnapshot(setStatus(setStatus(snapshot(), "w5:p9", "idle"), "w1:p1", "idle"));
       await waitFor(() => promptsTo("w1:p1").length > 0, "the handoff should reach B once it's idle");
       const [prompt] = promptsTo("w1:p1");
-      assert(prompt.includes("Handoff from") && prompt.includes("pane w5:p9"), `unexpected prompt: ${prompt}`);
-      assert(actions().some((a) => a.includes("screen of w5:p9")), "the handoff should carry A's output");
+      assert(prompt.includes("Handoff from") && prompt.includes("pane w5:p9") && prompt.includes("Its final reply:"), `unexpected prompt: ${prompt}`);
+      // A's final reply from its synthetic transcript, not its screen or the turn's earlier text.
+      assert(actions().includes("Synthetic final reply: the redesign is ready for review."), `the handoff should carry A's final reply: ${actions()}`);
+      assert(!actions().some((a) => a.includes("screen of w5:p9") || a.includes("Synthetic narration")), `the handoff should not carry A's screen: ${actions()}`);
       await page.waitForTimeout(3500);
       assert(promptsTo("w1:p1").length === 1, `the same turn must not hand off twice: ${promptsTo("w1:p1")}`);
       const state = await api("GET", "/api/automation");

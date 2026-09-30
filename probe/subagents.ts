@@ -3,7 +3,7 @@
 // and usage.ts, and its top-level names must differ from usage.ts's.
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { advance, fileSize, num, readJson, safeList, type Cursor, type Json, type ProbeRef, type Roots, type Tally } from "./usage.ts";
+import { advance, fileSize, num, readJson, safeList, tailText, type Cursor, type Json, type ProbeRef, type Roots, type Tally } from "./usage.ts";
 
 export type SubagentStatus = "running" | "done" | "failed" | "stopped";
 
@@ -792,22 +792,7 @@ export function transcriptLine(kind: string, o: Json, fromOrdinal?: number): str
 export function subagentTranscript(req: TranscriptRequest): TranscriptOutput {
   if (!isAbsolute(req.path) || !/\.(jsonl|output)$/.test(req.path)) throw new Error("not a transcript path");
   const bytes = Math.min(Math.max(1024, req.bytes ?? TRANSCRIPT_BYTES), 4 * 1024 * 1024);
-  const fd = openSync(req.path, "r");
-  let text: string;
-  let truncated = false;
-  try {
-    const size = fileSize(req.path) ?? 0;
-    const n = Math.min(size, bytes);
-    const buf = Buffer.alloc(n);
-    readSync(fd, buf, 0, n, size - n);
-    text = buf.toString("utf8");
-    if (n < size) {
-      truncated = true;
-      text = text.slice(text.indexOf("\n") + 1);
-    }
-  } finally {
-    closeSync(fd);
-  }
+  const { text, truncated } = tailText(req.path, bytes);
   const out: string[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;

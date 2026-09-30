@@ -1,12 +1,13 @@
 // Runs the queue, handoff links, and schedules on one timer, reading the fleet the poller
 // already has. Nothing here sends anything unless the user created a link, armed a
 // schedule, or queued a prompt, and the global pause stops all of it.
+import type { ReplyOutput } from "../probe/reply.ts";
 import { FINISH_GRACE_MS, type AgentStatus } from "../shared/model.ts";
 import { indexPanes, paneLabel, type PaneInfo } from "./agents.ts";
 import { promptAgent, readPane, type HerdrOptions } from "./herdr.ts";
 import { loadStore } from "./layout-store.ts";
 import type { Poller } from "./poller.ts";
-import { HANDOFF_LINES, handoffPrompt } from "./prompts.ts";
+import { HANDOFF_LINES, handoffPrompt, type HandoffOutput } from "./prompts.ts";
 import { openQueue, type Queue } from "./queue.ts";
 import { runSchedules } from "./schedules.ts";
 
@@ -54,6 +55,21 @@ export class TurnWatcher {
   }
 }
 
+/** An agent's final reply from its transcript, or its terminal's recent output when the transcript has none. */
+export async function handoffOutput(
+  pane: string,
+  lastReply: (pane: string) => Promise<ReplyOutput>,
+  readScreen: (pane: string) => Promise<string>,
+): Promise<HandoffOutput> {
+  const reply = await lastReply(pane).catch(() => undefined);
+  if (reply?.text) return { reply: reply.text, ...(reply.trimmed && { trimmed: true }) };
+  try {
+    return { screen: await readScreen(pane) };
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+}
+
 export interface AutomationDeps {
   herdr: HerdrOptions;
   layoutPath: string;
@@ -73,18 +89,14 @@ export async function createAutomation({ herdr, layoutPath, queuePath, poller }:
   const turns = new TurnWatcher();
   let running = false;
 
+
   async function fireHandoffs(finished: string[], panes: Map<string, PaneInfo>, now: number) {
     const { links } = await loadStore(layoutPath);
     for (const link of links) {
       if (link.kind !== "handoff" || link.from.kind !== "pane" || link.to.kind !== "pane") continue;
       if (!finished.includes(link.from.id)) continue;
       const from = panes.get(link.from.id);
-      let output: string | { error: string };
-      try {
-        output = await readPane(herdr, link.from.id, "recent", HANDOFF_LINES);
-      } catch (err) {
-        output = { error: (err as Error).message };
-      }
+      const output = await handoffOutput(link.from.id, poller.lastReply, (pane) => readPane(herdr, pane, "recent", HANDOFF_LINES));
       queue.enqueue(
         {
           target: link.to.id,
