@@ -141,3 +141,26 @@ test("the watcher round-trips cursors, keeps numbers, and survives probe errors"
   assert.equal(inputs[2].refs[0].cursor!.offset, 10, "the last good cursor is sent back");
   assert.equal(changes, 3, "the error appearing and clearing both count as changes; unchanged numbers don't");
 });
+
+test("the watcher names the sessions of Claude Code panes left out of a run", async () => {
+  const inputs: ProbeInput[] = [];
+  const idle = { ...ref("idle", 0), pane: "w2:p1", session: "s-idle" };
+  const w = createUsageWatcher({
+    probe: { node: "node" },
+    intervalMs: 1000,
+    refs: () => [ref("working", Date.now()), idle],
+    onChange: () => undefined,
+    run: async (input) => {
+      inputs.push(input);
+      return {
+        results: input.refs.map((r) => ({ pane: r.pane, cursor: { path: "/t", offset: 0, tally: {}, claude: { session: `${r.session}-moved`, resolvedAt: 0, grewAt: 0 } } })),
+        bytesRead: 0,
+      };
+    },
+  });
+  await w.round();
+  assert.equal(inputs[0].claimed, undefined, "every pane is in the first run");
+  await w.round();
+  assert.deepEqual(inputs[1].refs.map((r) => r.pane), ["w1:p1"]);
+  assert.deepEqual(inputs[1].claimed, ["s-idle", "s-idle-moved"]);
+});

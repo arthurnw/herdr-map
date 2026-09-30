@@ -3,9 +3,10 @@
 // (locally, or over SSH) with a call to `probe()` appended, so it must stay a single file
 // that imports only Node built-ins.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 /** What the transcript says so far. Carried in the cursor between runs. */
 export interface Tally {
@@ -41,6 +42,15 @@ export interface ClaudeFollow {
   resolvedAt: number;
   /** When the transcript last grew, in ms on the probe's machine. */
   grewAt: number;
+  /** Set when nothing on disk links the pane to a transcript and its screen was matched instead. */
+  screen?: ScreenCheck;
+}
+
+export interface ScreenCheck {
+  /** When the screen was last read, in ms on the probe's machine. */
+  checkedAt: number;
+  /** A hash of the lines picked from the screen then. */
+  print: string;
 }
 
 export interface ProbeRef {
@@ -72,6 +82,8 @@ export interface ProbeInput {
   roots?: Partial<Roots>;
   /** herdr executable on the probe's machine, for finding a Claude Code pane's process. */
   herdr?: string;
+  /** Claude Code session IDs that panes not in `refs` are on, so no other pane is matched to them. */
+  claimed?: string[];
 }
 
 /** A foreground process of a pane, as `herdr pane process-info` reports it. */
@@ -84,6 +96,8 @@ export interface PaneProcess {
 export interface ProbeDeps {
   /** A pane's foreground processes, or undefined when they can't be read. Defaults to asking herdr. */
   processes?: (pane: string) => PaneProcess[] | undefined;
+  /** A pane's visible screen, or undefined when it can't be read. Defaults to asking herdr. */
+  screen?: (pane: string) => string | undefined;
   now?: () => number;
 }
 
@@ -230,22 +244,41 @@ function fileSize(path: string): number | undefined {
 // herdr pane IDs look like `w3:p2W`.
 const PANE_ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,63}$/;
 
-/** Reads a pane's foreground processes with `herdr pane process-info`, which changes nothing. */
-export function herdrProcesses(bin: string): (pane: string) => PaneProcess[] | undefined {
+export type HerdrCall = (args: string[]) => string | undefined;
+
+/** Runs a herdr command and returns its output, or undefined when it fails. */
+export function herdrCaller(bin: string): HerdrCall {
   // A missing or hung herdr fails the same way for every pane, so it's given up on for the run.
   let broken = false;
-  return (pane) => {
-    if (broken || !PANE_ID.test(pane)) return undefined;
+  return (args) => {
+    if (broken) return undefined;
     try {
-      const out = execFileSync(bin, ["pane", "process-info", "--pane", pane], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
-      const ps = JSON.parse(out)?.result?.process_info?.foreground_processes;
-      return Array.isArray(ps) ? ps.filter((p) => Number.isSafeInteger(p?.pid) && p.pid > 0) : undefined;
+      return execFileSync(bin, args, { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "EACCES" || code === "ETIMEDOUT") broken = true;
       return undefined;
     }
   };
+}
+
+/** Reads a pane's foreground processes with `herdr pane process-info`, which changes nothing. */
+export function herdrProcesses(bin: string, call = herdrCaller(bin)): (pane: string) => PaneProcess[] | undefined {
+  return (pane) => {
+    const out = PANE_ID.test(pane) ? call(["pane", "process-info", "--pane", pane]) : undefined;
+    if (out === undefined) return undefined;
+    try {
+      const ps = JSON.parse(out)?.result?.process_info?.foreground_processes;
+      return Array.isArray(ps) ? ps.filter((p) => Number.isSafeInteger(p?.pid) && p.pid > 0) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+/** Reads a pane's visible screen with `herdr pane read`, which changes nothing. */
+export function herdrScreen(bin: string, call = herdrCaller(bin)): (pane: string) => string | undefined {
+  return (pane) => (PANE_ID.test(pane) ? call(["pane", "read", pane, "--source", "visible", "--lines", "80"]) : undefined);
 }
 
 export interface ClaudeSession {
@@ -303,8 +336,11 @@ export function claudeRecheckDue(status: string | undefined, follow: ClaudeFollo
   return since < 0 || since >= (stalled ? CLAUDE_STALL_MS : CLAUDE_RECHECK_MS) - CLAUDE_RECHECK_SLACK_MS;
 }
 
-/** The cursor for a Claude Code pane. When a check is due, it follows the pane's process to its current session. */
-export function claudeCursor(ref: ProbeRef, roots: Roots, now: number, processes: (pane: string) => PaneProcess[] | undefined): Cursor {
+/**
+ * The cursor for a Claude Code pane. When a check is due, it follows the pane's process to its
+ * current session. Undefined when no transcript is linked to the pane.
+ */
+export function claudeCursor(ref: ProbeRef, roots: Roots, now: number, processes: (pane: string) => PaneProcess[] | undefined): Cursor | undefined {
   const cursor = ref.cursor;
   const follow = cursor?.claude;
   const size = cursor && fileSize(cursor.path);
@@ -320,12 +356,219 @@ export function claudeCursor(ref: ProbeRef, roots: Roots, now: number, processes
     path = claudeTranscript(roots.claude, found.session, found.cwd ?? ref.cwd);
     if (path) session = found.session;
   }
-  path ??= locate(ref, roots);
+  if (!path) {
+    if (!SESSION_ID.test(ref.session)) throw new Error("unexpected session id");
+    path = claudeTranscript(roots.claude, ref.session, ref.cwd);
+    if (!path) return undefined;
+  }
   if (cursor?.path === path) {
     cursor.claude = { session, pid: found?.pid, resolvedAt: now, grewAt: follow?.grewAt ?? now };
     return cursor;
   }
   return { path, offset: 0, tally: {}, claude: { session, pid: found?.pid, resolvedAt: now, grewAt: now } };
+}
+
+// Screen matching, for a Claude Code pane whose process's session has no transcript and whose
+// conversation no sessions entry points to, as happens after some moves to the background:
+// lines from the pane's screen are looked up in the tails of candidate transcripts.
+export const SCREEN_RETRY_MS = 3 * 60_000;
+export const SCREEN_LINES = 4;
+export const SCREEN_CANDIDATES = 8;
+export const SCREEN_TAIL_BYTES = 512 * 1024;
+export const SCREEN_RECENT_MS = 3 * 86_400_000;
+
+// Box drawing, block elements, braille spinners, and private-use icon glyphs mark UI chrome.
+const CHROME_CHARS = /[\u2500-\u259f\u2800-\u28ff\ue000-\uf8ff]|[\u{f0000}-\u{10ffff}]/u;
+// Prompts, spinners, recaps, and status lines.
+const CHROME_START = /^[❯›>$%※✻✶✳✢✽⏵·]/u;
+const CHROME_TEXT = /esc to (interrupt|cancel)|ctrl\+|shift\+tab|\/clear\b|for shortcuts|auto mode|accept edits|bypass permissions|-- (insert|normal) --/i;
+
+/** Lowercased letters and digits with one space between runs, which survives both terminal rendering and JSON escaping. */
+export function screenText(s: string): string {
+  return s.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/** The longest lines of a screen that look like conversation rather than UI, reduced by `screenText`. */
+export function screenLines(screen: string, n = SCREEN_LINES): string[] {
+  const picked = new Set<string>();
+  for (const raw of screen.split("\n")) {
+    const line = raw.trim();
+    if (CHROME_CHARS.test(line) || CHROME_START.test(line) || CHROME_TEXT.test(line)) continue;
+    const t = screenText(line);
+    if (t.length >= 40 && t.split(" ").length >= 6) picked.add(t);
+  }
+  return [...picked].sort((a, b) => b.length - a.length).slice(0, n);
+}
+
+// Fields of message content that aren't shown as text, or are large and never on screen.
+const HIDDEN_FIELDS = new Set(["thinking", "signature", "id", "tool_use_id", "type", "source", "data"]);
+
+function shownText(v: unknown, out: string[]) {
+  if (typeof v === "string") out.push(v);
+  else if (Array.isArray(v)) for (const x of v) shownText(x, out);
+  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) if (!HIDDEN_FIELDS.has(k)) shownText(x, out);
+}
+
+/** The text of the main-thread messages in the last `bytes` of a Claude Code transcript, reduced by `screenText`. */
+export function transcriptText(path: string, bytes = SCREEN_TAIL_BYTES): string {
+  const fd = openSync(path, "r");
+  let text: string;
+  try {
+    const size = fstatSync(fd).size;
+    const n = Math.min(size, bytes);
+    const buf = Buffer.alloc(n);
+    readSync(fd, buf, 0, n, size - n);
+    text = buf.toString("utf8");
+    if (n < size) text = text.slice(text.indexOf("\n") + 1);
+  } finally {
+    closeSync(fd);
+  }
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.includes('"message"')) continue;
+    try {
+      const o = JSON.parse(line);
+      if ((o?.type === "user" || o?.type === "assistant") && !o.isSidechain) shownText(o.message?.content, out);
+    } catch {}
+  }
+  return out.map(screenText).join("\n");
+}
+
+/** The one candidate whose text has the screen's lines: the only one with two or more, or the only one with any. */
+export function matchScreen(lines: string[], candidates: string[], read: (path: string) => string = transcriptText): string | undefined {
+  if (lines.length === 0) return undefined;
+  const hits = candidates.flatMap((path) => {
+    let text = "";
+    try {
+      text = read(path);
+    } catch {}
+    const n = lines.filter((l) => text.includes(l)).length;
+    return n > 0 ? [{ path, n }] : [];
+  });
+  if (hits.length === 1) return hits[0].path;
+  const strong = hits.filter((h) => h.n >= 2);
+  return strong.length === 1 ? strong[0].path : undefined;
+}
+
+function readText(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** The working trees of the git repository `cwd` is in, read from its `.git` files; just `cwd` outside one. */
+export function repoRoots(cwd: string): string[] {
+  let dir = cwd;
+  while (!existsSync(join(dir, ".git"))) {
+    const up = dirname(dir);
+    if (up === dir) return [cwd];
+    dir = up;
+  }
+  let common = join(dir, ".git");
+  // A linked worktree's `.git` is a file naming its git dir, whose `commondir` leads to the repository's.
+  const link = readText(common);
+  if (link !== undefined) {
+    const m = /^gitdir:\s*(.+)$/m.exec(link);
+    if (!m) return [dir];
+    const gitdir = resolve(dir, m[1].trim());
+    const rel = readText(join(gitdir, "commondir"))?.trim();
+    common = rel ? resolve(gitdir, rel) : gitdir;
+  }
+  const roots = new Set([dir]);
+  if (basename(common) === ".git") roots.add(dirname(common));
+  for (const wt of safeList(join(common, "worktrees"))) {
+    const g = readText(join(common, "worktrees", wt, "gitdir"))?.trim();
+    if (g) roots.add(dirname(resolve(common, "worktrees", wt, g)));
+  }
+  return [...roots];
+}
+
+/**
+ * Transcripts a pane with no linked transcript might be showing, newest first: background jobs'
+ * sessions, and sessions of the pane's git repository modified in the last few days.
+ */
+export function screenCandidates(root: string, cwd: string | undefined, claimed: Set<string>, now: number): string[] {
+  const found = new Map<string, number>();
+  const add = (path: string, recentOnly: boolean) => {
+    if (found.has(path) || claimed.has(basename(path, ".jsonl"))) return;
+    let mtime: number;
+    try {
+      mtime = statSync(path).mtimeMs;
+    } catch {
+      return;
+    }
+    if (!recentOnly || now - mtime <= SCREEN_RECENT_MS) found.set(path, mtime);
+  };
+  const sessions = join(root, "sessions");
+  for (const f of safeList(sessions)) {
+    if (!/^\d+\.json$/.test(f)) continue;
+    const o = readJson(join(sessions, f));
+    if (o?.kind !== "bg" || !validId(o.sessionId) || claimed.has(o.sessionId)) continue;
+    const path = claudeTranscript(root, o.sessionId, typeof o.cwd === "string" ? o.cwd : undefined);
+    if (path) add(path, false);
+  }
+  if (cwd && isAbsolute(cwd)) {
+    const projects = join(root, "projects");
+    const slugs = repoRoots(cwd).map((r) => r.replace(/[^A-Za-z0-9]/g, "-"));
+    for (const d of safeList(projects)) {
+      if (!slugs.some((s) => d === s || d.startsWith(`${s}-`))) continue;
+      for (const f of safeList(join(projects, d))) if (f.endsWith(".jsonl") && validId(f.slice(0, -6))) add(join(projects, d, f), true);
+    }
+  }
+  return [...found]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, SCREEN_CANDIDATES)
+    .map(([path]) => path);
+}
+
+export interface ScreenContext {
+  roots: Roots;
+  now: number;
+  screen: (pane: string) => string | undefined;
+  /** Session IDs other panes are on. */
+  claimed: Set<string>;
+  /** Screens left to read in this run. */
+  reads: number;
+}
+
+function fingerprint(lines: string[]): string {
+  return createHash("sha1").update(lines.join("\n")).digest("hex").slice(0, 16);
+}
+
+/**
+ * The cursor for a Claude Code pane that no transcript is linked to, found by matching its screen.
+ * A match is kept while the screen's lines stay the same or the transcript grows; otherwise, and
+ * while nothing matches, the screen is matched again every few minutes. A cursor with an empty
+ * path records a failed match. Undefined when the screen wasn't read.
+ */
+export function screenCursor(ref: ProbeRef, ctx: ScreenContext): Cursor | undefined {
+  const prev = ref.cursor;
+  const check = prev?.claude?.screen;
+  const matched = !!prev?.path && !!check && fileSize(prev.path) !== undefined;
+  const keep = () => {
+    prev!.claude!.resolvedAt = ctx.now;
+    return prev;
+  };
+  const recent = !!check && ctx.now >= check.checkedAt && ctx.now - check.checkedAt < SCREEN_RETRY_MS;
+  if (recent && (matched || !prev!.path)) return keep();
+  if (ctx.reads <= 0) return matched ? keep() : undefined;
+  ctx.reads--;
+  const shown = ctx.screen(ref.pane);
+  const lines = shown === undefined ? [] : screenLines(shown);
+  const print = fingerprint(lines);
+  if (matched && (shown === undefined || print === check!.print || prev!.claude!.grewAt > check!.checkedAt)) {
+    if (shown !== undefined) Object.assign(check!, { checkedAt: ctx.now, print });
+    return keep();
+  }
+  const path = shown === undefined ? undefined : matchScreen(lines, screenCandidates(ctx.roots.claude, ref.cwd, ctx.claimed, ctx.now));
+  const follow: ClaudeFollow = { session: path ? basename(path, ".jsonl") : ref.session, resolvedAt: ctx.now, grewAt: ctx.now, screen: { checkedAt: ctx.now, print } };
+  if (path && path === prev?.path) {
+    prev.claude = { ...follow, grewAt: prev.claude?.grewAt ?? ctx.now };
+    return prev;
+  }
+  return { path: path ?? "", offset: 0, tally: {}, claude: follow };
 }
 
 function num(v: unknown): number {
@@ -509,25 +752,56 @@ export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
   const maxBytes = input.maxBytes ?? DEFAULT_MAX_BYTES;
   const tailBytes = input.tailBytes ?? DEFAULT_TAIL_BYTES;
   const now = (deps.now ?? Date.now)();
+  const bin = input.herdr ?? "herdr";
+  let call: HerdrCall | undefined;
   let processes = deps.processes;
-  const paneProcesses = (pane: string) => (processes ??= herdrProcesses(input.herdr ?? "herdr"))(pane);
+  const paneProcesses = (pane: string) => (processes ??= herdrProcesses(bin, (call ??= herdrCaller(bin))))(pane);
+  let screen = deps.screen;
+  const paneScreen = (pane: string) => (screen ??= herdrScreen(bin, (call ??= herdrCaller(bin))))(pane);
   let pi: ReturnType<typeof piWindows> | undefined;
   const piWindow = () => (pi ??= piWindows(roots.pi));
-  let bytesRead = 0;
-  const results: ProbeResult[] = [];
-  for (const ref of input.refs) {
+  const isClaude = (ref: ProbeRef) => ref.kind === "claude" && ref.sessionKind === "id";
+
+  const found = input.refs.map((ref): { cursor?: Cursor; error?: string } => {
     try {
+      if (isClaude(ref)) return { cursor: claudeCursor(ref, roots, now, paneProcesses) };
       let cursor = ref.cursor;
-      if (ref.kind === "claude" && ref.sessionKind === "id") cursor = claudeCursor(ref, roots, now, paneProcesses);
-      else {
-        const moved = ref.sessionKind === "path" && cursor?.path !== ref.session;
-        if (!cursor || moved || !existsSync(cursor.path)) cursor = { path: locate(ref, roots), offset: 0, tally: {} };
-      }
-      bytesRead += advance(cursor, ref.kind, maxBytes - bytesRead, tailBytes, maxBytes);
-      results.push({ pane: ref.pane, cursor, usage: cursor.caughtUp ? summarize(ref.kind, cursor.tally, piWindow) : undefined });
+      const moved = ref.sessionKind === "path" && cursor?.path !== ref.session;
+      if (!cursor || moved || !existsSync(cursor.path)) cursor = { path: locate(ref, roots), offset: 0, tally: {} };
+      return { cursor };
     } catch (err) {
-      results.push({ pane: ref.pane, error: (err as Error).message });
+      return { error: (err as Error).message };
     }
-  }
+  });
+
+  // At most one screen is read and matched per run.
+  const ctx: ScreenContext = { roots, now, screen: paneScreen, claimed: new Set(), reads: 1 };
+  input.refs.forEach((ref, i) => {
+    if (!isClaude(ref) || found[i].cursor || found[i].error) return;
+    ctx.claimed = new Set(input.claimed);
+    input.refs.forEach((other, j) => {
+      if (j === i) return;
+      const c = found[j].cursor;
+      for (const id of [other.session, other.cursor?.claude?.session, c?.claude?.session, c?.path && basename(c.path, ".jsonl")]) if (id) ctx.claimed.add(id);
+    });
+    try {
+      found[i].cursor = screenCursor(ref, ctx);
+    } catch (err) {
+      found[i].error = (err as Error).message;
+    }
+  });
+
+  let bytesRead = 0;
+  const results = input.refs.map((ref, i): ProbeResult => {
+    const { cursor, error } = found[i];
+    if (error) return { pane: ref.pane, error };
+    if (!cursor?.path) return { pane: ref.pane, ...(cursor && { cursor }), error: "transcript not found" };
+    try {
+      bytesRead += advance(cursor, ref.kind, maxBytes - bytesRead, tailBytes, maxBytes);
+      return { pane: ref.pane, cursor, usage: cursor.caughtUp ? summarize(ref.kind, cursor.tally, piWindow) : undefined };
+    } catch (err) {
+      return { pane: ref.pane, error: (err as Error).message };
+    }
+  });
   return { results, bytesRead };
 }

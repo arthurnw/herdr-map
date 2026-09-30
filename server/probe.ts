@@ -159,6 +159,11 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
       // Working agents first, so they get the byte budget when many transcripts are behind.
       .sort((a, b) => Number(b.status === "working") - Number(a.status === "working"));
     if (due.length > 0) {
+      // Sessions of Claude Code panes left out of this run, so the probe doesn't match another pane's screen to them.
+      const sent = new Set(due.map((r) => r.pane));
+      const claimed = refs
+        .filter((r) => r.kind === "claude" && !sent.has(r.pane))
+        .flatMap((r) => [r.session, entries.get(r.pane)?.cursor?.claude?.session ?? r.session]);
       const input: ProbeInput = {
         refs: due.map((r): ProbeRef => ({
           pane: r.pane,
@@ -170,6 +175,7 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
           cursor: entries.get(r.pane)?.cursor,
         })),
         ...(opts.probe.herdr && { herdr: opts.probe.herdr }),
+        ...(claimed.length > 0 && { claimed: [...new Set(claimed)] }),
       };
       try {
         const out = await run(input);
