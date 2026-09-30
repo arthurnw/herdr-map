@@ -1,6 +1,6 @@
-// Runs the queue and handoff links on one timer, reading the fleet the poller already
-// has. Nothing here sends anything unless the user created a link or queued a prompt,
-// and the global pause stops all of it.
+// Runs the queue, handoff links, and schedules on one timer, reading the fleet the poller
+// already has. Nothing here sends anything unless the user created a link, armed a
+// schedule, or queued a prompt, and the global pause stops all of it.
 import { FINISH_GRACE_MS, type AgentStatus } from "../shared/model.ts";
 import { indexPanes, paneLabel, type PaneInfo } from "./agents.ts";
 import { promptAgent, readPane, type HerdrOptions } from "./herdr.ts";
@@ -8,6 +8,7 @@ import { loadStore } from "./layout-store.ts";
 import type { Poller } from "./poller.ts";
 import { HANDOFF_LINES, handoffPrompt } from "./prompts.ts";
 import { openQueue, type Queue } from "./queue.ts";
+import { runSchedules } from "./schedules.ts";
 
 export const TICK_MS = 2_000;
 
@@ -108,6 +109,7 @@ export async function createAutomation({ herdr, layoutPath, queuePath, poller }:
         for (const [id, p] of panes) if (p.status) statuses.set(id, p.status);
         const finished = turns.observe(statuses, now);
         if (finished.length > 0) await fireHandoffs(finished, panes, now);
+        runSchedules(queue, panes, now);
       }
       await queue.tick(now);
     } catch (err) {

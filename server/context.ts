@@ -9,6 +9,6 @@ export interface Context {
   /** Terminal app to bring to the front after a focus. Unset with --no-activate. */
   activate?: string;
   poller: Poller;
-  /** The prompt queue and handoffs. */
+  /** The prompt queue, handoffs, and schedules. */
   automation: Automation;
 }

@@ -1,5 +1,5 @@
-// Toolbar controls for automation: the global pause and the queue, with its links and
-// recent deliveries, in a popover.
+// Toolbar controls for automation: the global pause and the queue, with its schedules,
+// links, and recent deliveries, in a popover.
 import { useEffect, useState } from "react";
 import { CirclePause, ListOrdered, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { AutomationState, QueueItem } from "../shared/automation.ts";
+import { describeTiming, type AutomationState, type QueueItem, type Schedule } from "../shared/automation.ts";
 import { agentLabel, OPEN_QUEUE_EVENT, useAutomation, type AutomationValue } from "./automation.tsx";
 import { formatAge } from "./format.ts";
 import { describeLink } from "./links.tsx";
@@ -45,8 +45,8 @@ export function AutomationControls({ now }: { now: number }) {
         </TooltipTrigger>
         <TooltipContent>
           {paused
-            ? "Nothing is sent automatically. Click to resume queued prompts and links."
-            : "Click to stop all automatic sends: handoffs, and context and note links."}
+            ? "Nothing is sent automatically. Click to resume queued prompts, links, and schedules."
+            : "Click to stop all automatic sends: handoffs, context and note links, and schedules."}
         </TooltipContent>
       </Tooltip>
       <Popover open={open} onOpenChange={setOpen}>
@@ -129,6 +129,18 @@ function QueuePanel({ auto, state, now }: { auto: AutomationValue; state: Automa
           </ul>
         )}
       </section>
+      <section className="p-3" aria-label="Schedules">
+        <h3 className="mb-1 font-semibold">Schedules</h3>
+        {state.schedules.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No schedules. Add one from an agent's preview.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {state.schedules.map((s) => (
+              <ScheduleSummary key={s.id} schedule={s} auto={auto} now={now} />
+            ))}
+          </ul>
+        )}
+      </section>
       <section className="p-3" aria-label="Links">
         <h3 className="mb-1 font-semibold">Links</h3>
         {state.links.length === 0 ? (
@@ -173,3 +185,28 @@ function QueuePanel({ auto, state, now }: { auto: AutomationValue; state: Automa
   );
 }
 
+/** When a schedule runs next, or why it won't. */
+export function nextRunText(s: Schedule, now: number, paused: boolean): string {
+  if (!s.armed || !s.nextRunAt) return "Not armed";
+  const when = `${new Date(s.nextRunAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })} (in ${formatAge(s.nextRunAt - now)})`;
+  return paused ? `Next run ${when}, skipped while paused` : `Next run ${when}`;
+}
+
+function ScheduleSummary({ schedule: s, auto, now }: { schedule: Schedule; auto: AutomationValue; now: number }) {
+  return (
+    <li className="flex items-start gap-2 text-xs">
+      <div className="min-w-0 flex-1">
+        <p className="truncate">
+          <span className="font-medium">{agentLabel(auto.panes, s.target, s.targetLabel)}</span> · {describeTiming(s.timing)}
+        </p>
+        <p className="truncate text-muted-foreground" title={s.text}>
+          {nextRunText(s, now, !!auto.state?.paused)}
+          {s.lastResult && ` · last: ${s.lastResult}`}
+        </p>
+      </div>
+      <Button size="xs" variant={s.armed ? "ghost" : "outline"} onClick={() => void auto.actions.setArmed(s.id, !s.armed)}>
+        {s.armed ? "Disarm" : "Arm"}
+      </Button>
+    </li>
+  );
+}

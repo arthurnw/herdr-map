@@ -1,16 +1,18 @@
 // The deliver-when-idle queue: prompts wait here until their target agent is idle or
 // done, then go out with `herdr agent prompt`, one at a time per target, oldest first.
-// The queue and the global pause are saved together in one file.
+// The queue, the global pause, and scheduled prompts are saved together in one file.
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   HISTORY_KEEP,
+  isTiming,
   MAX_QUEUE_ITEMS,
   PROMPT_TEXT_MAX,
   type DeliveredItem,
   type QueueItem,
   type QueueSource,
+  type Schedule,
 } from "../shared/automation.ts";
 import type { Fleet } from "../shared/model.ts";
 import { indexPanes, isFree } from "./agents.ts";
@@ -21,6 +23,7 @@ export interface QueueFile {
   paused: boolean;
   items: QueueItem[];
   history: DeliveredItem[];
+  schedules: Schedule[];
 }
 
 export function defaultQueuePath(layoutPath: string): string {
@@ -28,7 +31,7 @@ export function defaultQueuePath(layoutPath: string): string {
 }
 
 export function emptyQueueFile(): QueueFile {
-  return { version: 1, paused: false, items: [], history: [] };
+  return { version: 1, paused: false, items: [], history: [], schedules: [] };
 }
 
 /** Attempts before an item is marked failed, and the wait after each failed one. */
@@ -87,6 +90,25 @@ function parseDelivered(v: unknown): DeliveredItem | undefined {
   return { id: v.id, target: v.target, targetLabel, text: v.text, source, createdAt: v.createdAt, deliveredAt: v.deliveredAt };
 }
 
+function parseSchedule(v: unknown): Schedule | undefined {
+  if (!isObject(v) || !isStr(v.id) || !isStr(v.target) || !isStr(v.text) || !isTiming(v.timing)) return undefined;
+  if (!isNum(v.createdAt) || !isNum(v.updatedAt)) return undefined;
+  const s: Schedule = {
+    id: v.id,
+    target: v.target,
+    targetLabel: typeof v.targetLabel === "string" ? v.targetLabel : v.target,
+    text: v.text,
+    timing: v.timing,
+    armed: v.armed === true && isNum(v.nextRunAt),
+    createdAt: v.createdAt,
+    updatedAt: v.updatedAt,
+  };
+  if (s.armed) s.nextRunAt = v.nextRunAt as number;
+  if (isNum(v.lastRunAt)) s.lastRunAt = v.lastRunAt;
+  if (typeof v.lastResult === "string") s.lastResult = v.lastResult;
+  return s;
+}
+
 function parseList<T extends { id: string }>(v: unknown, parse: (e: unknown) => T | undefined): T[] {
   if (!Array.isArray(v)) return [];
   const seen = new Set<string>();
@@ -115,6 +137,7 @@ export async function loadQueueFile(path: string): Promise<QueueFile> {
     paused: value.paused === true,
     items: parseList(value.items, parseItem),
     history: parseList(value.history, parseDelivered).slice(-HISTORY_KEEP),
+    schedules: parseList(value.schedules, parseSchedule),
   };
 }
 

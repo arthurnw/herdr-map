@@ -18,6 +18,7 @@ import { notesRoutes } from "./routes/notes.ts";
 import { queueRoutes } from "./routes/queue.ts";
 import { readRoutes } from "./routes/read.ts";
 import { renameRoutes } from "./routes/rename.ts";
+import { schedulesRoutes } from "./routes/schedules.ts";
 import { zoetropeRoutes } from "./routes/zoetrope.ts";
 
 const { values: args } = parseArgs({
@@ -65,6 +66,7 @@ const routes = [
   ...queueRoutes(ctx),
   ...readRoutes(ctx),
   ...renameRoutes(ctx),
+  ...schedulesRoutes(ctx),
   ...zoetropeRoutes(ctx),
 ];
 const server = createServer(createRouter(routes, (_req, res, url) => serveStatic(url.pathname, res)));

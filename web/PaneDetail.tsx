@@ -178,7 +178,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
       </div>
 
       {agent && <ReplyBox located={located} screen={screen} onSent={afterSend} />}
-      {agent && <AgentAutomation located={located} />}
+      {agent && <AgentAutomation located={located} now={now} />}
 
       {!pinned && (
         <p className="text-xs text-muted-foreground">

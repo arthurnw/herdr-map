@@ -12,6 +12,7 @@ import { createRouter } from "../server/router.ts";
 import { linksRoutes } from "../server/routes/links.ts";
 import { notesRoutes } from "../server/routes/notes.ts";
 import { queueRoutes } from "../server/routes/queue.ts";
+import { schedulesRoutes } from "../server/routes/schedules.ts";
 import { textHash } from "../shared/automation.ts";
 import { fleetWith } from "./fixtures.ts";
 
@@ -23,7 +24,7 @@ async function serve(t: TestContext) {
   const poller = { state: () => ({ fleet, updatedAt: 1 }) };
   const queue = await openQueue({ path: join(dir, "queue.json"), view: poller.state, send: async () => {} });
   const ctx = { layoutPath, poller, automation: { queue, tick: async () => {} } } as unknown as Context;
-  const routes = [...linksRoutes(ctx), ...notesRoutes(ctx), ...queueRoutes(ctx)];
+  const routes = [...linksRoutes(ctx), ...notesRoutes(ctx), ...queueRoutes(ctx), ...schedulesRoutes(ctx)];
   const server = createServer(createRouter(routes, (_req, res) => res.end()));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => server.close());
@@ -142,3 +143,23 @@ test("queue routes: manual items, cancel, send now, retry, pause, and the combin
   assert.equal(queue.data.items.length, 0);
 });
 
+test("schedule routes: create unarmed, arm, edit disarms, delete", async (t) => {
+  const { call } = await serve(t);
+  const bad = [
+    { target: "w1:p4", text: "x", timing: { kind: "interval", minutes: 5 } },
+    { target: "w1:p2", text: "", timing: { kind: "interval", minutes: 5 } },
+    { target: "w1:p2", text: "x", timing: { kind: "interval", minutes: 0 } },
+    { target: "w1:p2", text: "x", timing: { kind: "daily", time: "7:00" } },
+  ];
+  for (const body of bad) assert.equal((await call("POST", "/api/schedules", body)).status, 400, JSON.stringify(body));
+  const s = (await call("POST", "/api/schedules", { target: "w1:p2", text: "status?", timing: { kind: "daily", time: "09:00" } })).body;
+  assert.equal(s.armed, false);
+  assert.equal(s.nextRunAt, undefined);
+  const armed = (await call("POST", `/api/schedules/${s.id}/arm`)).body;
+  assert.equal(armed.armed, true);
+  assert.ok(armed.nextRunAt > Date.now());
+  const edited = (await call("PATCH", `/api/schedules/${s.id}`, { text: "status, please" })).body;
+  assert.equal(edited.armed, false);
+  assert.equal((await call("DELETE", `/api/schedules/${s.id}`)).status, 200);
+  assert.equal((await call("POST", `/api/schedules/${s.id}/arm`)).status, 404);
+});

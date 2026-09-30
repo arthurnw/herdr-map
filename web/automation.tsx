@@ -1,8 +1,8 @@
-// Client side of the prompt queue and links: the state the server reports,
+// Client side of the prompt queue, links, and schedules: the state the server reports,
 // polled while the page is open, and the actions that change it.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { AutomationState } from "../shared/automation.ts";
+import type { AutomationState, Schedule, ScheduleTiming } from "../shared/automation.ts";
 import type { Endpoint, LinkKind } from "../shared/layout-types.ts";
 import type { Located } from "./state.ts";
 
@@ -17,6 +17,12 @@ async function call<T = unknown>(method: string, path: string, body?: unknown): 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? res.statusText);
   return json as T;
+}
+
+export interface ScheduleFields {
+  target: string;
+  text: string;
+  timing: ScheduleTiming;
 }
 
 export function useAutomationState() {
@@ -66,6 +72,12 @@ export function useAutomationState() {
         run("Couldn't link them", "POST", "/api/links", { from, to, kind }),
       deleteLink: (id: string) => run("Couldn't remove the link", "DELETE", `/api/links/${encodeURIComponent(id)}`),
       resendLink: (id: string) => run("Couldn't send it again", "POST", `/api/links/${encodeURIComponent(id)}/send`),
+      createSchedule: (fields: ScheduleFields) => run<Schedule>("Couldn't save the schedule", "POST", "/api/schedules", fields),
+      editSchedule: (id: string, fields: Partial<ScheduleFields>) =>
+        run<Schedule>("Couldn't save the schedule", "PATCH", `/api/schedules/${encodeURIComponent(id)}`, fields),
+      setArmed: (id: string, armed: boolean) =>
+        run<Schedule>("Couldn't change the schedule", "POST", `/api/schedules/${encodeURIComponent(id)}/${armed ? "arm" : "disarm"}`),
+      deleteSchedule: (id: string) => run("Couldn't delete the schedule", "DELETE", `/api/schedules/${encodeURIComponent(id)}`),
     }),
     [run],
   );
@@ -97,3 +109,4 @@ export function agentLabel(panes: Map<string, Located>, paneId: string, fallback
 
 /** Events other parts of the UI send to open automation views. */
 export const OPEN_QUEUE_EVENT = "herdr-map:open-queue";
+export const NEW_SCHEDULE_EVENT = "herdr-map:new-schedule";

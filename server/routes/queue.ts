@@ -23,9 +23,9 @@ export function queueRoutes(ctx: Context): Route[] {
       method: "GET",
       path: "/api/automation",
       handle: async (_req, res) => {
-        const { paused, items, history } = queue.data;
+        const { paused, items, history, schedules } = queue.data;
         const { links } = await loadStore(ctx.layoutPath);
-        return sendJson(res, 200, { paused, items, history, links } satisfies AutomationState);
+        return sendJson(res, 200, { paused, items, history, schedules, links } satisfies AutomationState);
       },
     },
     {

@@ -52,7 +52,7 @@ import { useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
-import { AutomationProvider, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
+import { AutomationProvider, NEW_SCHEDULE_EVENT, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
 import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
@@ -289,6 +289,12 @@ function FleetMap() {
               ? { value: "automation:resume", label: "Resume automation", run: () => void automation.actions.setPaused(false) }
               : { value: "automation:pause", label: "Pause automation", run: () => void automation.actions.setPaused(true) },
             { value: "automation:queue", label: "Show the queue", run: () => window.dispatchEvent(new Event(OPEN_QUEUE_EVENT)) },
+            {
+              value: "automation:schedule",
+              label: "Schedule a prompt for the selected agent",
+              disabled: !pinnedPane?.pane.agent,
+              run: () => window.dispatchEvent(new Event(NEW_SCHEDULE_EVENT)),
+            },
           ]}
         />
         {error && (

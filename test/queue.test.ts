@@ -162,12 +162,13 @@ test("a queue file with bad entries keeps the good ones", async () => {
   const good = { id: "a", target: "w1:p1", text: "hi", createdAt: 1, attempts: 0, state: "pending", source };
   await writeFile(
     path,
-    JSON.stringify({ paused: "yes", items: [good, { id: "b" }, good, null], history: "x" }),
+    JSON.stringify({ paused: "yes", items: [good, { id: "b" }, good, null], history: "x", schedules: [{ id: "s", timing: { kind: "daily", time: "25:00" } }] }),
   );
   const data = await loadQueueFile(path);
   assert.equal(data.paused, false);
   assert.deepEqual(data.items.map((i) => i.id), ["a"]);
   assert.deepEqual(data.history, []);
+  assert.deepEqual(data.schedules, []);
   await writeFile(path, "{ not json");
   assert.deepEqual((await loadQueueFile(path)).items, []);
 });

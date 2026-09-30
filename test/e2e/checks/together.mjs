@@ -1,4 +1,5 @@
-// Agents working together: handoff edges, context links, note links, and the queue's pause.
+// Agents working together: handoff edges, context links, note links, the queue's pause,
+// and schedules that wait to be armed.
 export default function togetherChecks({ test, assert, card, actions, clearActions, writeSnapshot, snapshot, setStatus, base }) {
   const api = async (method, path, body) => {
     const res = await fetch(base + path, {
@@ -9,10 +10,11 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
     return res.json();
   };
 
-  // The queue lives in its own file, which openPage doesn't reset.
+  // The queue and schedules live in their own file, which openPage doesn't reset.
   async function resetAutomation() {
     const state = await api("GET", "/api/automation");
     for (const item of state.items) await api("POST", `/api/queue/${item.id}/cancel`);
+    for (const s of state.schedules ?? []) await api("DELETE", `/api/schedules/${s.id}`);
     for (const l of state.links ?? []) await api("DELETE", `/api/links/${l.id}`);
     await api("POST", "/api/automation/pause", { paused: false });
   }
@@ -145,4 +147,39 @@ export default function togetherChecks({ test, assert, card, actions, clearActio
       await page.getByRole("button", { name: "Resume automation" }).click();
       await waitFor(() => promptsTo("w5:p9").length === 1, "resuming should deliver the queued prompt");
     }));
+
+  test("together: a schedule does nothing until armed, and an edit disarms it", async (page) =>
+    withReset(async () => {
+      clearActions();
+      await card(page, "w5:p9").click({ modifiers: ["Alt"] });
+      const block = page.locator('[data-testid="agent-automation"]');
+      await block.getByRole("button", { name: /Automation/ }).click();
+      await block.getByRole("button", { name: "Schedule a prompt" }).click();
+      await block.getByLabel("Prompt to send").fill("Post a status update");
+      await block.getByLabel("Repeat").selectOption("minutes");
+      await block.getByLabel("Every").fill("1");
+      await block.getByRole("button", { name: "Save" }).click();
+      const row = block.locator('[data-testid="schedule"]');
+      await row.getByText("Not armed").first().waitFor({ timeout: 3000 });
+      let [s] = (await api("GET", "/api/automation")).schedules;
+      assert(s && !s.armed && s.timing.minutes === 1 && s.target === "w5:p9", `unexpected schedule ${JSON.stringify(s)}`);
+      await page.waitForTimeout(2500);
+      assert((await api("GET", "/api/automation")).items.length === 0 && promptsTo("w5:p9").length === 0, "an unarmed schedule sends nothing");
+
+      await row.getByRole("button", { name: "Arm" }).click();
+      await row.getByText(/Next run/).waitFor({ timeout: 3000 });
+      [s] = (await api("GET", "/api/automation")).schedules;
+      assert(s.armed && s.nextRunAt > Date.now() + 30_000, `arming should set the next run a minute out: ${JSON.stringify(s)}`);
+
+      await row.getByRole("button", { name: "Edit schedule" }).click();
+      await block.getByLabel("Prompt to send").fill("Post a short status update");
+      await block.getByRole("button", { name: "Save" }).click();
+      await row.getByText("Not armed").first().waitFor({ timeout: 3000 });
+      [s] = (await api("GET", "/api/automation")).schedules;
+      assert(!s.armed && s.nextRunAt === undefined, "an edit should disarm the schedule");
+      assert(promptsTo("w5:p9").length === 0, `nothing should have been sent: ${actions()}`);
+      await row.getByRole("button", { name: "Delete schedule" }).click();
+      await waitFor(async () => (await api("GET", "/api/automation")).schedules.length === 0, "delete should remove the schedule");
+    }));
+
 }
