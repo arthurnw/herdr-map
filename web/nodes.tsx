@@ -16,6 +16,7 @@ import { DoneMarker, StuckMarker } from "./attention.tsx";
 import { agentAge } from "./format.ts";
 import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
+import { LinkHandles } from "./links.tsx";
 import { KIND_LABEL } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
 import { ColorItems, GroupColorMenu, StatusCounts, TagChips, TagInput, TagMenuItems, tintClass } from "./organize.tsx";
@@ -180,6 +181,7 @@ export const PaneNode = memo(({ data }: NodeProps) => {
   return (
     <div className={`pane agent status-${agent.status}${pane.focused ? " focused" : ""}${agent.stuck ? " stuck" : ""}`}>
       {handles}
+      <LinkHandles />
       <div className="agent-line">
         {starred && <Star className="agent-star" aria-label="Starred" />}
         <span className="agent-name">{agent.name ?? kind}</span>

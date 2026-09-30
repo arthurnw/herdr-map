@@ -53,6 +53,7 @@ import { CommandPalette } from "./CommandPalette.tsx";
 import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
 import { AutomationProvider, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
+import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 
@@ -162,6 +163,11 @@ function FleetMap() {
   const automationValue = useMemo(
     () => ({ state: automation.state, actions: automation.actions, panes }),
     [automation.state, automation.actions, panes],
+  );
+  const linking = useLinking(panes, automation.actions);
+  const flowEdges = useMemo(
+    () => [...layout.edges, ...linkEdges(automation.state?.links, new Set(flowNodes.map((n) => n.id)))],
+    [layout.edges, automation.state?.links, flowNodes],
   );
 
   const layoutMenu = { currentPositions, isCustom: !!saved && Object.keys(saved).length > 0, onApply: applyLayout };
@@ -295,16 +301,17 @@ function FleetMap() {
         <ResizablePanelGroup className="min-h-0 flex-1" {...panels}>
           <ResizablePanel id="canvas" minSize="30">
             <main
-              className={`canvas h-full ${zoomClass(zoom)}`}
+              className={`canvas h-full ${zoomClass(zoom)}${linking.linking ? " linking" : ""}`}
               style={{ "--z": zoom } as React.CSSProperties}
               onMouseDownCapture={boxSelect.onMouseDownCapture}
               onDoubleClick={notes.onCanvasDoubleClick}
             >
               <ReactFlow
                 nodes={flowNodes}
-                edges={layout.edges}
+                edges={flowEdges}
                 nodeTypes={canvasNodeTypes}
-                nodesConnectable={false}
+                edgeTypes={linkEdgeTypes}
+                {...linking.connectProps}
                 elementsSelectable={false}
                 onNodesChange={flowHandlers.onNodesChange}
                 onNodeDragStart={flowHandlers.onNodeDragStart}
@@ -339,6 +346,7 @@ function FleetMap() {
                 </Panel>
                 <MiniMap pannable zoomable nodeClassName={minimapClass} className="overflow-hidden rounded-lg border shadow-sm" />
               </ReactFlow>
+              {linking.chooser}
               {boxSelect.box && (
                 <div
                   className="select-box"

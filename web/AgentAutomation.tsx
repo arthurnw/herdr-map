@@ -1,10 +1,13 @@
-// The automation block in an agent's preview: a way to queue a prompt for when it's idle.
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, ListPlus } from "lucide-react";
+// The automation block in an agent's preview: its links, and a way to queue a prompt for
+// when it's idle.
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, ListPlus, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PROMPT_TEXT_MAX } from "../shared/automation.ts";
 import { agentLabel, useAutomation } from "./automation.tsx";
+import { describeLink } from "./links.tsx";
 import type { Located } from "./state.ts";
 
 export function AgentAutomation({ located }: { located: Located }) {
@@ -15,20 +18,42 @@ export function AgentAutomation({ located }: { located: Located }) {
 
   useEffect(() => setQueueing(false), [paneId]);
 
+  const links = useMemo(
+    () => (auto?.state?.links ?? []).filter((l) => (l.from.kind === "pane" && l.from.id === paneId) || l.to.id === paneId),
+    [auto?.state?.links, paneId],
+  );
   const waiting = (auto?.state?.items ?? []).filter((i) => i.target === paneId).length;
   if (!auto?.state) return null;
 
-  const summary = [waiting && `${waiting} queued`].filter(Boolean);
+  const summary = [
+    links.length && `${links.length} link${links.length > 1 ? "s" : ""}`,
+    waiting && `${waiting} queued`,
+  ].filter(Boolean);
 
   return (
     <div className="rounded-lg border text-sm" data-testid="agent-automation">
       <button className="flex w-full items-center gap-1.5 px-3 py-2 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
         {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         <span className="font-medium">Automation</span>
-        <span className="truncate text-xs text-muted-foreground">{summary.length ? summary.join(" · ") : "Queued prompts"}</span>
+        <span className="truncate text-xs text-muted-foreground">{summary.length ? summary.join(" · ") : "Links and queued prompts"}</span>
       </button>
       {open && (
         <div className="space-y-3 border-t px-3 py-2">
+          {links.length > 0 && (
+            <ul className="space-y-1" aria-label="Links">
+              {links.map((l) => (
+                <li key={l.id} className="flex items-start gap-2 text-xs">
+                  <Badge variant="outline" className="font-normal">
+                    {l.kind}
+                  </Badge>
+                  <span className="min-w-0 flex-1">{describeLink(l, auto.panes)}</span>
+                  <Button variant="ghost" size="icon-xs" aria-label="Remove link" onClick={() => void auto.actions.deleteLink(l.id)}>
+                    <X />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
           {queueing ? (
             <QueueForm
               label={agentLabel(auto.panes, paneId)}
@@ -44,6 +69,9 @@ export function AgentAutomation({ located }: { located: Located }) {
                 Send when idle
               </Button>
             </div>
+          )}
+          {links.length === 0 && (
+            <p className="text-xs text-muted-foreground">Drag from the dot on an agent's card to another agent to link them.</p>
           )}
         </div>
       )}

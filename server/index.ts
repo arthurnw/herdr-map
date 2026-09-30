@@ -12,6 +12,7 @@ import { fleetRoutes } from "./routes/fleet.ts";
 import { historyRoutes } from "./routes/history.ts";
 import { inputRoutes } from "./routes/input.ts";
 import { layoutRoutes } from "./routes/layout.ts";
+import { linksRoutes } from "./routes/links.ts";
 import { metaRoutes } from "./routes/meta.ts";
 import { notesRoutes } from "./routes/notes.ts";
 import { queueRoutes } from "./routes/queue.ts";
@@ -57,6 +58,7 @@ const routes = [
   ...fleetRoutes(ctx),
   ...inputRoutes(ctx),
   ...layoutRoutes(ctx),
+  ...linksRoutes(ctx),
   ...historyRoutes(ctx),
   ...metaRoutes(ctx),
   ...notesRoutes(ctx),

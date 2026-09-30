@@ -1,0 +1,65 @@
+/* User links between agents: handles, edges, and edge labels. */
+
+/* A dot on the right edge of agent cards starts a link. Shown on hover only. */
+.react-flow__handle.link-source {
+  width: clamp(10px, calc(10px * var(--inv)), 36px);
+  height: clamp(10px, calc(10px * var(--inv)), 36px);
+  right: 4px;
+  transform: translate(0, -50%);
+  background: var(--primary);
+  border: 2px solid var(--background);
+  cursor: crosshair;
+}
+.react-flow__node-pane:hover .react-flow__handle.link-source,
+.react-flow__handle.link-source.connectingfrom {
+  opacity: 1;
+  pointer-events: all;
+}
+/* Edge labels sit above workspaces and panes (as the link edges do) and below notes. */
+.canvas .react-flow__edgelabel-renderer { z-index: 1501; }
+
+/* While a link is being drawn, a whole agent card takes the drop. */
+.react-flow__handle.link-target {
+  inset: 0;
+  width: auto;
+  height: auto;
+  transform: none;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+}
+.canvas.linking .react-flow__handle.link-target { pointer-events: all; opacity: 1; cursor: crosshair; }
+.canvas.linking .react-flow__handle.link-target.connectingto.valid,
+.canvas.linking .react-flow__handle.link-target:hover {
+  box-shadow: inset 0 0 0 2px var(--primary);
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+.link-edge .link-path { stroke-width: 2; }
+.link-handoff .link-path { stroke: var(--status-working); }
+.link-handoff .react-flow__arrowhead polyline { stroke: var(--status-working); fill: var(--status-working); }
+
+.link-label {
+  position: absolute;
+  pointer-events: all;
+  font-size: clamp(11px, calc(10px * var(--inv)), 30px);
+}
+.link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.link-chip:hover { color: var(--foreground); border-color: var(--ring); }
+.link-chip svg { width: 1em; height: 1em; }
+.link-chip-handoff { border-color: color-mix(in oklab, var(--status-working) 60%, var(--border)); }
+

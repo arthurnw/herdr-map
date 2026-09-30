@@ -1,5 +1,5 @@
-// Toolbar controls for automation: the global pause and the queue, with its recent
-// deliveries, in a popover.
+// Toolbar controls for automation: the global pause and the queue, with its links and
+// recent deliveries, in a popover.
 import { useEffect, useState } from "react";
 import { CirclePause, ListOrdered, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import type { AutomationState, QueueItem } from "../shared/automation.ts";
 import { agentLabel, OPEN_QUEUE_EVENT, useAutomation, type AutomationValue } from "./automation.tsx";
 import { formatAge } from "./format.ts";
+import { describeLink } from "./links.tsx";
 
 export function AutomationControls({ now }: { now: number }) {
   const auto = useAutomation();
@@ -44,8 +45,8 @@ export function AutomationControls({ now }: { now: number }) {
         </TooltipTrigger>
         <TooltipContent>
           {paused
-            ? "Nothing is sent automatically. Click to resume queued prompts."
-            : "Click to stop all automatic sends."}
+            ? "Nothing is sent automatically. Click to resume queued prompts and links."
+            : "Click to stop all automatic sends, including handoffs."}
         </TooltipContent>
       </Tooltip>
       <Popover open={open} onOpenChange={setOpen}>
@@ -125,6 +126,29 @@ function QueuePanel({ auto, state, now }: { auto: AutomationValue; state: Automa
                 </div>
               </li>
             ))}
+          </ul>
+        )}
+      </section>
+      <section className="p-3" aria-label="Links">
+        <h3 className="mb-1 font-semibold">Links</h3>
+        {state.links.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No links. Drag from the dot on an agent's card to another agent.</p>
+        ) : (
+          <ul className="space-y-1">
+            {state.links.map((l) => {
+              const gone = [l.from, l.to].some((e) => e.kind === "pane" && !panes.get(e.id)?.pane.agent);
+              return (
+                <li key={l.id} className="flex items-start gap-2 text-xs">
+                  <span className="min-w-0 flex-1">
+                    {describeLink(l, panes)}
+                    {gone && <span className="text-muted-foreground"> (an agent is gone, so it's not drawn)</span>}
+                  </span>
+                  <Button size="xs" variant="ghost" onClick={() => void actions.deleteLink(l.id)}>
+                    Remove
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

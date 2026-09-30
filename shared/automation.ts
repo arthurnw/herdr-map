@@ -1,5 +1,7 @@
 // The deliver-when-idle queue and what the UI reads about it.
 // Shared by the server (which runs and persists it) and the web UI.
+import type { Link } from "./layout-types.ts";
+
 /** What put a prompt in the queue. */
 export type QueueSourceKind = "handoff" | "context" | "note" | "schedule" | "manual";
 
@@ -51,9 +53,11 @@ export interface AutomationState {
   items: QueueItem[];
   /** Delivered items, newest last. */
   history: DeliveredItem[];
+  links: Link[];
 }
 
 export const PROMPT_TEXT_MAX = 10_000;
 export const MAX_QUEUE_ITEMS = 500;
+export const MAX_LINKS = 500;
 export const HISTORY_KEEP = 50;
 

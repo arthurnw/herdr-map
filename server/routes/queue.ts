@@ -2,6 +2,7 @@ import type { AutomationState } from "../../shared/automation.ts";
 import { indexPanes, paneLabel } from "../agents.ts";
 import type { Context } from "../context.ts";
 import { readBody, sendJson } from "../http.ts";
+import { loadStore } from "../layout-store.ts";
 import { checkText } from "../queue.ts";
 import type { Route } from "../router.ts";
 
@@ -23,7 +24,8 @@ export function queueRoutes(ctx: Context): Route[] {
       path: "/api/automation",
       handle: async (_req, res) => {
         const { paused, items, history } = queue.data;
-        return sendJson(res, 200, { paused, items, history } satisfies AutomationState);
+        const { links } = await loadStore(ctx.layoutPath);
+        return sendJson(res, 200, { paused, items, history, links } satisfies AutomationState);
       },
     },
     {

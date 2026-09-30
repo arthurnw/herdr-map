@@ -1,8 +1,9 @@
-// Client side of the prompt queue: the state the server reports,
+// Client side of the prompt queue and links: the state the server reports,
 // polled while the page is open, and the actions that change it.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { AutomationState } from "../shared/automation.ts";
+import type { Endpoint, LinkKind } from "../shared/layout-types.ts";
 import type { Located } from "./state.ts";
 
 const POLL_MS = 2000;
@@ -61,6 +62,9 @@ export function useAutomationState() {
       sendNow: (id: string) => run("Couldn't send", "POST", `/api/queue/${encodeURIComponent(id)}/send-now`),
       retry: (id: string) => run("Couldn't retry", "POST", `/api/queue/${encodeURIComponent(id)}/retry`),
       enqueue: (target: string, text: string) => run("Couldn't queue the prompt", "POST", "/api/queue", { target, text }),
+      createLink: (from: Endpoint, to: Endpoint, kind: LinkKind) =>
+        run("Couldn't link them", "POST", "/api/links", { from, to, kind }),
+      deleteLink: (id: string) => run("Couldn't remove the link", "DELETE", `/api/links/${encodeURIComponent(id)}`),
     }),
     [run],
   );
