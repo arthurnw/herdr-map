@@ -95,7 +95,10 @@ export function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: numb
       clearTimeout(timer);
       if (code !== 0) {
         const lines = err.trim().split("\n");
-        reject(new Error(`${cmd} exited with ${code}: ${lines.find((l) => /Error/.test(l)) ?? lines.at(-1) ?? ""}`));
+        const why = lines.find((l) => /Error/.test(l)) ?? lines.at(-1) ?? "";
+        // ssh exits 255 when the connection fails, often silently when the laptop wakes from sleep.
+        const hint = !why && opts.ssh && code === 255 ? `couldn't connect to ${opts.ssh}` : why;
+        reject(new Error(`${cmd} exited with ${code}: ${hint}`));
         return;
       }
       try {

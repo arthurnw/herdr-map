@@ -4,7 +4,7 @@
 import type { ReplyOutput } from "../probe/reply.ts";
 import { FINISH_GRACE_MS, type AgentStatus } from "../shared/model.ts";
 import { indexPanes, paneLabel, type PaneInfo } from "./agents.ts";
-import { promptAgent, readPane, type HerdrOptions } from "./herdr.ts";
+import { previewSource, promptAgent, readPane, type HerdrOptions } from "./herdr.ts";
 import { loadStore } from "./layout-store.ts";
 import type { Poller } from "./poller.ts";
 import { HANDOFF_LINES, handoffPrompt, type HandoffOutput } from "./prompts.ts";
@@ -96,7 +96,7 @@ export async function createAutomation({ herdr, layoutPath, queuePath, poller }:
       if (link.kind !== "handoff" || link.from.kind !== "pane" || link.to.kind !== "pane") continue;
       if (!finished.includes(link.from.id)) continue;
       const from = panes.get(link.from.id);
-      const output = await handoffOutput(link.from.id, poller.lastReply, (pane) => readPane(herdr, pane, "recent", HANDOFF_LINES));
+      const output = await handoffOutput(link.from.id, poller.lastReply, (pane) => readPane(herdr, pane, previewSource(poller.pane(pane), "recent"), HANDOFF_LINES));
       queue.enqueue(
         {
           target: link.to.id,
