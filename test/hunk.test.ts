@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test, type TestContext } from "node:test";
-import { hunkProbe, indexPath, parseIndex, toNote, toNotes, type HunkOutput } from "../probe/hunk.ts";
+import { failure, hunkProbe, indexPath, parseIndex, toNote, toNotes, type HunkOutput } from "../probe/hunk.ts";
 import { hunkCounts, noteLocation, REPLY_AUTHOR, threadNotes, unreadNotes, type HunkNote, type HunkReview } from "../shared/hunk.ts";
 import { buildFleet, fleetPanes, StatusClock, type Snapshot } from "../shared/model.ts";
 import type { Context } from "../server/context.ts";
@@ -348,4 +348,12 @@ test("requests naming anything the probe didn't report are refused before any co
     assert.equal(res.status, 400, `${path} ${JSON.stringify(body)}: ${JSON.stringify(res.body)}`);
   }
   assert.deepEqual(calls, []);
+});
+
+test("a failed hunk call reports the error hunk printed as JSON", () => {
+  const out = JSON.stringify({ error: { message: "The session daemon is an older Hunk build.", recommendedAction: "restart-daemon" } });
+  assert.equal(failure({ ok: false, out, err: "" }), "The session daemon is an older Hunk build. Run `hunk daemon restart`.");
+  assert.equal(failure({ ok: false, out: JSON.stringify({ error: { message: "No session." } }), err: "" }), "No session.");
+  assert.equal(failure({ ok: false, out: "", err: "boom\nmore" }), "boom");
+  assert.equal(failure({ ok: false, out: "", err: "" }), "failed");
 });

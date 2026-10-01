@@ -161,6 +161,18 @@ function parseJson(text: string): Record<string, unknown> | undefined {
   }
 }
 
+/**
+ * Why a hunk call failed. With `--json`, hunk prints `{ error: { message, recommendedAction } }`
+ * on stdout and nothing on stderr, e.g. when an upgrade left an older daemon running.
+ */
+export function failure(r: RunResult): string {
+  const e = parseJson(r.out)?.error as { message?: unknown; recommendedAction?: unknown } | undefined;
+  if (typeof e?.message === "string") {
+    return e.recommendedAction === "restart-daemon" ? `${e.message} Run \`hunk daemon restart\`.` : e.message;
+  }
+  return firstLine(r.err) || "failed";
+}
+
 export function hunkProbe(req: HunkRequest): HunkOutput {
   const bin = req.hunk ?? "hunk";
   const errors: string[] = [];
@@ -168,7 +180,7 @@ export function hunkProbe(req: HunkRequest): HunkOutput {
   if (list.missing) return { missing: true, sessions: [], index: [], errors: [] };
   if (!list.ok) {
     if (NO_SESSIONS.test(list.err)) return { sessions: [], index: [], errors };
-    return { sessions: [], index: [], errors: [`hunk session list: ${firstLine(list.err) || "failed"}`] };
+    return { sessions: [], index: [], errors: [`hunk session list: ${failure(list)}`] };
   }
   const parsed = parseJson(list.out);
   if (!parsed || !Array.isArray(parsed.sessions)) {
@@ -189,7 +201,7 @@ export function hunkProbe(req: HunkRequest): HunkOutput {
     else {
       const r = runHunk(bin, ["session", "comment", "list", id, "--type", "all", "--json"]);
       notes = r.ok ? toNotes(parseJson(r.out)?.comments, sent) : [];
-      if (!r.ok) errors.push(`hunk session comment list: ${firstLine(r.err) || "failed"}`);
+      if (!r.ok) errors.push(`hunk session comment list: ${failure(r)}`);
     }
     sessions.push({ id, repo: trimSlash(repo), ...(str(s.cwd) && { cwd: str(s.cwd) }), ...(str(s.title) && { title: str(s.title) }), notes });
     if (record && !entries.includes(record.entry)) entries.push(record.entry);
