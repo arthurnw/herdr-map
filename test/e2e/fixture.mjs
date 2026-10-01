@@ -137,6 +137,8 @@ const pane = (id, tabId, title, agent) => ({
   terminal_title_stripped: title,
   ...(agent && { agent: agent.kind, agent_status: agent.status }),
   ...(agent?.tokens && { tokens: agent.tokens }),
+  // herdr keeps scrollback for Codex. Claude Code and Pi run fullscreen on the alternate screen, so they have none.
+  ...(agent && { scroll: { max_offset_from_bottom: agent.kind === "codex" ? 400 : 0, offset_from_bottom: 0, viewport_rows: 50 } }),
   ...(agent?.session && { agent_session: { source: `herdr:${agent.kind}`, agent: agent.kind, kind: "id", value: agent.session } }),
   ...(agent?.sessionPath && { agent_session: { source: `herdr:${agent.kind}`, agent: agent.kind, kind: "path", value: agent.sessionPath } }),
 });

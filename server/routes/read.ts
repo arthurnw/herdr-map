@@ -13,7 +13,8 @@ export function readRoutes(ctx: Context): Route[] {
         const source = previewSource(ctx.poller.pane(pane), asked);
         const lines = Number(url.searchParams.get("lines") ?? 60);
         const text = await readPane(ctx.herdr, pane, source, lines);
-        return sendJson(res, 200, { text });
+        // The pane has no scrollback to show, so the preview shows its transcript above the screen.
+        return sendJson(res, 200, source === asked ? { text } : { text, history: true });
       },
     },
   ];

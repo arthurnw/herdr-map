@@ -9,6 +9,7 @@ import "./usage.css";
 import "./organize.css";
 import "./links.css";
 import "./subagents.css";
+import "./history.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { App } from "./App.tsx";

@@ -1,7 +1,7 @@
 import type { ServerResponse } from "node:http";
 import { buildFleet, StatusClock, type Fleet, type Snapshot, type SnapPane } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
-import type { ReplyOutput } from "../probe/reply.ts";
+import type { HistoryOutput, ReplyOutput } from "../probe/reply.ts";
 import type { TranscriptOutput } from "../probe/subagents.ts";
 import { agentPaneIds, createMemoryWatcher, markMemory } from "./memory.ts";
 import { createUsageWatcher, markActivity, markUsage, sessionRefs, type ProbeOptions } from "./probe.ts";
@@ -29,6 +29,8 @@ export interface Poller {
   subagentTranscript(paneId: string, subagentId: string): Promise<TranscriptOutput>;
   /** The final reply of an agent's latest turn, read by the probe from its transcript. */
   lastReply(paneId: string): Promise<ReplyOutput>;
+  /** The end of an agent's conversation as text, read by the probe from its transcript. */
+  history(paneId: string): Promise<HistoryOutput>;
   /** Re-reads hunk's review sessions now, after herdr-map changed one. */
   refreshHunk(): Promise<void>;
   /** A pane as of the latest snapshot. */
@@ -129,6 +131,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     markSeen: (paneId) => clock.markSeen(paneId),
     subagentTranscript: (paneId, id) => (usage ? usage.transcript(paneId, id) : Promise.reject(new Error("the usage probe is off"))),
     lastReply: async (paneId) => (usage ? usage.reply(paneId) : { error: "the usage probe is off" }),
+    history: async (paneId) => (usage ? usage.history(paneId) : { error: "the usage probe is off" }),
     refreshHunk: async () => {
       await hunk?.refresh();
     },

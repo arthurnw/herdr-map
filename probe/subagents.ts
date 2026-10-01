@@ -168,7 +168,7 @@ function notificationText(o: Json): string | undefined {
 }
 
 function tag(s: string, name: string): string | undefined {
-  return new RegExp(`<${name}>([^<]*)</${name}>`).exec(s)?.[1]?.trim();
+  return new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(s)?.[1]?.trim();
 }
 
 const CLAUDE_ENDS: Record<string, SubagentStatus> = { completed: "done", failed: "failed", killed: "stopped", stopped: "stopped" };
@@ -752,6 +752,11 @@ function clip(s: string): string {
   return t.length > MESSAGE_MAX ? `${t.slice(0, MESSAGE_MAX - 1)}…` : t;
 }
 
+/** A prompt as `› text`. Its later lines are indented, so a blank line inside it never separates two entries. */
+function asPrompt(text: string): string {
+  return `› ${text.replace(/\n/g, "\n  ")}`;
+}
+
 function codexArgs(v: unknown): unknown {
   if (typeof v !== "string") return v;
   try {
@@ -769,23 +774,40 @@ export function transcriptLine(kind: string, o: Json, fromOrdinal?: number): str
     if (o.type !== "response_item" || !p) return undefined;
     if (p.type === "message" && (p.role === "assistant" || p.role === "user")) {
       const text = clip(textOf(p.content));
-      return text && (p.role === "user" ? `› ${text}` : text);
+      return text && (p.role === "user" ? asPrompt(text) : text);
     }
-    if (p.type === "agent_message") return clip(`› ${textOf(p.content)}`);
+    if (p.type === "agent_message") return asPrompt(clip(textOf(p.content)));
     if (CODEX_TOOL_ITEMS.has(p.type)) return `→ ${p.name ?? p.type} ${preview(codexArgs(p.arguments ?? p.input ?? p.action))}`.trimEnd();
     return undefined;
   }
   const m = o.message;
   const role = m?.role;
   if (role !== "user" && role !== "assistant") return undefined;
-  if (typeof m.content === "string") return clip(role === "user" ? `› ${m.content}` : m.content);
+  if (typeof m.content === "string") return role === "user" ? asPrompt(clip(m.content)) : clip(m.content);
   if (!Array.isArray(m.content)) return undefined;
   const parts: string[] = [];
   for (const b of m.content) {
-    if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) parts.push(clip(role === "user" ? `› ${b.text}` : b.text));
+    if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) parts.push(role === "user" ? asPrompt(clip(b.text)) : clip(b.text));
     else if (b?.type === "tool_use" || b?.type === "toolCall") parts.push(`→ ${b.name} ${preview(b.input ?? b.arguments)}`.trimEnd());
   }
   return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+/** The text of each JSONL line that `line` renders, oldest first. */
+export function renderLines(text: string, line: (o: Json) => string | undefined): string[] {
+  const out: string[] = [];
+  for (const l of text.split("\n")) {
+    if (!l.trim()) continue;
+    let o: Json;
+    try {
+      o = JSON.parse(l);
+    } catch {
+      continue;
+    }
+    const t = o && typeof o === "object" ? line(o) : undefined;
+    if (t) out.push(t);
+  }
+  return out;
 }
 
 /** The plain text of the end of a subagent's transcript, oldest first. */
@@ -793,17 +815,53 @@ export function subagentTranscript(req: TranscriptRequest): TranscriptOutput {
   if (!isAbsolute(req.path) || !/\.(jsonl|output)$/.test(req.path)) throw new Error("not a transcript path");
   const bytes = Math.min(Math.max(1024, req.bytes ?? TRANSCRIPT_BYTES), 4 * 1024 * 1024);
   const { text, truncated } = tailText(req.path, bytes);
-  const out: string[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    let o: Json;
-    try {
-      o = JSON.parse(line);
-    } catch {
-      continue;
+  return { text: renderLines(text, (o) => transcriptLine(req.kind, o, req.fromOrdinal)).join("\n\n"), truncated };
+}
+
+// Claude Code wraps slash commands, `!` shell commands, their output, and background task
+// notifications in tags. Commands read as typed; the rest isn't something the user wrote.
+function claudeTyped(text: string): string | undefined {
+  const t = text.trim();
+  if (!t.startsWith("<")) return text;
+  const name = tag(t, "command-name");
+  if (name) return [name, tag(t, "command-args")].filter(Boolean).join(" ");
+  const shell = tag(t, "bash-input");
+  return shell ? `! ${shell}` : undefined;
+}
+
+// Codex sends the repo's AGENTS.md and its environment as user messages at the start of a thread.
+function codexTyped(text: string): string | undefined {
+  const t = text.trim();
+  return t.startsWith("<") || t.startsWith("# AGENTS.md instructions") ? undefined : text;
+}
+
+/** Content with each text block passed through `typed`, dropping the blocks it rejects. */
+function typedContent(content: unknown, typed: (text: string) => string | undefined): unknown {
+  if (typeof content === "string") return typed(content);
+  if (!Array.isArray(content)) return content;
+  return content.flatMap((b) => {
+    if (typeof b?.text !== "string") return [b];
+    const text = typed(b.text);
+    return text === undefined ? [] : [{ ...b, text }];
+  });
+}
+
+/**
+ * One line of an agent's own transcript as text, like `transcriptLine`, leaving out subagents'
+ * lines, Claude Code's meta and summary entries, and context the agent injected as user messages.
+ */
+export function historyLine(kind: string, o: Json): string | undefined {
+  if (kind === "claude") {
+    if (o.type !== "user" && o.type !== "assistant") return undefined;
+    if (o.isSidechain || o.isMeta || o.isCompactSummary || o.isApiErrorMessage || o.message?.model === "<synthetic>") return undefined;
+    if (o.type === "user") {
+      const content = typedContent(o.message?.content, claudeTyped);
+      if (content === undefined) return undefined;
+      o = { ...o, message: { ...o.message, content } };
     }
-    const t = o && typeof o === "object" ? transcriptLine(req.kind, o, req.fromOrdinal) : undefined;
-    if (t) out.push(t);
+  } else if (kind === "codex") {
+    const p = o.payload;
+    if (o.type === "response_item" && p?.type === "message" && p.role === "user") o = { ...o, payload: { ...p, content: typedContent(p.content, codexTyped) } };
   }
-  return { text: out.join("\n\n"), truncated };
+  return transcriptLine(kind, o);
 }

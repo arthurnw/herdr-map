@@ -1,0 +1,39 @@
+/* A pinned preview's transcript history, above the live screen of an agent with no scrollback. */
+
+.preview-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.history-note { color: var(--muted-foreground); font-style: italic; }
+.history-prompt {
+  margin-top: 6px;
+  padding: 3px 8px 3px 7px;
+  border-left: 2px solid var(--status-working);
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--status-working) 14%, transparent);
+  font-weight: 600;
+}
+.history-tool { color: var(--muted-foreground); }
+.history-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.history-divider::before,
+.history-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+}

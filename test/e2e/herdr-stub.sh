@@ -5,7 +5,8 @@
 #
 # Reads from $HERDR_STUB_DIR: snapshot.json, screens/<pane id with : as _>.txt,
 # process-info/<pane id with : as _>.json.
-# Appends input commands (focus, prompt, keys, text, rename, plugin actions, plugin pane focus) to $HERDR_STUB_DIR/actions.log.
+# Appends input commands (focus, prompt, keys, text, rename, plugin actions, plugin pane focus) to $HERDR_STUB_DIR/actions.log,
+# and screen reads to $HERDR_STUB_DIR/reads.log.
 set -eu
 dir="${HERDR_STUB_DIR:?HERDR_STUB_DIR is not set}"
 
@@ -14,6 +15,7 @@ case "$1 ${2:-}" in
     cat "$dir/snapshot.json"
     ;;
   "pane read")
+    printf '%s\n' "$*" >>"$dir/reads.log"
     screen="$dir/screens/$(printf '%s' "$3" | tr ':' '_').txt"
     if [ -f "$screen" ]; then cat "$screen"; else printf 'screen of %s\n$ ' "$3"; fi
     ;;

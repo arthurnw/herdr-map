@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Pin, PinOff, RefreshCw, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,21 +20,60 @@ import { TaskLine } from "./activity.tsx";
 import { SubagentList } from "./subagents.tsx";
 import { GitBadge } from "./git.tsx";
 import { ReviewSection } from "./review.tsx";
+import { historyParts } from "./history.ts";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
 const PINNED_REFRESH_MS = 5000;
 // The visible screen is cheap to read; a blocked agent's dialog is kept current with it.
 const BLOCKED_REFRESH_MS = 2000;
+// A transcript is re-read when the agent's status changes, and this often while it works.
+const HISTORY_REFRESH_MS = 15_000;
 
-async function readScreen(paneId: string, pinned: boolean): Promise<string> {
+interface Screen {
+  text: string;
+  /** The pane keeps no scrollback, so its history comes from its transcript. */
+  history: boolean;
+}
+
+async function readScreen(paneId: string, pinned: boolean): Promise<Screen> {
   const params = new URLSearchParams({ pane: paneId });
   if (pinned) {
     params.set("source", "recent");
     params.set("lines", String(PINNED_LINES));
   }
   const body = await (await fetch(`/api/read?${params}`)).json();
-  return body.text ?? body.error ?? "";
+  return { text: body.text ?? body.error ?? "", history: !!body.history };
+}
+
+interface History {
+  text: string;
+  truncated: boolean;
+}
+
+async function readHistory(paneId: string): Promise<History | undefined> {
+  const res = await fetch(`/api/history?${new URLSearchParams({ pane: paneId })}`);
+  if (!res.ok) return undefined;
+  const body = await res.json();
+  return body.text ? { text: body.text, truncated: !!body.truncated } : undefined;
+}
+
+/** An agent's conversation from its transcript, above its live screen. */
+function PreviewHistory({ history }: { history: History }) {
+  const parts = useMemo(() => historyParts(history.text), [history.text]);
+  return (
+    <div className="preview-history" aria-label="Transcript history">
+      {history.truncated && <p className="history-note">Earlier history isn't shown.</p>}
+      {parts.map((p, i) => (
+        <div key={i} className={`history-${p.kind}`}>
+          {p.text}
+        </div>
+      ))}
+      <div className="history-divider" role="separator">
+        Live screen
+      </div>
+    </div>
+  );
 }
 
 function isAtBottom(el: HTMLElement) {
@@ -56,26 +95,37 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
   const [screen, setScreen] = useState<string>();
   const [readAt, setReadAt] = useState<number>();
   const [following, setFollowing] = useState(true);
-  const pre = useRef<HTMLPreElement>(null);
+  const [wantsHistory, setWantsHistory] = useState(false);
+  const [history, setHistory] = useState<History>();
+  const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
   const load = useCallback(async () => {
-    const text = await readScreen(pane.id, pinned);
-    if (pre.current) stickToBottom.current = isAtBottom(pre.current);
-    setScreen(text);
+    const read = await readScreen(pane.id, pinned);
+    if (scroller.current) stickToBottom.current = isAtBottom(scroller.current);
+    setScreen(read.text);
+    setWantsHistory(read.history);
     setReadAt(Date.now());
   }, [pane.id, pinned]);
+
+  const loadHistory = useCallback(async () => {
+    const read = await readHistory(pane.id);
+    if (scroller.current) stickToBottom.current = isAtBottom(scroller.current);
+    setHistory(read);
+  }, [pane.id]);
 
   // Hover previews read the visible screen once, after a short debounce so sweeping
   // the pointer across the map doesn't fire a read per pane.
   useEffect(() => {
     setScreen(undefined);
+    setWantsHistory(false);
+    setHistory(undefined);
     stickToBottom.current = true;
     setFollowing(true);
     if (pinned) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      readScreen(pane.id, false).then((text) => !cancelled && setScreen(text));
+      readScreen(pane.id, false).then((read) => !cancelled && setScreen(read.text));
     }, 250);
     return () => {
       cancelled = true;
@@ -91,7 +141,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       if (stopped) return;
-      const scrolledUp = pre.current ? !isAtBottom(pre.current) : false;
+      const scrolledUp = scroller.current ? !isAtBottom(scroller.current) : false;
       if (!document.hidden && !scrolledUp) await load().catch(() => undefined);
       if (!stopped) timer = setTimeout(tick, PINNED_REFRESH_MS);
     };
@@ -101,6 +151,26 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
       clearTimeout(timer);
     };
   }, [pinned, load]);
+
+  // Transcripts change by whole turns, so history is read on its own slower schedule.
+  const status = pane.agent?.status;
+  const showHistory = pinned && wantsHistory;
+  useEffect(() => {
+    if (!showHistory) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (stopped) return;
+      const scrolledUp = scroller.current ? !isAtBottom(scroller.current) : false;
+      if (!document.hidden && !scrolledUp) await loadHistory().catch(() => undefined);
+      if (!stopped && status === "working") timer = setTimeout(tick, HISTORY_REFRESH_MS);
+    };
+    void tick();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [showHistory, status, loadHistory]);
 
   // A dialog changes as it is answered, so the hover preview stays live while one is up.
   // Codex pickers leave herdr's status at idle, so key hints on screen count too.
@@ -119,8 +189,8 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
   }, [load]);
 
   useLayoutEffect(() => {
-    if (pre.current && stickToBottom.current) pre.current.scrollTop = pre.current.scrollHeight;
-  }, [screen]);
+    if (scroller.current && stickToBottom.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [screen, history]);
 
   const agent = pane.agent;
   return (
@@ -200,22 +270,27 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
         </p>
       )}
 
-      <pre
-        ref={pre}
+      <div
+        ref={scroller}
         className={cn(
-          "min-h-40 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-snug whitespace-pre",
+          "min-h-40 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-snug",
           pinned ? "flex-1" : "max-h-[55vh]",
         )}
+        aria-label="Screen preview"
         onScroll={(e) => {
           if (!pinned) return;
           const atBottom = isAtBottom(e.currentTarget);
           // Returning to the bottom resumes live updates right away.
-          if (atBottom && !following) void load();
+          if (atBottom && !following) {
+            void load();
+            if (showHistory) void loadHistory().catch(() => undefined);
+          }
           setFollowing(atBottom);
         }}
       >
-        {screen ?? <span className="text-muted-foreground">Loading screen…</span>}
-      </pre>
+        {showHistory && history && <PreviewHistory history={history} />}
+        <pre className="whitespace-pre">{screen ?? <span className="text-muted-foreground">Loading screen…</span>}</pre>
+      </div>
     </section>
   );
 }

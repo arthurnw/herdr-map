@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fleetPanes, type AgentStatus, type AgentUsage, type Fleet, type FleetAgent, type Snapshot } from "../shared/model.ts";
 import type { MemoryInput, MemoryOutput } from "../probe/memory.ts";
-import type { ReplyOutput, ReplyRequest } from "../probe/reply.ts";
+import type { HistoryOutput, ReplyOutput, ReplyRequest } from "../probe/reply.ts";
 import type { Activity, Subagent, TranscriptOutput, TranscriptRequest } from "../probe/subagents.ts";
 import type { Cursor, ProbeInput, ProbeOutput, ProbeRef, Usage } from "../probe/usage.ts";
 import { commandFor } from "./herdr.ts";
@@ -65,6 +65,11 @@ export function replyScript(req: ReplyRequest): string {
   return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(finalReply(${JSON.stringify(req)})));\n`;
 }
 
+/** The probe source with a call that prints the end of an agent's conversation as text. */
+export function historyScript(req: ReplyRequest): string {
+  return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(agentHistory(${JSON.stringify(req)})));\n`;
+}
+
 /** The probe source with a call that prints the memory use of agent panes' process trees. */
 export function memoryScript(input: MemoryInput): string {
   return `${PROBE_SOURCE}\nprocess.stdout.write(JSON.stringify(memoryUse(${JSON.stringify(input)})));\n`;
@@ -114,6 +119,10 @@ export function readTranscript(opts: ProbeOptions, req: TranscriptRequest, timeo
 
 export function readReply(opts: ProbeOptions, req: ReplyRequest, timeoutMs = 10_000): Promise<ReplyOutput> {
   return runScript(opts, replyScript(req), timeoutMs);
+}
+
+export function readHistory(opts: ProbeOptions, req: ReplyRequest, timeoutMs = 10_000): Promise<HistoryOutput> {
+  return runScript(opts, historyScript(req), timeoutMs);
 }
 
 export function readMemory(opts: ProbeOptions, input: MemoryInput, timeoutMs = 20_000): Promise<MemoryOutput> {
@@ -182,6 +191,8 @@ interface Entry {
   error?: string;
 }
 
+const NO_SESSION = "herdr reports no session for this agent";
+
 // An agent is read while it works and for this long after its status last changed, which
 // covers the end of a turn. Idle agents are read once, so their numbers show at startup.
 export const RECENT_MS = 60_000;
@@ -215,6 +226,7 @@ export interface UsageWatcherOptions {
   run?: (input: ProbeInput) => Promise<ProbeOutput>;
   read?: (req: TranscriptRequest) => Promise<TranscriptOutput>;
   reply?: (req: ReplyRequest) => Promise<ReplyOutput>;
+  history?: (req: ReplyRequest) => Promise<HistoryOutput>;
   log?: (line: string) => void;
 }
 
@@ -227,6 +239,7 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
   const run = opts.run ?? ((input: ProbeInput) => runProbe(opts.probe, input));
   const read = opts.read ?? ((req: TranscriptRequest) => readTranscript(opts.probe, req));
   const reply = opts.reply ?? ((req: ReplyRequest) => readReply(opts.probe, req));
+  const history = opts.history ?? ((req: ReplyRequest) => readHistory(opts.probe, req));
   const log = opts.log ?? ((line: string) => console.error(line));
   const entries = new Map<string, Entry>();
   let lastError: string | undefined;
@@ -241,6 +254,21 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
 
   function probeRef(r: SessionRef): ProbeRef {
     return { pane: r.pane, kind: r.kind, sessionKind: r.sessionKind, session: r.session, cwd: r.cwd, status: r.status, cursor: entries.get(r.pane)?.cursor };
+  }
+
+  function transcriptRequest(pane: string): ReplyRequest | undefined {
+    const refs = opts.refs();
+    const ref = refs.find((r) => r.pane === pane);
+    if (!ref) return undefined;
+    const e = entries.get(pane);
+    const path = e?.session === ref.session ? e.cursor?.path : undefined;
+    const claimed = path ? undefined : claimedBy(refs, new Set([pane]));
+    return {
+      ref: probeRef(ref),
+      ...(path && { path }),
+      ...(opts.probe.herdr && { herdr: opts.probe.herdr }),
+      ...(claimed && { claimed }),
+    };
   }
 
   async function round() {
@@ -339,18 +367,13 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
      * or looked up as a probe run would when there's none yet.
      */
     async reply(pane: string): Promise<ReplyOutput> {
-      const refs = opts.refs();
-      const ref = refs.find((r) => r.pane === pane);
-      if (!ref) return { error: "herdr reports no session for this agent" };
-      const e = entries.get(pane);
-      const path = e?.session === ref.session ? e.cursor?.path : undefined;
-      const claimed = path ? undefined : claimedBy(refs, new Set([pane]));
-      return reply({
-        ref: probeRef(ref),
-        ...(path && { path }),
-        ...(opts.probe.herdr && { herdr: opts.probe.herdr }),
-        ...(claimed && { claimed }),
-      });
+      const req = transcriptRequest(pane);
+      return req ? reply(req) : { error: NO_SESSION };
+    },
+    /** The end of a pane's conversation as text, from the same transcript as `reply`. */
+    async history(pane: string): Promise<HistoryOutput> {
+      const req = transcriptRequest(pane);
+      return req ? history(req) : { error: NO_SESSION };
     },
     error: () => lastError,
   };

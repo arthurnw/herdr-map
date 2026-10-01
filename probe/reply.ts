@@ -1,7 +1,9 @@
-// The final reply of an agent's latest turn, read from its transcript for handoffs. server/probe.ts
-// joins this file with probe/usage.ts and probe/subagents.ts, so it imports only Node built-ins and
-// those, and its top-level names must differ from theirs.
+// The final reply of an agent's latest turn, read from its transcript for handoffs, and the end of
+// its conversation for previews. server/probe.ts joins this file with probe/usage.ts and
+// probe/subagents.ts, so it imports only Node built-ins and those, and its top-level names must
+// differ from theirs.
 import { isAbsolute } from "node:path";
+import { historyLine, renderLines } from "./subagents.ts";
 import { defaultRoots, findCursors, tailText, type Json, type ProbeDeps, type ProbeInput, type ProbeRef } from "./usage.ts";
 
 export interface ReplyRequest extends Pick<ProbeInput, "roots" | "herdr" | "claimed"> {
@@ -121,21 +123,64 @@ export function replyText(kind: string, transcript: string): string | undefined 
   return s.parts.join("\n\n").trim() || undefined;
 }
 
+/** The transcript to read for a request: the one given, or found as the usage probe would. */
+function requestedTranscript(req: ReplyRequest, deps: ProbeDeps): string {
+  let path = req.path;
+  if (!path) {
+    const roots = { ...defaultRoots(), ...req.roots };
+    const input = { refs: [req.ref], herdr: req.herdr, claimed: req.claimed };
+    const [found] = findCursors(input, roots, (deps.now ?? Date.now)(), deps);
+    if (found.error) throw new Error(found.error);
+    path = found.cursor?.path;
+    if (!path) throw new Error("transcript not found");
+  }
+  if (!isAbsolute(path) || !path.endsWith(".jsonl")) throw new Error("not a transcript path");
+  return path;
+}
+
 /** The final reply of a pane's latest turn, from its transcript. Failures are returned as `error`. */
 export function finalReply(req: ReplyRequest, deps: ProbeDeps = {}): ReplyOutput {
   try {
-    let path = req.path;
-    if (!path) {
-      const roots = { ...defaultRoots(), ...req.roots };
-      const input = { refs: [req.ref], herdr: req.herdr, claimed: req.claimed };
-      const [found] = findCursors(input, roots, (deps.now ?? Date.now)(), deps);
-      if (found.error) throw new Error(found.error);
-      path = found.cursor?.path;
-      if (!path) throw new Error("transcript not found");
-    }
-    if (!isAbsolute(path) || !path.endsWith(".jsonl")) throw new Error("not a transcript path");
+    const path = requestedTranscript(req, deps);
     const text = replyText(req.ref.kind, tailText(path, req.bytes ?? REPLY_BYTES).text);
     return text ? { ...trimReply(text), path } : { path };
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+}
+
+export interface HistoryOutput {
+  /** Prompts as `› text`, tool calls as `→ name args`, and the agent's messages, oldest first, separated by blank lines. */
+  text?: string;
+  /** There's earlier history than `text` shows. */
+  truncated?: boolean;
+  /** The transcript that was read. */
+  path?: string;
+  error?: string;
+}
+
+// Tool output fills most of a transcript, so 512 KB holds only a few turns; 4 MB usually fills HISTORY_CHARS.
+export const HISTORY_BYTES = 4 * 1024 * 1024;
+export const HISTORY_CHARS = 60_000;
+
+/** The last entries that fit in `max` characters joined; a single longer entry keeps its end. */
+export function keepEnd(entries: string[], max: number): { text: string; cut: boolean } {
+  let i = entries.length;
+  let size = -2;
+  while (i > 0 && size + entries[i - 1].length + 2 <= max) size += entries[--i].length + 2;
+  if (i === entries.length && i > 0) return { text: entries[i - 1].slice(-max), cut: true };
+  return { text: entries.slice(i).join("\n\n"), cut: i > 0 };
+}
+
+/** The end of a pane's main conversation as text, from its transcript. Failures are returned as `error`. */
+export function agentHistory(req: ReplyRequest, deps: ProbeDeps = {}): HistoryOutput {
+  try {
+    const kind = req.ref.kind;
+    if (!REPLY_READERS[kind]) throw new Error(`no transcript reader for ${kind} sessions`);
+    const path = requestedTranscript(req, deps);
+    const tail = tailText(path, req.bytes ?? HISTORY_BYTES);
+    const { text, cut } = keepEnd(renderLines(tail.text, (o) => historyLine(kind, o)), HISTORY_CHARS);
+    return { text, truncated: tail.truncated || cut, path };
   } catch (err) {
     return { error: (err as Error).message };
   }
