@@ -27,7 +27,7 @@ if touches '^(web/|shared/|package(-lock)?\.json$|vite\.config\.ts$)' || [ ! -f 
   npm run build --silent >/dev/null
 fi
 
-if touches '^(server/|shared/|package(-lock)?\.json$)'; then
+if touches '^(server/|shared/|probe/|package(-lock)?\.json$)'; then
   scripts/service.sh restart
 fi
 
