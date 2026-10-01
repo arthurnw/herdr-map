@@ -1,5 +1,5 @@
 import type { Context } from "../context.ts";
-import { readPane } from "../herdr.ts";
+import { previewSource, readPane } from "../herdr.ts";
 import { sendJson } from "../http.ts";
 import type { Route } from "../router.ts";
 
@@ -8,9 +8,11 @@ export function readRoutes(ctx: Context): Route[] {
     {
       path: "/api/read",
       handle: async (_req, res, url) => {
-        const source = url.searchParams.get("source") === "recent" ? "recent" : "visible";
+        const pane = url.searchParams.get("pane") ?? "";
+        const asked = url.searchParams.get("source") === "recent" ? "recent" : "visible";
+        const source = previewSource(ctx.poller.pane(pane), asked);
         const lines = Number(url.searchParams.get("lines") ?? 60);
-        const text = await readPane(ctx.herdr, url.searchParams.get("pane") ?? "", source, lines);
+        const text = await readPane(ctx.herdr, pane, source, lines);
         return sendJson(res, 200, { text });
       },
     },

@@ -1,5 +1,5 @@
 import type { ServerResponse } from "node:http";
-import { buildFleet, StatusClock, type Fleet, type Snapshot } from "../shared/model.ts";
+import { buildFleet, StatusClock, type Fleet, type Snapshot, type SnapPane } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
 import type { ReplyOutput } from "../probe/reply.ts";
 import type { TranscriptOutput } from "../probe/subagents.ts";
@@ -31,6 +31,8 @@ export interface Poller {
   lastReply(paneId: string): Promise<ReplyOutput>;
   /** Re-reads hunk's review sessions now, after herdr-map changed one. */
   refreshHunk(): Promise<void>;
+  /** A pane as of the latest snapshot. */
+  pane(paneId: string): SnapPane | undefined;
 }
 
 // Screen reads for stuck detection cost a herdr call per working agent, so they run
@@ -130,5 +132,6 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
     refreshHunk: async () => {
       await hunk?.refresh();
     },
+    pane: (paneId) => snap?.panes.find((p) => p.pane_id === paneId),
   };
 }

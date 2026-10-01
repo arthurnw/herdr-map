@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { Snapshot } from "../shared/model.ts";
+import type { Snapshot, SnapPane } from "../shared/model.ts";
 import { AGENT_NAME } from "../shared/names.ts";
 
 export interface HerdrOptions {
@@ -51,6 +51,17 @@ export async function focus(opts: HerdrOptions, target: FocusTarget): Promise<vo
 }
 
 export type ReadSource = "visible" | "recent";
+
+/**
+ * The source for a repeated preview read. For an agent with no herdr scrollback (a fullscreen
+ * TUI on the alternate screen), a `recent` read longer than the screen makes herdr scroll the
+ * agent up through its history and back down, which the user sees in their terminal. Such panes
+ * get `visible`, which herdr never scrolls.
+ */
+export function previewSource(pane: SnapPane | undefined, source: ReadSource): ReadSource {
+  if (source !== "recent" || !pane?.agent) return source;
+  return (pane.scroll?.max_offset_from_bottom ?? 0) > 0 ? "recent" : "visible";
+}
 
 /** Reads the visible screen, or `recent` scrollback for a scrollable preview. */
 export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource, lines: number): Promise<string> {

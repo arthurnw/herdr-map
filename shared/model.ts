@@ -45,6 +45,8 @@ export interface SnapPane {
   tokens?: Tokens;
   /** The agent's own session, reported by herdr's Claude Code and Codex integrations. */
   agent_session?: { source: string; agent: string; kind: string; value: string };
+  /** Rows of herdr's own scrollback; 0 for an app on the alternate screen, such as fullscreen Claude Code. */
+  scroll?: { max_offset_from_bottom: number; offset_from_bottom: number; viewport_rows: number };
 }
 
 export interface SnapAgent {
