@@ -1,0 +1,77 @@
+/* The board view. Cards reuse the canvas card classes from canvas.css; --inv pins their
+   zoom-scaled sizes to 1, since the board doesn't zoom. */
+
+.board {
+  --inv: 1;
+  display: flex;
+  gap: 12px;
+  height: 100%;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--canvas);
+  font-family: var(--font-sans);
+}
+
+.board-column {
+  display: flex;
+  flex: 0 0 280px;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--card) 70%, transparent);
+}
+
+.board-column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.board-column-header h2 { font-weight: 600; }
+
+.board-cards {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.board-empty {
+  padding: 12px 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.board-card.pane {
+  height: auto;
+  padding-bottom: 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.board-card:hover { box-shadow: 0 0 0 1px var(--ring); }
+/* An outline rather than a box shadow, so a blocked card's pulse doesn't hide the selection. */
+.board-card.selected { outline: 2px solid var(--foreground); outline-offset: 2px; }
+
+.board-where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+/* The label keeps up to 55% while the branch name shrinks, as on a workspace header. */
+.board-where-label { flex-shrink: 0; max-width: 55%; overflow: hidden; text-overflow: ellipsis; }

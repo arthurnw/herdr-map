@@ -40,6 +40,8 @@ interface Props {
   layoutMenu: LayoutMenuProps;
   /** More commands to list, such as adding a note or acting on the box selection. */
   extraCommands?: PaletteAction[];
+  /** True while the board replaces the map. */
+  board?: boolean;
 }
 
 export interface PaletteAction {
@@ -177,7 +179,12 @@ export function CommandPalette(props: Props) {
           checked: props.agentsOnly,
           run: () => props.onAgentsOnly(!props.agentsOnly),
         },
-        { value: "view:fit", label: "Fit everything on screen", run: () => void fitView({ padding: 0.05, duration: 300 }) },
+        {
+          value: "view:fit",
+          label: "Fit everything on screen",
+          disabled: props.board,
+          run: () => void fitView({ padding: 0.05, duration: 300 }),
+        },
         {
           value: "layout:reset",
           label: "Reset to automatic layout",
@@ -200,6 +207,10 @@ export function CommandPalette(props: Props) {
   };
 
   const showWorkspace = (ws: FleetWorkspace) => {
+    if (props.board) {
+      const agent = ws.tabs.flatMap((t) => t.panes).find((p) => p.agent);
+      return agent ? onSelect(agent.id) : onFocus({ kind: "workspace", id: ws.id });
+    }
     const nodeId = `ws:${ws.id}`;
     // A workspace the View options hide can still be opened in the terminal.
     if (!getInternalNode(nodeId)) return onFocus({ kind: "workspace", id: ws.id });

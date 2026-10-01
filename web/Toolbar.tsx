@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useTheme } from "next-themes";
-import { Bell, BellOff, Monitor, Moon, Network, Search, SlidersHorizontal, Sun } from "lucide-react";
+import { Bell, BellOff, Columns3, Map as MapIcon, Monitor, Moon, Network, Search, SlidersHorizontal, Sun } from "lucide-react";
 import { toast } from "sonner";
 import { STATUSES, type AgentStatus, type Fleet } from "../shared/model.ts";
 import { Button } from "@/components/ui/button";
@@ -46,17 +46,21 @@ interface ToolbarProps {
   layoutMenu: LayoutMenuProps;
   alerts: AlertSettings;
   onAlerts: (patch: Partial<AlertSettings>) => void;
+  /** Whether the board replaces the map. */
+  board: boolean;
+  onBoard: (on: boolean) => void;
   now: number;
 }
 
 export function Toolbar(props: ToolbarProps) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background px-3">
+    <header className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto border-b bg-background px-3">
       <div className="flex items-center gap-2 text-sm font-semibold">
         <Network className="size-4 text-muted-foreground" />
         herdr-map
       </div>
       <Separator orientation="vertical" className="h-5!" />
+      <ViewToggle board={props.board} onBoard={props.onBoard} />
       <StatusFilter fleet={props.fleet} hidden={props.hiddenStatuses} onToggle={props.onToggleStatus} />
       <SearchBox query={props.query} onQuery={props.onQuery} onEnter={props.onSearchEnter} />
       <div className="ml-auto flex items-center gap-1.5">
@@ -70,6 +74,36 @@ export function Toolbar(props: ToolbarProps) {
         <Connection fleet={props.fleet} connected={props.connected} error={props.error} />
       </div>
     </header>
+  );
+}
+
+function ViewToggle({ board, onBoard }: { board: boolean; onBoard: (on: boolean) => void }) {
+  const options = [
+    { on: false, label: "Map", hint: "Agents on the canvas", icon: MapIcon },
+    { on: true, label: "Board", hint: "Agents in status columns", icon: Columns3 },
+  ];
+  return (
+    <div className="flex shrink-0 items-center rounded-md border p-0.5" role="group" aria-label="Map or board">
+      {options.map(({ on, label, hint, icon: Icon }) => (
+        <Tooltip key={label}>
+          <TooltipTrigger asChild>
+            <Button
+              variant={board === on ? "secondary" : "ghost"}
+              size="icon"
+              aria-label={label}
+              aria-pressed={board === on}
+              onClick={() => onBoard(on)}
+              className="size-6"
+            >
+              <Icon className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {label}: {hint} · <Kbd>b</Kbd> switches
+          </TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
   );
 }
 

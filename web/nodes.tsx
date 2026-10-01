@@ -17,6 +17,7 @@ import { agentAge } from "./format.ts";
 import { useStarsContext } from "./stars.tsx";
 import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
 import { LinkHandles } from "./links.tsx";
+import type { FleetAgent, FleetPane } from "../shared/model.ts";
 import { KIND_LABEL } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
 import { AgentActivity } from "./activity.tsx";
@@ -175,10 +176,44 @@ export const TabNode = memo(({ data }: NodeProps) => {
   );
 });
 
-export const PaneNode = memo(({ data }: NodeProps) => {
-  const { pane } = data as PaneData;
+export type AgentPane = FleetPane & { agent: FleetAgent };
+
+/** Classes for an agent card, shared by the canvas and the board: its status tint, focus, and stuck outline. */
+export function agentCardClass(pane: AgentPane): string {
+  return `pane agent status-${pane.agent.status}${pane.focused ? " focused" : ""}${pane.agent.stuck ? " stuck" : ""}`;
+}
+
+/**
+ * An agent card's contents, shared by the canvas and the board: name, status and age, context,
+ * activity chips, the stuck line, and the summary. `location` goes under the name.
+ */
+export function AgentCardBody({ pane, location }: { pane: AgentPane; location?: React.ReactNode }) {
   const now = useContext(NowContext);
   const starred = useStarsContext().isStarred(pane.id);
+  const { agent } = pane;
+  const kind = KIND_LABEL[agent.kind] ?? agent.kind;
+  return (
+    <>
+      <div className="agent-line">
+        {starred && <Star className="agent-star" aria-label="Starred" />}
+        <span className="agent-name">{agent.name ?? kind}</span>
+        {agent.name && <span className="agent-kind">{kind}</span>}
+      </div>
+      {location}
+      <div className="agent-status">
+        <span className="agent-dot" />
+        {agent.status} · {agentAge(agent, now)}
+        {agent.usage && <UsageMeter usage={agent.usage} />}
+        <AgentActivity pane={pane.id} agent={agent} />
+      </div>
+      {agent.stuck && <StuckMarker stuck={agent.stuck} now={now} />}
+      {agent.summary && <div className="agent-summary">{agent.summary}</div>}
+    </>
+  );
+}
+
+export const PaneNode = memo(({ data }: NodeProps) => {
+  const { pane } = data as PaneData;
   const handles = (
     <>
       <Handle type="target" position={Position.Top} isConnectable={false} />
@@ -193,25 +228,11 @@ export const PaneNode = memo(({ data }: NodeProps) => {
       </div>
     );
   }
-  const { agent } = pane;
-  const kind = KIND_LABEL[agent.kind] ?? agent.kind;
   return (
-    <div className={`pane agent status-${agent.status}${pane.focused ? " focused" : ""}${agent.stuck ? " stuck" : ""}`}>
+    <div className={agentCardClass(pane as AgentPane)}>
       {handles}
       <LinkHandles />
-      <div className="agent-line">
-        {starred && <Star className="agent-star" aria-label="Starred" />}
-        <span className="agent-name">{agent.name ?? kind}</span>
-        {agent.name && <span className="agent-kind">{kind}</span>}
-      </div>
-      <div className="agent-status">
-        <span className="agent-dot" />
-        {agent.status} · {agentAge(agent, now)}
-        {agent.usage && <UsageMeter usage={agent.usage} />}
-        <AgentActivity pane={pane.id} agent={agent} />
-      </div>
-      {agent.stuck && <StuckMarker stuck={agent.stuck} now={now} />}
-      {agent.summary && <div className="agent-summary">{agent.summary}</div>}
+      <AgentCardBody pane={pane as AgentPane} />
     </div>
   );
 });

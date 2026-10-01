@@ -1,9 +1,8 @@
-// Agents that need you: blocked, stuck, finished, or with hunk review notes you haven't read.
+// Stuck and finished markers for agents that need you; needs-you.ts decides which ones do.
 import { TriangleAlert } from "lucide-react";
 import type { FleetAgent, FleetWorkspace } from "../shared/model.ts";
 import { Badge } from "@/components/ui/badge";
 import { formatAge } from "./format.ts";
-import type { Located } from "./state.ts";
 
 type Stuck = NonNullable<FleetAgent["stuck"]>;
 
@@ -17,30 +16,6 @@ export function stuckDescription(stuck: Stuck, now: number): string {
   if (stuck.reason === "rate-limit") return `Rate-limit or usage-limit message on screen for ${formatAge(now - stuck.since)}`;
   if (stuck.reason === "error") return `API error on screen for ${formatAge(now - stuck.since)}`;
   return `Working, but the screen hasn't changed for ${formatAge(now - stuck.since)}`;
-}
-
-/** Order in Needs you: blocked, then stuck, then finished, then with unread review notes, each oldest first. */
-function rank(agent: FleetAgent, unread: number): number | undefined {
-  if (agent.status === "blocked") return 0;
-  if (agent.stuck) return 1;
-  if (agent.status === "done") return 2;
-  if (unread > 0) return 3;
-  return undefined;
-}
-
-function waitingSince(agent: FleetAgent): number {
-  return agent.stuck?.since ?? agent.since;
-}
-
-/** `unread` counts an agent's hunk review notes you haven't read. */
-export function needsYou(panes: Map<string, Located>, unread: (pane: string) => number = () => 0): Located[] {
-  const ranked = [...panes.values()].flatMap((l) => {
-    const r = l.pane.agent && rank(l.pane.agent, unread(l.pane.id));
-    return r === undefined ? [] : [{ l, r }];
-  });
-  return ranked
-    .sort((a, b) => a.r - b.r || waitingSince(a.l.pane.agent!) - waitingSince(b.l.pane.agent!))
-    .map(({ l }) => l);
 }
 
 /** The line on a map card. */

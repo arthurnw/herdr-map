@@ -36,7 +36,7 @@ import {
 } from "./state.ts";
 import { Toolbar } from "./Toolbar.tsx";
 import { useAgentAlerts, useAlertSettings } from "./alerts.ts";
-import { needsYou } from "./attention.tsx";
+import { needsYou } from "./needs-you.ts";
 import { agentNames } from "./rename.tsx";
 import { StarsProvider, starredAgents, useStarsContext, useStarShortcuts } from "./stars.tsx";
 import { FOCUS_REPLY_EVENT } from "./ReplyBox.tsx";
@@ -48,7 +48,7 @@ import type { TintColor } from "../shared/organize.ts";
 import { WorkspaceActions } from "./workspace-actions.ts";
 import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
-import { useSpatialNav } from "./hooks/useSpatialNav.ts";
+import { useBoardNav, useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
@@ -56,6 +56,8 @@ import { AutomationProvider, NEW_SCHEDULE_EVENT, OPEN_QUEUE_EVENT, useAutomation
 import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
 import { SubagentViewContext, useSubagentView } from "./subagents.tsx";
 import { HunkContext, useHunkView } from "./review.tsx";
+import { Board } from "./Board.tsx";
+import { boardCards, boardColumns } from "./board.ts";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 
@@ -78,6 +80,7 @@ function FleetMap() {
   const { resolvedTheme } = useTheme();
   const [agentsOnly, setAgentsOnly] = usePersistedFlag("herdr-map.agents-only", true);
   const [agentPanesOnly, setAgentPanesOnly] = usePersistedFlag("herdr-map.agent-panes-only", true);
+  const [board, setBoardFlag] = usePersistedFlag("herdr-map.board", false);
   const [hiddenStatuses, toggleStatus] = useHiddenStatuses();
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -86,9 +89,10 @@ function FleetMap() {
   const tagsOf = useCallback((wsId: string) => meta?.workspaces[wsId]?.tags ?? [], [meta]);
   const [dragging, setDragging] = useState<ReadonlySet<string>>();
   const [cardDrag, setCardDrag] = useState<CardDrag>();
-  const { fitView, zoomIn, zoomOut } = useReactFlow();
+  const { fitView, zoomIn, zoomOut, getViewport, setViewport } = useReactFlow();
   const [alerts, setAlerts] = useAlertSettings();
   const fitted = useRef(false);
+  const mapViewport = useRef<Viewport>(undefined);
   const panels = useDefaultLayout({ id: "herdr-map.panels", storage: safeStorage });
 
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
@@ -182,11 +186,27 @@ function FleetMap() {
   const layoutMenu = { currentPositions, isCustom: !!saved && isCustomLayout(saved), onApply: applyLayout };
 
   useEffect(() => {
-    if (!fitted.current && layout.nodes.length > 0) {
+    if (!board && !fitted.current && layout.nodes.length > 0) {
       fitted.current = true;
-      requestAnimationFrame(() => fitView({ padding: 0.05 }));
+      const saved = mapViewport.current;
+      requestAnimationFrame(() => void (saved ? setViewport(saved) : fitView({ padding: 0.05 })));
     }
-  }, [layout, fitView]);
+  }, [layout, fitView, setViewport, board]);
+
+  // React Flow resets its store when the board replaces it, so the map's viewport is kept here
+  // and restored on the way back.
+  const setBoard = useCallback(
+    (on: boolean) => {
+      if (on === board) return;
+      if (on) {
+        mapViewport.current = getViewport();
+        fitted.current = false;
+      }
+      setBoardFlag(on);
+    },
+    [board, getViewport, setBoardFlag],
+  );
+  useShortcut({ key: "b", description: "Switch between map and board" }, () => setBoard(!board));
 
   const focus = useCallback(async (target: FocusTarget) => {
     try {
@@ -220,6 +240,18 @@ function FleetMap() {
   const starred = useMemo(() => starredAgents(panes, stars.ids), [panes, stars.ids]);
   const names = useMemo(() => agentNames(panes), [panes]);
 
+  const allCards = useMemo(() => boardCards(fleet), [fleet]);
+  const columns = useMemo(() => {
+    const hidden = new Set(hiddenStatuses);
+    const q = query.trim();
+    return boardColumns(allCards, {
+      unread: (id) => hunkView.unread(id).length,
+      isStarred: stars.isStarred,
+      shown: (c) => !hidden.has(c.pane.agent!.status) && (!q || workspaceMatches(c.workspace, q, tagsOf(c.workspace.id))),
+    });
+  }, [allCards, hiddenStatuses, query, hunkView, stars.isStarred, tagsOf]);
+  const columnIds = useMemo(() => columns.map((c) => c.cards.map((card) => card.pane.id)), [columns]);
+
   const onSearchEnter = () => {
     const q = query.trim();
     if (!q) return;
@@ -252,7 +284,8 @@ function FleetMap() {
     window.dispatchEvent(new Event(FOCUS_REPLY_EVENT)),
   );
   useShortcut({ key: "Escape", description: "Clear selection", enabled: !!(pinned || hovered) }, clear);
-  useSpatialNav(shownNodes, pinned, select);
+  useSpatialNav(shownNodes, pinned, select, !board);
+  useBoardNav(columnIds, pinned, select, board);
   useStarShortcuts(stars, starred, pinnedPane, select);
 
   return (
@@ -280,6 +313,8 @@ function FleetMap() {
           layoutMenu={layoutMenu}
           alerts={alerts}
           onAlerts={setAlerts}
+          board={board}
+          onBoard={setBoard}
           now={now}
         />
         <CommandPalette
@@ -293,8 +328,9 @@ function FleetMap() {
           agentPanesOnly={agentPanesOnly}
           onAgentPanesOnly={setAgentPanesOnly}
           layoutMenu={layoutMenu}
+          board={board}
           extraCommands={[
-            { value: "note:new", label: "New note", run: notes.createInView },
+            { value: "note:new", label: "New note", disabled: board, run: notes.createInView },
             { value: "workspaces:collapse-all", label: "Collapse all workspaces", run: () => collapseAll(true) },
             { value: "workspaces:expand-all", label: "Expand all workspaces", run: () => collapseAll(false) },
             automation.state?.paused
@@ -318,60 +354,71 @@ function FleetMap() {
         )}
         <ResizablePanelGroup className="min-h-0 flex-1" {...panels}>
           <ResizablePanel id="canvas" minSize="30">
-            <main
-              className={`canvas h-full ${zoomClass(zoom)}${linking.linking ? " linking" : ""}`}
-              style={{ "--z": zoom } as React.CSSProperties}
-              onMouseDownCapture={boxSelect.onMouseDownCapture}
-              onDoubleClick={notes.onCanvasDoubleClick}
-            >
-              <ReactFlow
-                nodes={flowNodes}
-                edges={flowEdges}
-                nodeTypes={canvasNodeTypes}
-                edgeTypes={linkEdgeTypes}
-                {...linking.connectProps}
-                elementsSelectable={false}
-                onNodesChange={flowHandlers.onNodesChange}
-                onNodeDragStart={flowHandlers.onNodeDragStart}
-                onNodeDragStop={flowHandlers.onNodeDragStop}
-                zoomOnDoubleClick={false}
-                onNodeClick={onNodeClick}
-                onPaneClick={boxSelect.onPaneClick}
-                onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
-                onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
-                minZoom={0.05}
-                maxZoom={2.5}
-                colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-                proOptions={{ hideAttribution: true }}
+            {board ? (
+              <Board
+                columns={columns}
+                selectedId={pinned}
+                onSelect={setPinned}
+                onTogglePin={(id) => setPinned((p) => (p === id ? undefined : id))}
+                onOpen={focusPane}
+                onHover={setHovered}
+              />
+            ) : (
+              <main
+                className={`canvas h-full ${zoomClass(zoom)}${linking.linking ? " linking" : ""}`}
+                style={{ "--z": zoom } as React.CSSProperties}
+                onMouseDownCapture={boxSelect.onMouseDownCapture}
+                onDoubleClick={notes.onCanvasDoubleClick}
               >
-                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
-                <Panel position="top-center">
-                  <BulkBar nodes={layout.nodes} selected={boxSelect.selected} onClear={boxSelect.clear} />
-                </Panel>
-                <Panel position="bottom-left" className="flex flex-col gap-1">
-                  <CanvasButton label="Zoom in" onClick={() => zoomIn()}>
-                    <Plus />
-                  </CanvasButton>
-                  <CanvasButton label="Zoom out" onClick={() => zoomOut()}>
-                    <Minus />
-                  </CanvasButton>
-                  <CanvasButton label="Fit everything" onClick={() => fitView({ padding: 0.05, duration: 300 })}>
-                    <Maximize />
-                  </CanvasButton>
-                  <CanvasButton label="New note" onClick={notes.createInView}>
-                    <StickyNote />
-                  </CanvasButton>
-                </Panel>
-                <MiniMap pannable zoomable nodeClassName={minimapClass} className="overflow-hidden rounded-lg border shadow-sm" />
-              </ReactFlow>
-              {linking.chooser}
-              {boxSelect.box && (
-                <div
-                  className="select-box"
-                  style={{ left: boxSelect.box.x, top: boxSelect.box.y, width: boxSelect.box.w, height: boxSelect.box.h }}
-                />
-              )}
-            </main>
+                <ReactFlow
+                  nodes={flowNodes}
+                  edges={flowEdges}
+                  nodeTypes={canvasNodeTypes}
+                  edgeTypes={linkEdgeTypes}
+                  {...linking.connectProps}
+                  elementsSelectable={false}
+                  onNodesChange={flowHandlers.onNodesChange}
+                  onNodeDragStart={flowHandlers.onNodeDragStart}
+                  onNodeDragStop={flowHandlers.onNodeDragStop}
+                  zoomOnDoubleClick={false}
+                  onNodeClick={onNodeClick}
+                  onPaneClick={boxSelect.onPaneClick}
+                  onNodeMouseEnter={(_, n) => n.type === "pane" && setHovered(n.id)}
+                  onMove={(_, viewport: Viewport) => setZoom(viewport.zoom)}
+                  minZoom={0.05}
+                  maxZoom={2.5}
+                  colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} />
+                  <Panel position="top-center">
+                    <BulkBar nodes={layout.nodes} selected={boxSelect.selected} onClear={boxSelect.clear} />
+                  </Panel>
+                  <Panel position="bottom-left" className="flex flex-col gap-1">
+                    <CanvasButton label="Zoom in" onClick={() => zoomIn()}>
+                      <Plus />
+                    </CanvasButton>
+                    <CanvasButton label="Zoom out" onClick={() => zoomOut()}>
+                      <Minus />
+                    </CanvasButton>
+                    <CanvasButton label="Fit everything" onClick={() => fitView({ padding: 0.05, duration: 300 })}>
+                      <Maximize />
+                    </CanvasButton>
+                    <CanvasButton label="New note" onClick={notes.createInView}>
+                      <StickyNote />
+                    </CanvasButton>
+                  </Panel>
+                  <MiniMap pannable zoomable nodeClassName={minimapClass} className="overflow-hidden rounded-lg border shadow-sm" />
+                </ReactFlow>
+                {linking.chooser}
+                {boxSelect.box && (
+                  <div
+                    className="select-box"
+                    style={{ left: boxSelect.box.x, top: boxSelect.box.y, width: boxSelect.box.w, height: boxSelect.box.h }}
+                  />
+                )}
+              </main>
+            )}
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel id="sidebar" defaultSize="26" minSize="18" maxSize="60">
@@ -387,6 +434,7 @@ function FleetMap() {
               onHover={setHovered}
               onSelect={select}
               onPin={setPinned}
+              board={board}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

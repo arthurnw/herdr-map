@@ -26,9 +26,11 @@ interface Props {
   onHover: (paneId: string) => void;
   onSelect: (paneId: string) => void;
   onPin: (paneId: string | undefined) => void;
+  /** On the board, a click pins a card's preview instead of opening it. */
+  board?: boolean;
 }
 
-export function Sidebar({ attention, starred, agentNames, detail, pinned, selectedId, now, onFocus, onHover, onSelect, onPin }: Props) {
+export function Sidebar({ attention, starred, agentNames, detail, pinned, selectedId, now, onFocus, onHover, onSelect, onPin, board }: Props) {
   const rowActions = { onFocus, onHover, onSelect };
   const subagent = useContext(SubagentViewContext);
   const openSubagent = pinned && detail && subagent?.selected?.pane === detail.pane.id ? subagent.selected.id : undefined;
@@ -92,9 +94,15 @@ export function Sidebar({ attention, starred, agentNames, detail, pinned, select
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
           <MousePointerClick className="size-5" />
           <p>Hover a pane to preview its screen.</p>
-          <p className="text-xs">
-            Click to open it in your terminal. <Kbd>⌥</Kbd> click to pin it here.
-          </p>
+          {board ? (
+            <p className="text-xs">
+              Click to pin it here. Double-click or press <Kbd>o</Kbd> to open it in your terminal.
+            </p>
+          ) : (
+            <p className="text-xs">
+              Click to open it in your terminal. <Kbd>⌥</Kbd> click to pin it here.
+            </p>
+          )}
         </div>
       )}
     </aside>
