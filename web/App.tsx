@@ -54,12 +54,14 @@ import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
 import { AutomationProvider, NEW_SCHEDULE_EVENT, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
 import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
+import { lineageEdgeTypes } from "./edges.tsx";
 import { SubagentViewContext, useSubagentView } from "./subagents.tsx";
 import { HunkContext, useHunkView } from "./review.tsx";
 import { Board } from "./Board.tsx";
 import { boardCards, boardColumns } from "./board.ts";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
+const canvasEdgeTypes = { ...linkEdgeTypes, ...lineageEdgeTypes };
 
 function zoomClass(zoom: number) {
   if (zoom < 0.35) return "zoom-far";
@@ -374,7 +376,7 @@ function FleetMap() {
                   nodes={flowNodes}
                   edges={flowEdges}
                   nodeTypes={canvasNodeTypes}
-                  edgeTypes={linkEdgeTypes}
+                  edgeTypes={canvasEdgeTypes}
                   {...linking.connectProps}
                   elementsSelectable={false}
                   onNodesChange={flowHandlers.onNodesChange}

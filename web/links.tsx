@@ -5,16 +5,13 @@ import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath,
   Handle,
   Position,
-  useInternalNode,
   type Connection,
   type ConnectionLineComponentProps,
   type Edge,
   type EdgeProps,
   type FinalConnectionState,
-  type InternalNode,
   type IsValidConnection,
 } from "@xyflow/react";
 import { BookOpen, Forward, StickyNote, Trash2, Undo2 } from "lucide-react";
@@ -32,9 +29,10 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { textHash } from "../shared/automation.ts";
 import type { Endpoint, Link, LinkKind } from "../shared/layout-types.ts";
 import { agentLabel, useAutomation, type AutomationActions, type AutomationValue } from "./automation.tsx";
-import { attachEdge, attachToPoint, type Anchor, type Side } from "./edge-geometry.ts";
+import { attachEdge, attachToPoint } from "./edge-geometry.ts";
+import { bezierRoute } from "./edge-route.ts";
+import { nodeRect, useRoute } from "./edges.tsx";
 import { formatAge } from "./format.ts";
-import type { Rect } from "./layout.ts";
 import { stop } from "./organize.tsx";
 import type { Located } from "./state.ts";
 
@@ -115,27 +113,6 @@ export function describeLink(link: Link, panes: Map<string, Located>): string {
     : `${to} was told once how to read ${from}.`;
 }
 
-const POSITION: Record<Side, Position> = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left };
-
-// Pane cards are children of tab nodes, so their own positions are relative to the tab.
-const nodeRect = (n: InternalNode): Rect => ({
-  x: n.internals.positionAbsolute.x,
-  y: n.internals.positionAbsolute.y,
-  w: n.measured.width ?? n.width ?? 0,
-  h: n.measured.height ?? n.height ?? 0,
-});
-
-/** The curve of a link between two anchors, with the point to put its label on. */
-const linkPath = (ends: { source: Anchor; target: Anchor }) =>
-  getBezierPath({
-    sourceX: ends.source.x,
-    sourceY: ends.source.y,
-    sourcePosition: POSITION[ends.source.side],
-    targetX: ends.target.x,
-    targetY: ends.target.y,
-    targetPosition: POSITION[ends.target.side],
-  });
-
 /** An arrowhead marker, colored by its `className` in links.css. */
 function Arrowhead({ id, className }: { id: string; className: string }) {
   return (
@@ -158,30 +135,28 @@ function Arrowhead({ id, className }: { id: string; className: string }) {
 
 /**
  * A link drawn between the sides of its two cards that face each other, rather than from
- * the handles, which sit on fixed sides.
+ * the handles, which sit on fixed sides, and around other cards in the way.
  */
 export const LinkEdge = memo((props: EdgeProps) => {
   const { id, source, target, data } = props;
   const auto = useAutomation();
-  const sourceNode = useInternalNode(source);
-  const targetNode = useInternalNode(target);
-  if (!sourceNode || !targetNode) return null;
-  const ends = attachEdge(nodeRect(sourceNode), nodeRect(targetNode));
-  const [path, labelX, labelY] = linkPath(ends);
+  const route = useRoute(source, target);
+  if (!route) return null;
+  const { path, label: labelAt } = route;
   const { link } = data as LinkEdgeData;
   const flavor = flavorOf(link);
   const { icon: Icon, label } = FLAVOR[flavor];
   const markerId = `link-arrow-${link.id}`;
   // Stacked cards can be only a few pixels apart, so the chip goes beside a vertical edge
   // rather than on it, where it would cover both cards.
-  const vertical = ends.source.side === "top" || ends.source.side === "bottom";
+  const vertical = route.source.side === "top" || route.source.side === "bottom";
   const offset = vertical ? "translate(0.5em, -50%)" : "translate(-50%, -50%)";
   return (
     <>
       <Arrowhead id={markerId} className="link-arrowhead" />
       <BaseEdge id={id} path={path} markerEnd={`url('#${markerId}')`} className="link-path" />
       <EdgeLabelRenderer>
-        <div className="link-label nodrag nopan" style={{ transform: `${offset} translate(${labelX}px, ${labelY}px)` }}>
+        <div className="link-label nodrag nopan" style={{ transform: `${offset} translate(${labelAt.x}px, ${labelAt.y}px)` }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className={`link-chip link-chip-${flavor}`} aria-label={`${label} link`} onClick={stop} onPointerDown={stop}>
@@ -228,7 +203,7 @@ function LinkConnectionLine({ fromNode, toNode, toX, toY, connectionStatus, conn
   const from = nodeRect(fromNode);
   // `toX`/`toY` are the pointer in flow coordinates unless the drop is valid; the `pointer` prop is in screen pixels.
   const ends = toNode && connectionStatus === "valid" ? attachEdge(from, nodeRect(toNode)) : attachToPoint(from, { x: toX, y: toY });
-  const [path] = linkPath(ends);
+  const { path } = bezierRoute(ends);
   return (
     <>
       <Arrowhead id={PREVIEW_ARROW} className="link-preview-arrowhead" />

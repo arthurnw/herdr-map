@@ -36,15 +36,27 @@ function edgeOf(r: Rect, side: Side): number {
   return r.x + r.w;
 }
 
+export const isVertical = (side: Side) => side === "top" || side === "bottom";
+
+/** Where on its side `side` of `r` an edge meets it, given the point along that side. */
+const onSide = (r: Rect, side: Side, at: number): Anchor =>
+  isVertical(side) ? { x: at, y: edgeOf(r, side), side } : { x: edgeOf(r, side), y: at, side };
+
+/**
+ * The start and end points of an edge that leaves `source` from `from` and enters `target`
+ * at `to`. Parallel sides line up where their spans overlap; other pairs use each side's middle.
+ */
+export function anchorsFor(source: Rect, target: Rect, [from, to]: [Side, Side]): { source: Anchor; target: Anchor } {
+  const spanOf = (r: Rect, side: Side): [number, number] => (isVertical(side) ? [r.x, r.x + r.w] : [r.y, r.y + r.h]);
+  const [s0, s1] = spanOf(source, from);
+  const [t0, t1] = spanOf(target, to);
+  const [sa, ta] = isVertical(from) === isVertical(to) ? along(s0, s1, t0, t1) : [(s0 + s1) / 2, (t0 + t1) / 2];
+  return { source: onSide(source, from, sa), target: onSide(target, to, ta) };
+}
+
 /** The start and end points of an edge from `source` to `target`. */
 export function attachEdge(source: Rect, target: Rect): { source: Anchor; target: Anchor } {
-  const [from, to] = facingSides(source, target);
-  if (from === "top" || from === "bottom") {
-    const [sx, tx] = along(source.x, source.x + source.w, target.x, target.x + target.w);
-    return { source: { x: sx, y: edgeOf(source, from), side: from }, target: { x: tx, y: edgeOf(target, to), side: to } };
-  }
-  const [sy, ty] = along(source.y, source.y + source.h, target.y, target.y + target.h);
-  return { source: { x: edgeOf(source, from), y: sy, side: from }, target: { x: edgeOf(target, to), y: ty, side: to } };
+  return anchorsFor(source, target, facingSides(source, target));
 }
 
 /** The start and end points of an edge from `source` to a bare point, such as the pointer while a link is drawn. */

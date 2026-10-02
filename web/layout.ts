@@ -475,6 +475,7 @@ export function layoutFleet(
     if (pane.parent && paneIds.has(pane.parent)) {
       edges.push({
         id: `edge:${pane.parent}->${pane.id}`,
+        type: "lineage",
         source: pane.parent,
         target: pane.id,
         animated: pane.agent?.status === "working",
