@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { errorMessage } from "../shared/errors.ts";
 import type { Snapshot, SnapPane } from "../shared/model.ts";
 import { AGENT_NAME } from "../shared/names.ts";
 
@@ -36,9 +37,9 @@ export function runCli(opts: HerdrOptions, args: string[], timeoutMs = 10_000): 
 }
 
 export async function snapshot(opts: HerdrOptions): Promise<Snapshot> {
-  const out = JSON.parse(await runCli(opts, ["api", "snapshot"]));
+  const out: { error?: { message: string }; result: { snapshot: Snapshot } } = JSON.parse(await runCli(opts, ["api", "snapshot"]));
   if (out.error) throw new Error(`herdr api snapshot: ${out.error.message}`);
-  return out.result.snapshot as Snapshot;
+  return out.result.snapshot;
 }
 
 export type FocusTarget = { kind: "agent" | "tab" | "workspace"; id: string };
@@ -71,6 +72,8 @@ export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource,
 
 const MAX_TEXT = 20_000;
 
+// Request values are checked here, right before they reach herdr's command line.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 function assertText(text: unknown): string {
   if (typeof text !== "string" || text.length === 0 || text.length > MAX_TEXT) {
     throw new Error(`text must be 1-${MAX_TEXT} characters`);
@@ -103,15 +106,17 @@ export async function sendKeys(opts: HerdrOptions, paneId: string, keys: unknown
 export async function sendText(opts: HerdrOptions, paneId: string, text: unknown): Promise<void> {
   await runCli(opts, ["pane", "send-text", assertId(paneId), assertText(text)]);
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
 /** herdr's own message from a failed command. herdr reports errors as JSON on stderr. */
-export function herdrMessage(err: Error): string {
-  const i = err.message.indexOf("{");
-  if (i < 0) return err.message;
+export function herdrMessage(cause: unknown): string {
+  const message = errorMessage(cause);
+  const i = message.indexOf("{");
+  if (i < 0) return message;
   try {
-    return JSON.parse(err.message.slice(i)).error?.message ?? err.message;
+    return JSON.parse(message.slice(i)).error?.message ?? message;
   } catch {
-    return err.message;
+    return message;
   }
 }
 
@@ -121,7 +126,7 @@ export async function renameAgent(opts: HerdrOptions, paneId: string, name: stri
   try {
     await runCli(opts, ["agent", "rename", assertId(paneId), name]);
   } catch (err) {
-    throw new Error(herdrMessage(err as Error));
+    throw new Error(herdrMessage(err));
   }
 }
 

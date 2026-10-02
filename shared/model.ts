@@ -320,7 +320,7 @@ function fractionalRects(layout: SnapLayout | undefined, paneIds: string[]): Map
 export function buildFleet(snap: Snapshot, marks: Map<string, StatusMark>): Fleet {
   const agentsByPane = new Map(snap.agents.map((a) => [a.pane_id, a]));
   const layoutsByTab = new Map(snap.layouts.map((l) => [l.tab_id, l]));
-  const counts = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<AgentStatus, number>;
+  const counts: Record<AgentStatus, number> = { blocked: 0, done: 0, working: 0, idle: 0, unknown: 0 };
 
   const panesByTab = new Map<string, SnapPane[]>();
   for (const p of snap.panes) {

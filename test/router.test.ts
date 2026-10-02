@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer } from "node:http";
 import { test } from "node:test";
 import { createRouter, matchRoute, type Route } from "../server/router.ts";
+import { listen } from "./http.ts";
 
 const ok = () => {};
 const routes: Route[] = [
@@ -29,17 +29,12 @@ test("skips a route whose method does not match", () => {
   assert.equal(matchRoute(routes, "GET", "/api/focus"), undefined);
 });
 
-async function listen(server: Server): Promise<string> {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-}
-
 test("dispatches, 404s unknown API paths, falls back for the rest, and turns throws into 500", async (t) => {
   const server = createServer(
     createRouter(
       [
-        { path: "/api/hello", handle: (_req, res) => res.end("hi") },
-        { method: "POST", path: "/api/only-post", handle: (_req, res) => res.end("posted") },
+        { path: "/api/hello", handle: (_req, res) => void res.end("hi") },
+        { method: "POST", path: "/api/only-post", handle: (_req, res) => void res.end("posted") },
         {
           path: "/api/boom",
           handle: async () => {
@@ -47,7 +42,7 @@ test("dispatches, 404s unknown API paths, falls back for the rest, and turns thr
           },
         },
       ],
-      (_req, res, url) => res.end(`static ${url.pathname}`),
+      (_req, res, url) => void res.end(`static ${url.pathname}`),
     ),
   );
   const base = await listen(server);

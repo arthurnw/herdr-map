@@ -3,17 +3,26 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import type { QueueItem } from "../shared/automation.ts";
 import type { AgentStatus } from "../shared/model.ts";
 import { COOLDOWN_MS, GONE_KEEP_MS, MAX_ATTEMPTS, loadQueueFile, openQueue, type FleetView } from "../server/queue.ts";
 import { fleetWith } from "./fixtures.ts";
 
 const source = { kind: "manual" as const, label: "test" };
 
+/** What a test sets about the fleet and herdr between ticks. */
+interface FakeHerdr {
+  statuses: Record<string, AgentStatus | null>;
+  updatedAt: number;
+  error?: string;
+  fail?: string;
+}
+
 /** A queue over a temp file, a fleet whose statuses tests set, and a record of what was sent. */
 async function setup(statuses: Record<string, AgentStatus | null> = { "w1:p1": "idle", "w1:p2": "idle" }) {
   const path = join(await mkdtemp(join(tmpdir(), "herdr-map-queue-")), "queue.json");
   const sent: { pane: string; text: string }[] = [];
-  const state = { statuses, updatedAt: 0, error: undefined as string | undefined, fail: undefined as string | undefined };
+  const state: FakeHerdr = { statuses, updatedAt: 0 };
   const deps = {
     path,
     view: (): FleetView => ({ fleet: fleetWith(state.statuses), updatedAt: state.updatedAt, error: state.error }),
@@ -25,6 +34,13 @@ async function setup(statuses: Record<string, AgentStatus | null> = { "w1:p1": "
   const queue = await openQueue(deps);
   const add = (target: string, text: string, now: number) => queue.enqueue({ target, targetLabel: target, text, source }, now);
   return { path, deps, queue, sent, state, add };
+}
+
+/** The item `enqueue` added; fails the test when it returned an error message instead. */
+function queued(result: QueueItem | string): QueueItem {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- enqueue returns the item or an error message
+  if (typeof result === "string") assert.fail(result);
+  return result;
 }
 
 test("delivers only to idle or done agents", async () => {
@@ -63,8 +79,7 @@ test("sends one item per target per turn, oldest first", async () => {
 test("backs off after a failure and gives up after a few attempts, keeping the error", async () => {
   const { queue, sent, state, add } = await setup();
   state.fail = "pane is busy";
-  const item = add("w1:p1", "hello", 0);
-  assert.ok(typeof item !== "string");
+  const item = queued(add("w1:p1", "hello", 0));
   let now = 0;
   await queue.tick(now);
   assert.equal(item.attempts, 1);
@@ -89,9 +104,8 @@ test("backs off after a failure and gives up after a few attempts, keeping the e
 test("the pause stops delivery, except for Send now", async () => {
   const { queue, sent, add } = await setup();
   queue.setPaused(true);
-  const a = add("w1:p1", "a", 1);
-  const b = add("w1:p2", "b", 2);
-  assert.ok(typeof a !== "string" && typeof b !== "string");
+  queued(add("w1:p1", "a", 1));
+  const b = queued(add("w1:p2", "b", 2));
   await queue.tick(10);
   assert.equal(sent.length, 0);
   queue.sendNow(b.id);
@@ -105,8 +119,7 @@ test("the pause stops delivery, except for Send now", async () => {
 test("Send now goes ahead of older items for its target", async () => {
   const { queue, sent, add } = await setup();
   add("w1:p1", "old", 1);
-  const late = add("w1:p1", "late", 2);
-  assert.ok(typeof late !== "string");
+  const late = queued(add("w1:p1", "late", 2));
   queue.sendNow(late.id);
   await queue.tick(10);
   assert.deepEqual(sent.map((s) => s.text), ["late"]);
@@ -114,8 +127,7 @@ test("Send now goes ahead of older items for its target", async () => {
 
 test("items for a pane that's gone are marked and later dropped; nothing happens without a fresh snapshot", async () => {
   const { queue, sent, state, add } = await setup();
-  const item = add("w9:p9", "nobody", 1);
-  assert.ok(typeof item !== "string");
+  const item = queued(add("w9:p9", "nobody", 1));
   state.error = "herdr api snapshot: connection refused";
   await queue.tick(10);
   assert.equal(item.state, "pending", "a failed poll says nothing about panes");
@@ -129,10 +141,10 @@ test("items for a pane that's gone are marked and later dropped; nothing happens
 
 test("a pane without an agent waits", async () => {
   const { queue, sent, add } = await setup({ "w1:p1": null });
-  const item = add("w1:p1", "hello", 1);
+  const item = queued(add("w1:p1", "hello", 1));
   await queue.tick(10);
   assert.equal(sent.length, 0);
-  assert.ok(typeof item !== "string" && item.state === "pending");
+  assert.equal(item.state, "pending");
 });
 
 test("coalescing replaces a pending item from the same link", async () => {

@@ -13,6 +13,7 @@ interface InputBody {
 }
 
 function readInput(req: IncomingMessage): Promise<InputBody> {
+  // oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- unchecked; herdr.ts checks each field it sends
   return readBody(req) as Promise<InputBody>;
 }
 
@@ -23,6 +24,7 @@ export function inputRoutes(ctx: Context): Route[] {
       method: "POST",
       path: "/api/focus",
       handle: async (req, res) => {
+        // oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- unchecked; focus() checks the id
         const target = (await readBody(req)) as FocusTarget;
         await focus(herdr, target);
         if (target.kind === "agent") poller.markSeen(target.id);

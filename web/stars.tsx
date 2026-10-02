@@ -50,7 +50,10 @@ export function useStarsContext() {
 
 /** Starred agents that still exist, in the order they were starred. */
 export function starredAgents(panes: Map<string, Located>, ids: string[]): Located[] {
-  return ids.map((id) => panes.get(id)).filter((l): l is Located => !!l?.pane.agent);
+  return ids.flatMap((id) => {
+    const l = panes.get(id);
+    return l?.pane.agent ? [l] : [];
+  });
 }
 
 /** `s` stars or unstars the selected agent, and `g` moves to the next starred agent. */

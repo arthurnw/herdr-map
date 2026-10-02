@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { finalReply, REPLY_CHARS, replyText, trimReply } from "../probe/reply.ts";
+import type { JsonValue } from "./fixtures.ts";
 
 // Synthetic transcript lines, shaped like each agent's own records.
-const lines = (...ls: unknown[]) => ls.map((l) => `${JSON.stringify(l)}\n`).join("");
+const lines = (...ls: JsonValue[]) => ls.map((l) => `${JSON.stringify(l)}\n`).join("");
 
-const claudeUser = (content: unknown, extra = {}) => ({ type: "user", isSidechain: false, message: { role: "user", content }, ...extra });
+const claudeUser = (content: JsonValue, extra = {}) => ({ type: "user", isSidechain: false, message: { role: "user", content }, ...extra });
 const claudeToolResult = (id: string) => claudeUser([{ type: "tool_result", tool_use_id: id, content: "ok" }]);
-const claudeBlock = (id: string, block: unknown, extra = {}) => ({
+const claudeBlock = (id: string, block: JsonValue, extra = {}) => ({
   type: "assistant",
   isSidechain: false,
   message: { id, role: "assistant", model: "claude-opus-5-5", content: [block] },
@@ -52,8 +53,8 @@ test("Claude: a turn whose last response only calls a tool keeps the text before
 });
 
 test("Codex: the final answer of the last turn", () => {
-  const item = (payload: unknown) => ({ type: "response_item", payload });
-  const event = (payload: unknown) => ({ type: "event_msg", payload });
+  const item = (payload: JsonValue) => ({ type: "response_item", payload });
+  const event = (payload: JsonValue) => ({ type: "event_msg", payload });
   const say = (t: string, phase?: string) => item({ type: "message", role: "assistant", ...(phase && { phase }), content: [{ type: "output_text", text: t }] });
   const turn1 = [
     event({ type: "task_started" }),
@@ -75,7 +76,7 @@ test("Codex: the final answer of the last turn", () => {
 });
 
 test("Pi: the last assistant message's text parts after the last user message", () => {
-  const msg = (role: string, content: unknown) => ({ type: "message", message: { role, content } });
+  const msg = (role: string, content: JsonValue) => ({ type: "message", message: { role, content } });
   const transcript = lines(
     msg("user", [text("Fix it.")]),
     msg("assistant", [thinking("Hmm."), text("Looking."), { type: "toolCall", id: "c1", name: "read", arguments: {} }]),

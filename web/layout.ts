@@ -73,7 +73,7 @@ export function isCustomLayout(layout: SavedLayout): boolean {
 
 // Cards stay below their tab's header and inside its left edge. The right and bottom are
 // open, because the tab grows to hold its cards.
-function clampCard(p: { x: number; y: number }): { x: number; y: number } {
+function clampCard(p: { x: number; y: number }) {
   return { x: Math.max(CARD_INSET, p.x), y: Math.max(TAB_HEADER + CARD_INSET, p.y) };
 }
 
@@ -105,6 +105,20 @@ export type WorkspaceData = {
 };
 export type TabData = { tab: FleetTab; workspaceId: string };
 export type PaneData = { pane: FleetPane };
+
+/** A node `layoutFleet` places; its `type` names the component that draws it. */
+export type LayoutNode =
+  | Node<GroupData, "group-box">
+  | Node<WorkspaceData, "workspace">
+  | Node<WorkspaceData, "ws-label">
+  | Node<TabData, "tab">
+  | Node<PaneData, "pane">;
+export type LayoutNodeOf<T extends LayoutNode["type"]> = Extract<LayoutNode, { type: T }>;
+
+export interface FleetLayout {
+  nodes: LayoutNode[];
+  edges: Edge[];
+}
 
 export interface Rect {
   x: number;
@@ -331,13 +345,13 @@ export function layoutFleet(
   fleet: Fleet,
   opts: LayoutOptions,
   saved: WorkspacePositions = {},
-): { nodes: Node[]; edges: Edge[] } {
+): FleetLayout {
   const groups = visibleGroups(fleet, opts);
   const meta = opts.workspaceMeta ?? {};
   const isCollapsed = (ws: FleetWorkspace) => !!meta[ws.id]?.collapsed;
   const placed = placeWorkspaces(groups, saved, (ws) => (isCollapsed(ws) ? collapsedSize(ws) : workspaceSize(ws)));
   const { filtered } = statusFilter(opts);
-  const nodes: Node[] = [];
+  const nodes: LayoutNode[] = [];
 
   const dragging = opts.dragging ?? new Set<string>();
   const hints = new Map<string, DropHint>();
@@ -434,7 +448,7 @@ export function layoutFleet(
         data: { tab, workspaceId: p.ws.id } satisfies TabData,
       });
       const bodyH = tb.h - TAB_HEADER;
-      const arrangement = (tab as ViewTab).compact;
+      const { compact: arrangement }: ViewTab = tab;
       for (const pane of tab.panes) {
         paneIds.add(pane.id);
         if (arrangement) {
@@ -471,7 +485,7 @@ export function layoutFleet(
   const edges: Edge[] = [];
   for (const node of nodes) {
     if (node.type !== "pane") continue;
-    const { pane } = node.data as PaneData;
+    const { pane } = node.data;
     if (pane.parent && paneIds.has(pane.parent)) {
       edges.push({
         id: `edge:${pane.parent}->${pane.id}`,

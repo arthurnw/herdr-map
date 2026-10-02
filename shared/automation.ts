@@ -1,6 +1,7 @@
 // The deliver-when-idle queue, scheduled prompts, and what the UI reads about them.
 // Shared by the server (which runs and persists them) and the web UI.
 import type { Link } from "./layout-types.ts";
+import { isObject } from "./parse.ts";
 
 /** What put a prompt in the queue. */
 export type QueueSourceKind = "handoff" | "context" | "note" | "schedule" | "manual";
@@ -86,11 +87,10 @@ export const INTERVAL_MAX_MINUTES = 7 * 24 * 60;
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-export function isTiming(value: unknown): value is ScheduleTiming {
-  if (value === null || typeof value !== "object") return false;
-  const t = value as Record<string, unknown>;
+export function isTiming(t: unknown): t is ScheduleTiming {
+  if (!isObject(t)) return false;
   if (t.kind === "interval") {
-    return Number.isInteger(t.minutes) && (t.minutes as number) >= INTERVAL_MIN_MINUTES && (t.minutes as number) <= INTERVAL_MAX_MINUTES;
+    return typeof t.minutes === "number" && Number.isInteger(t.minutes) && t.minutes >= INTERVAL_MIN_MINUTES && t.minutes <= INTERVAL_MAX_MINUTES;
   }
   return t.kind === "daily" && typeof t.time === "string" && HHMM.test(t.time);
 }
@@ -116,7 +116,7 @@ export function nextRun(timing: ScheduleTiming, after: number): number {
  * missed (the machine slept, or the service was down), at most one is due, and the next
  * run counts from `now`.
  */
-export function scheduleStep(timing: ScheduleTiming, nextRunAt: number, now: number): { due: boolean; nextRunAt: number } {
+export function scheduleStep(timing: ScheduleTiming, nextRunAt: number, now: number) {
   if (now < nextRunAt) return { due: false, nextRunAt };
   return { due: true, nextRunAt: nextRun(timing, now) };
 }

@@ -24,4 +24,11 @@ export function StatusDot({ status, className }: { status: AgentStatus; classNam
   );
 }
 
-export const KIND_LABEL: Record<string, string> = { claude: "Claude", pi: "Pi", codex: "Codex" };
+const KIND_LABELS = new Map([
+  ["claude", "Claude"],
+  ["pi", "Pi"],
+  ["codex", "Codex"],
+]);
+
+/** The display name of an agent kind; kinds without one show as reported. */
+export const kindLabel = (kind: string) => KIND_LABELS.get(kind) ?? kind;

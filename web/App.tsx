@@ -7,7 +7,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
-  type Node,
   type Viewport,
 } from "@xyflow/react";
 import { useTheme } from "next-themes";
@@ -18,7 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isCustomLayout, layoutFleet, type CardDrag, type PaneData, type TabData, type WorkspaceData } from "./layout.ts";
+import { isCustomLayout, layoutFleet, type CardDrag, type LayoutNode } from "./layout.ts";
 import { NowContext, nodeTypes } from "./nodes.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import {
@@ -50,7 +49,7 @@ import { useSelection } from "./hooks/useSelection.ts";
 import { useShortcut } from "./hooks/useShortcut.ts";
 import { useBoardNav, useSpatialNav } from "./hooks/useSpatialNav.ts";
 import { CommandPalette } from "./CommandPalette.tsx";
-import { NoteActionsProvider, NoteNode, useNotes } from "./notes.tsx";
+import { NoteActionsProvider, NoteNode, useNotes, type CanvasNode } from "./notes.tsx";
 import { BulkBar } from "./BulkBar.tsx";
 import { AutomationProvider, NEW_SCHEDULE_EVENT, OPEN_QUEUE_EVENT, useAutomationState } from "./automation.tsx";
 import { linkEdges, linkEdgeTypes, useLinking } from "./links.tsx";
@@ -59,6 +58,7 @@ import { SubagentViewContext, useSubagentView } from "./subagents.tsx";
 import { HunkContext, useHunkView } from "./review.tsx";
 import { Board } from "./Board.tsx";
 import { boardCards, boardColumns } from "./board.ts";
+import { errorMessage } from "../shared/errors.ts";
 
 const canvasNodeTypes = { ...nodeTypes, note: NoteNode };
 const canvasEdgeTypes = { ...linkEdgeTypes, ...lineageEdgeTypes };
@@ -69,10 +69,10 @@ function zoomClass(zoom: number) {
   return "zoom-near";
 }
 
-function minimapClass(node: Node): string {
+function minimapClass(node: CanvasNode): string {
   if (node.type === "ws-label") return "mm-hidden";
   if (node.type !== "pane") return "mm-container";
-  const status = (node.data as PaneData).pane.agent?.status;
+  const status = node.data.pane.agent?.status;
   return status ? `mm-pane status-${status}` : "mm-pane tool";
 }
 
@@ -125,12 +125,12 @@ function FleetMap() {
     const matching = new Set(
       fleet.groups.flatMap((g) => g.workspaces.filter((ws) => workspaceMatches(ws, q, tagsOf(ws.id))).map((ws) => ws.id)),
     );
-    return layout.nodes.map((n): Node => {
+    return layout.nodes.map((n): LayoutNode => {
       const wsId =
         n.type === "workspace" || n.type === "ws-label"
-          ? (n.data as WorkspaceData).workspace.id
+          ? n.data.workspace.id
           : n.type === "tab"
-            ? (n.data as TabData).workspaceId
+            ? n.data.workspaceId
             : n.type === "pane"
               ? panes.get(n.id)?.workspace.id
               : undefined;
@@ -161,7 +161,7 @@ function FleetMap() {
   // Applies to the workspaces on the map, so hidden ones keep their own state.
   const collapseAll = useCallback(
     (collapsed: boolean) => {
-      const ids = layout.nodes.filter((n) => n.type === "workspace").map((n) => (n.data as WorkspaceData).workspace.id);
+      const ids = layout.nodes.flatMap((n) => (n.type === "workspace" ? [n.data.workspace.id] : []));
       if (ids.length) void patchWorkspaces({ ids, collapsed });
     },
     [layout.nodes, patchWorkspaces],
@@ -214,14 +214,14 @@ function FleetMap() {
     try {
       await requestFocus(target);
     } catch (err) {
-      toast.error("Couldn't focus in herdr", { description: (err as Error).message });
+      toast.error("Couldn't focus in herdr", { description: errorMessage(err) });
     }
   }, []);
 
   const focusPane = useCallback((l: Located) => void focus(paneTarget(l.pane, l.tabId)), [focus]);
 
   const onNodeClick = useCallback(
-    (event: React.MouseEvent, node: Node) => {
+    (event: React.MouseEvent, node: CanvasNode) => {
       // Option-click pins a pane's preview without leaving the map.
       if (node.type === "pane" && event.altKey) {
         setPinned((p) => (p === node.id ? undefined : node.id));
@@ -230,8 +230,8 @@ function FleetMap() {
       if (node.type === "pane") {
         const loc = panes.get(node.id);
         if (loc) focusPane(loc);
-      } else if (node.type === "tab") void focus({ kind: "tab", id: (node.data as TabData).tab.id });
-      else if (node.type === "workspace") void focus({ kind: "workspace", id: (node.data as WorkspaceData).workspace.id });
+      } else if (node.type === "tab") void focus({ kind: "tab", id: node.data.tab.id });
+      else if (node.type === "workspace") void focus({ kind: "workspace", id: node.data.workspace.id });
     },
     [panes, focus, focusPane],
   );
@@ -368,7 +368,7 @@ function FleetMap() {
             ) : (
               <main
                 className={`canvas h-full ${zoomClass(zoom)}${linking.linking ? " linking" : ""}`}
-                style={{ "--z": zoom } as React.CSSProperties}
+                style={{ "--z": zoom }}
                 onMouseDownCapture={boxSelect.onMouseDownCapture}
                 onDoubleClick={notes.onCanvasDoubleClick}
               >

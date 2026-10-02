@@ -3,7 +3,7 @@
 // so every top-level name here shares one scope with theirs.
 import { execFileSync } from "node:child_process";
 import { totalmem } from "node:os";
-import { herdrCaller, herdrProcessInfo, type PaneProcess, type ProcessInfo } from "./usage.ts";
+import { errorMessage, herdrCaller, herdrProcessInfo, type PaneProcess, type ProcessInfo } from "./usage.ts";
 
 export interface MemoryInput {
   /** Agent pane IDs. */
@@ -157,7 +157,7 @@ export function memoryUse(input: MemoryInput, deps: MemoryDeps = {}): MemoryOutp
   try {
     procs = parsePs((deps.ps ?? runPs)());
   } catch (err) {
-    return { panes: [], totalBytes: 0, machineBytes, error: `ps failed: ${(err as Error).message.split("\n")[0]}` };
+    return { panes: [], totalBytes: 0, machineBytes, error: `ps failed: ${errorMessage(err).split("\n")[0]}` };
   }
   const children = childrenOf(procs);
   const panes: PaneMemory[] = [];

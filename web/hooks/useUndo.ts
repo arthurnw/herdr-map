@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { SavedLayout } from "../layout.ts";
 import { lastLayoutWriteAt, layoutWritten } from "../state.ts";
 import { useShortcut } from "./useShortcut.ts";
+import { errorMessage } from "../../shared/errors.ts";
 
 /**
  * ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y elsewhere) undo and redo layout changes:
@@ -30,10 +31,10 @@ export function useLayoutUndo(
           return;
         }
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
-        const { layout } = (await res.json()) as { layout: SavedLayout };
+        const { layout }: { layout: SavedLayout } = await res.json();
         setSaved(layout);
       } catch (err) {
-        toast.error(`Couldn't ${direction}`, { description: (err as Error).message });
+        toast.error(`Couldn't ${direction}`, { description: errorMessage(err) });
       }
     },
     [setSaved, notes],

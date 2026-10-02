@@ -1,34 +1,31 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { agentHistory, HISTORY_CHARS, keepEnd, type HistoryOutput } from "../probe/reply.ts";
 import { historyLine } from "../probe/subagents.ts";
-import type { Context } from "../server/context.ts";
 import { createUsageWatcher, readHistory } from "../server/probe.ts";
-import { createRouter } from "../server/router.ts";
 import { readRoutes } from "../server/routes/read.ts";
 import { transcriptRoutes } from "../server/routes/transcript.ts";
 import { buildFleet, StatusClock, type SnapPane } from "../shared/model.ts";
 import { historyParts } from "../web/history.ts";
-import { snapshotFixture } from "./fixtures.ts";
+import { snapshotFixture, type JsonValue } from "./fixtures.ts";
+import { routeContext, serveRoutes } from "./http.ts";
 
 // Synthetic transcript lines, shaped like each agent's own records.
-const lines = (...ls: unknown[]) => ls.map((l) => `${JSON.stringify(l)}\n`).join("");
+const lines = (...ls: JsonValue[]) => ls.map((l) => `${JSON.stringify(l)}\n`).join("");
 const tempDir = () => mkdtempSync(join(tmpdir(), "herdr-map-history-"));
-function transcript(...ls: unknown[]): string {
+function transcript(...ls: JsonValue[]): string {
   const path = join(tempDir(), "s.jsonl");
   writeFileSync(path, lines(...ls));
   return path;
 }
-const history = (kind: string, ...ls: unknown[]) => agentHistory({ ref: { pane: "w1:p1", kind, sessionKind: "path", session: "" }, path: transcript(...ls) });
+const history = (kind: string, ...ls: JsonValue[]) => agentHistory({ ref: { pane: "w1:p1", kind, sessionKind: "path", session: "" }, path: transcript(...ls) });
 
 const text = (t: string) => ({ type: "text", text: t });
-const claudeUser = (content: unknown, extra = {}) => ({ type: "user", isSidechain: false, message: { role: "user", content }, ...extra });
-const claudeSays = (block: unknown, extra = {}) => ({
+const claudeUser = (content: JsonValue, extra = {}) => ({ type: "user", isSidechain: false, message: { role: "user", content }, ...extra });
+const claudeSays = (block: JsonValue, extra = {}) => ({
   type: "assistant",
   isSidechain: false,
   message: { id: "m", role: "assistant", model: "claude-opus-5-5", content: [block] },
@@ -76,7 +73,7 @@ test("Claude: prompts, replies, and one line per tool call, without what the use
 });
 
 test("Pi: user and assistant messages and tool calls, without thinking, tool results, or other entries", () => {
-  const msg = (role: string, content: unknown) => ({ type: "message", message: { role, content } });
+  const msg = (role: string, content: JsonValue) => ({ type: "message", message: { role, content } });
   const out = history(
     "pi",
     { type: "session", version: 3, cwd: "/repos/w5" },
@@ -92,7 +89,7 @@ test("Pi: user and assistant messages and tool calls, without thinking, tool res
 });
 
 test("Codex: prompts, answers, and tool calls, without injected context, reasoning, or tool output", () => {
-  const item = (payload: unknown) => ({ type: "response_item", payload });
+  const item = (payload: JsonValue) => ({ type: "response_item", payload });
   const input = (...ts: string[]) => ts.map((t) => ({ type: "input_text", text: t }));
   const out = history(
     "codex",
@@ -181,15 +178,9 @@ async function serve(t: TestContext, history: (pane: string) => Promise<HistoryO
   const bin = join(tempDir(), "herdr");
   writeFileSync(bin, '#!/bin/sh\necho "$*"\n');
   chmodSync(bin, 0o755);
-  const ctx = { herdr: { bin }, poller } as unknown as Context;
-  const server = createServer(createRouter([...readRoutes(ctx), ...transcriptRoutes(ctx)], (_req, res) => res.end()));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => server.close());
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const get = async (path: string) => {
-    const res = await fetch(base + path);
-    return { status: res.status, body: (await res.json()) as any };
-  };
+  const ctx = routeContext({ herdr: { bin }, poller });
+  const call = await serveRoutes(t, [...readRoutes(ctx), ...transcriptRoutes(ctx)]);
+  const get = (path: string) => call("GET", path);
   return { get, asked };
 }
 

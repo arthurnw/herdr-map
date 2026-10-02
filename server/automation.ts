@@ -2,6 +2,7 @@
 // already has. Nothing here sends anything unless the user created a link, armed a
 // schedule, or queued a prompt, and the global pause stops all of it.
 import type { ReplyOutput } from "../probe/reply.ts";
+import { errorMessage } from "../shared/errors.ts";
 import { FINISH_GRACE_MS, type AgentStatus } from "../shared/model.ts";
 import { indexPanes, paneLabel, type PaneInfo } from "./agents.ts";
 import { previewSource, promptAgent, readPane, type HerdrOptions } from "./herdr.ts";
@@ -66,7 +67,7 @@ export async function handoffOutput(
   try {
     return { screen: await readScreen(pane) };
   } catch (err) {
-    return { error: (err as Error).message };
+    return { error: errorMessage(err) };
   }
 }
 
@@ -125,7 +126,7 @@ export async function createAutomation({ herdr, layoutPath, queuePath, poller }:
       }
       await queue.tick(now);
     } catch (err) {
-      console.error(`herdr-map: automation: ${(err as Error).message}`);
+      console.error(`herdr-map: automation: ${errorMessage(err)}`);
     } finally {
       running = false;
     }

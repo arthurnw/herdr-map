@@ -1,20 +1,17 @@
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import type { Context } from "../server/context.ts";
 import { loadStore } from "../server/layout-store.ts";
 import { openQueue } from "../server/queue.ts";
-import { createRouter } from "../server/router.ts";
 import { linksRoutes } from "../server/routes/links.ts";
 import { notesRoutes } from "../server/routes/notes.ts";
 import { queueRoutes } from "../server/routes/queue.ts";
 import { schedulesRoutes } from "../server/routes/schedules.ts";
 import { textHash } from "../shared/automation.ts";
 import { fleetWith } from "./fixtures.ts";
+import { routeContext, serveRoutes } from "./http.ts";
 
 /** Serves the automation routes over fresh files, with three agents and one plain pane. */
 async function serve(t: TestContext) {
@@ -23,20 +20,8 @@ async function serve(t: TestContext) {
   const fleet = fleetWith({ "w1:p1": "working", "w1:p2": "idle", "w1:p3": "idle", "w1:p4": null });
   const poller = { state: () => ({ fleet, updatedAt: 1 }) };
   const queue = await openQueue({ path: join(dir, "queue.json"), view: poller.state, send: async () => {} });
-  const ctx = { layoutPath, poller, automation: { queue, tick: async () => {} } } as unknown as Context;
-  const routes = [...linksRoutes(ctx), ...notesRoutes(ctx), ...queueRoutes(ctx), ...schedulesRoutes(ctx)];
-  const server = createServer(createRouter(routes, (_req, res) => res.end()));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => server.close());
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(base + path, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    return { status: res.status, body: (await res.json()) as any };
-  };
+  const ctx = routeContext({ layoutPath, poller, automation: { queue, tick: async () => {} } });
+  const call = await serveRoutes(t, [...linksRoutes(ctx), ...notesRoutes(ctx), ...queueRoutes(ctx), ...schedulesRoutes(ctx)]);
   return { call, queue, store: () => loadStore(layoutPath) };
 }
 

@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { useReactFlow, type Node, type NodeChange } from "@xyflow/react";
+import { useReactFlow, type Node, type NodeChange, type NodePositionChange } from "@xyflow/react";
 import {
   emptyLayout,
   isDetachedDrop,
   snapCard,
   type CardDrag,
-  type GroupData,
+  type LayoutNode,
+  type LayoutNodeOf,
   type Rect,
   type SavedLayout,
-  type WorkspaceData,
   type WorkspacePositions,
 } from "../layout.ts";
 import { putLayout, type Located } from "../state.ts";
+
+type WorkspaceNode = LayoutNodeOf<"workspace">;
+type NodeDragEvent = MouseEvent | TouchEvent;
 
 function nodeRect(n: Node): Rect {
   return { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
@@ -46,7 +49,7 @@ const NO_PANES: ReadonlyMap<string, Located> = new Map();
  * the node IDs of box-selected workspaces, which move together.
  */
 export function useLayoutDrag(
-  nodes: Node[],
+  nodes: LayoutNode[],
   saved: SavedLayout | undefined,
   setSaved: Dispatch<SetStateAction<SavedLayout | undefined>>,
   selected: ReadonlySet<string> = NONE,
@@ -92,7 +95,7 @@ export function useLayoutDrag(
   const bulkDrag = useRef<{ id: string; origin: { x: number; y: number }; members: WorkspacePositions }>(undefined);
 
   const onNodeDragStart = useCallback(
-    (_: unknown, node: Node) => {
+    (_event: NodeDragEvent, node: LayoutNode) => {
       if (node.type === "pane") {
         setCardDrag({ id: node.id, ...node.position });
         return;
@@ -101,13 +104,13 @@ export function useLayoutDrag(
         const members: WorkspacePositions = {};
         for (const n of nodes) {
           if (n.type !== "workspace" || n.id === node.id || !selected.has(n.id)) continue;
-          const data = n.data as WorkspaceData;
+          const { data } = n;
           members[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
         }
         bulkDrag.current = { id: node.id, origin: { ...node.position }, members };
       }
       if (node.type === "workspace") {
-        const ids = new Set([(node.data as WorkspaceData).workspace.id]);
+        const ids = new Set([node.data.workspace.id]);
         if (bulkDrag.current?.id === node.id) for (const id of Object.keys(bulkDrag.current.members)) ids.add(id);
         setDragging(ids);
       }
@@ -115,8 +118,8 @@ export function useLayoutDrag(
       const members: WorkspacePositions = {};
       for (const n of nodes) {
         if (n.type !== "workspace") continue;
-        const id = (n.data as WorkspaceData).workspace.id;
-        if ((node.data as GroupData).memberIds.includes(id)) members[id] = { ...n.position, detached: false };
+        const id = n.data.workspace.id;
+        if (node.data.memberIds.includes(id)) members[id] = { ...n.position, detached: false };
       }
       groupDrag.current = { id: node.id, origin: { ...node.position }, members };
     },
@@ -126,11 +129,11 @@ export function useLayoutDrag(
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const byId = new Map(nodes.map((n) => [n.id, n]));
-      const moves = changes.filter((c) => c.type === "position" && c.position);
-      const isCard = (c: NodeChange) => byId.get((c as { id: string }).id)?.type === "pane";
+      const moves = changes.filter((c): c is NodePositionChange => c.type === "position" && !!c.position);
+      const isCard = (c: NodePositionChange) => byId.get(c.id)?.type === "pane";
       // A card's drag position stays out of the saved layout until the drop, so its tab keeps its size.
       for (const c of moves) {
-        if (c.type === "position" && c.position && isCard(c)) setCardDrag({ id: c.id, ...snapCard(c.position) });
+        if (c.position && isCard(c)) setCardDrag({ id: c.id, ...snapCard(c.position) });
       }
       const workspaceMoves = moves.filter((c) => !isCard(c));
       if (workspaceMoves.length === 0) return;
@@ -139,15 +142,15 @@ export function useLayoutDrag(
         const next: WorkspacePositions = { ...prev };
         if (Object.keys(next).length === 0) {
           for (const n of nodes) {
-            if (n.type === "workspace") next[(n.data as WorkspaceData).workspace.id] = { ...n.position };
+            if (n.type === "workspace") next[n.data.workspace.id] = { ...n.position };
           }
         }
         for (const change of workspaceMoves) {
-          if (change.type !== "position" || !change.position) continue;
+          if (!change.position) continue;
           const node = byId.get(change.id);
           if (!node) continue;
           if (node.type === "workspace") {
-            const id = (node.data as WorkspaceData).workspace.id;
+            const id = node.data.workspace.id;
             next[id] = { ...change.position, detached: next[id]?.detached };
             if (bulk?.id === node.id) {
               const { origin, members } = bulk;
@@ -169,7 +172,7 @@ export function useLayoutDrag(
   );
 
   const onNodeDragStop = useCallback(
-    (_: unknown, node: Node) => {
+    (_event: NodeDragEvent, node: LayoutNode) => {
       if (node.type === "pane") {
         const mates = nodes.filter((n) => n.type === "pane" && n.parentId === node.parentId && n.id !== node.id);
         setSaved((prev) => {
@@ -189,21 +192,21 @@ export function useLayoutDrag(
       setWorkspaces((prev) => {
         const next = { ...prev };
         if (node.type === "workspace") {
-          const wsId = (n: Node) => (n.data as WorkspaceData).workspace.id;
+          const wsId = (n: WorkspaceNode) => n.data.workspace.id;
           const moved = nodes.filter(
-            (n) => n.type === "workspace" && (n.id === node.id || (bulk?.id === node.id && selected.has(n.id))),
+            (n): n is WorkspaceNode => n.type === "workspace" && (n.id === node.id || (bulk?.id === node.id && selected.has(n.id))),
           );
           const movedIds = new Set(moved.map((n) => n.id));
-          const rect = (n: Node) => nodeRect({ ...n, position: n.id === node.id ? node.position : (next[wsId(n)] ?? n.position) });
+          const rect = (n: WorkspaceNode) => nodeRect({ ...n, position: n.id === node.id ? node.position : (next[wsId(n)] ?? n.position) });
           // Workspaces moved together detach from, or rejoin, their group as one, depending on
           // whether they land near the group members that stayed put.
           for (const m of moved) {
-            const { groupKey } = m.data as WorkspaceData;
-            const sameGroup = (n: Node) => (n.data as WorkspaceData).groupKey === groupKey;
+            const { groupKey } = m.data;
+            const sameGroup = (n: WorkspaceNode) => n.data.groupKey === groupKey;
             const others = nodes.filter(
-              (n) => n.type === "workspace" && !movedIds.has(n.id) && sameGroup(n) && !(n.data as WorkspaceData).detached,
+              (n) => n.type === "workspace" && !movedIds.has(n.id) && sameGroup(n) && !n.data.detached,
             );
-            const detached = isDetachedDrop(bounds(moved.filter(sameGroup).map(rect)), others.map(nodeRect));
+            const detached = isDetachedDrop(bounds(moved.flatMap((n) => (sameGroup(n) ? [rect(n)] : []))), others.map(nodeRect));
             const { x, y } = rect(m);
             next[wsId(m)] = { x, y, detached };
           }
@@ -223,11 +226,11 @@ export function useLayoutDrag(
   // new members would. A box always keeps at least one workspace.
   const setDetached = useCallback(
     (wsIds: string | string[], detach: boolean) => {
-      const ids = new Set(typeof wsIds === "string" ? [wsIds] : wsIds);
-      const id = (n: Node) => (n.data as WorkspaceData).workspace.id;
-      const data = (n: Node) => n.data as WorkspaceData;
+      const ids = new Set(Array.isArray(wsIds) ? wsIds : [wsIds]);
+      const id = (n: WorkspaceNode) => n.data.workspace.id;
+      const data = (n: WorkspaceNode) => n.data;
       const workspaces = nodes.filter((n) => n.type === "workspace");
-      const byGroup = new Map<string, Node[]>();
+      const byGroup = new Map<string, WorkspaceNode[]>();
       for (const n of workspaces) {
         if (!ids.has(id(n)) || data(n).detached === detach) continue;
         byGroup.set(data(n).groupKey, [...(byGroup.get(data(n).groupKey) ?? []), n]);
@@ -279,7 +282,7 @@ export function useLayoutDrag(
     const workspaces: WorkspacePositions = { ...base.workspaces };
     for (const n of nodes) {
       if (n.type !== "workspace") continue;
-      const data = n.data as WorkspaceData;
+      const { data } = n;
       workspaces[data.workspace.id] = { ...n.position, detached: data.detached || undefined };
     }
     return withLivePanes({ ...base, workspaces });

@@ -1,4 +1,5 @@
 import type { ServerResponse } from "node:http";
+import { errorMessage } from "../shared/errors.ts";
 import { buildFleet, StatusClock, type Fleet, type Snapshot, type SnapPane } from "../shared/model.ts";
 import { snapshot, type HerdrOptions } from "./herdr.ts";
 import type { HistoryOutput, ReplyOutput } from "../probe/reply.ts";
@@ -78,7 +79,7 @@ export function createPoller(herdr: HerdrOptions, intervalMs: number, stuckMs: n
       if (git) state = { ...state, fleet: markGit(state.fleet!, git.workspaces(workspaceDirs(snap))) };
       if (hunk) state = { ...state, fleet: markHunk(state.fleet!, matchReviews(snap, hunk.output())) };
     } catch (err) {
-      state = { ...state, error: (err as Error).message };
+      state = { ...state, error: errorMessage(err) };
     }
     const { updatedAt, ...rest } = state;
     const payload = JSON.stringify(rest);

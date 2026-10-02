@@ -3,7 +3,7 @@
 // and usage.ts, and its top-level names must differ from usage.ts's.
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { advance, fileSize, num, readJson, safeList, tailText, type Cursor, type Json, type ProbeRef, type Roots, type Tally } from "./usage.ts";
+import { advance, fileSize, num, readJson, safeList, tailText, type Cursor, type Json, type JsonValue, type ProbeRef, type Roots, type Tally, type TranscriptReader } from "./usage.ts";
 
 export type SubagentStatus = "running" | "done" | "failed" | "stopped";
 
@@ -171,6 +171,7 @@ function tag(s: string, name: string): string | undefined {
   return new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(s)?.[1]?.trim();
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- looked up by any status a transcript records
 const CLAUDE_ENDS: Record<string, SubagentStatus> = { completed: "done", failed: "failed", killed: "stopped", stopped: "stopped" };
 
 function claudeToolUse(b: Json, at: number | undefined, t: Tally) {
@@ -266,6 +267,7 @@ export function codexActivity(o: Json, t: Tally) {
   if (Array.isArray(args?.plan)) setTasks(t, args.plan.map((x: Json) => ({ text: str(x?.step) ?? "", status: String(x?.status ?? "pending") })));
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- looked up by any status a transcript records
 const PI_STATUS: Record<string, SubagentStatus> = {
   background: "running",
   running: "running",
@@ -393,7 +395,8 @@ function codexChildLine(o: Json, t: Tally) {
 }
 
 /** Readers for subagent transcripts, looked up by `advance` alongside the agents' own. */
-export const SUBAGENT_READERS: Record<string, { marker: string[]; read: (o: Json, t: Tally) => void; history: boolean }> = {
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- looked up by any agent kind string
+export const SUBAGENT_READERS: Record<string, TranscriptReader> = {
   "claude-subagent": { marker: ['"usage"'], read: claudeChildLine, history: true },
   "pi-subagent": { marker: ['"usage"', '"Agent"', "subagents:record"], read: piChildLine, history: true },
   "codex-subagent": {
@@ -606,12 +609,17 @@ function codexRecentDirs(root: string, now: number): string[] {
   });
 }
 
+export interface CodexActivity {
+  subagents: Subagent[];
+  reviews?: Reviews;
+}
+
 /**
  * Codex subagents are threads with their own rollouts, whose first line names the parent thread.
  * Rollouts changed recently are checked, and followed once they're found to belong to `thread`
  * or to one of its subagents.
  */
-export function codexSubagents(thread: string, state: SubagentState, ctx: SubagentContext): { subagents: Subagent[]; reviews?: Reviews } {
+export function codexSubagents(thread: string, state: SubagentState, ctx: SubagentContext): CodexActivity {
   const known = new Set(Object.values(state.children).map((c) => c.path));
   const heads: { head: CodexHead; path: string; lastAt: number }[] = [];
   for (const dir of codexRecentDirs(ctx.roots.codex, ctx.now)) {
@@ -736,13 +744,12 @@ export interface TranscriptOutput {
 export const TRANSCRIPT_BYTES = 256 * 1024;
 const MESSAGE_MAX = 4000;
 
-function preview(input: unknown): string {
+function preview(input: JsonValue | undefined): string {
   if (input === undefined || input === null) return "";
-  const o = typeof input === "string" ? input : (input as Json);
   const pick =
-    typeof o === "string"
-      ? o
-      : (o.command ?? o.cmd ?? o.file_path ?? o.path ?? o.pattern ?? o.query ?? o.url ?? o.description ?? o.prompt ?? JSON.stringify(o));
+    typeof input !== "object"
+      ? input
+      : (input.command ?? input.cmd ?? input.file_path ?? input.path ?? input.pattern ?? input.query ?? input.url ?? input.description ?? input.prompt ?? JSON.stringify(input));
   const s = String(pick).replace(/\s+/g, " ").trim();
   return s.length > 120 ? `${s.slice(0, 119)}…` : s;
 }
@@ -757,7 +764,7 @@ function asPrompt(text: string): string {
   return `› ${text.replace(/\n/g, "\n  ")}`;
 }
 
-function codexArgs(v: unknown): unknown {
+function codexArgs(v: JsonValue | undefined): JsonValue | undefined {
   if (typeof v !== "string") return v;
   try {
     return JSON.parse(v);
@@ -836,7 +843,7 @@ function codexTyped(text: string): string | undefined {
 }
 
 /** Content with each text block passed through `typed`, dropping the blocks it rejects. */
-function typedContent(content: unknown, typed: (text: string) => string | undefined): unknown {
+function typedContent(content: JsonValue | undefined, typed: (text: string) => string | undefined): JsonValue | undefined {
   if (typeof content === "string") return typed(content);
   if (!Array.isArray(content)) return content;
   return content.flatMap((b) => {

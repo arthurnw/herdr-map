@@ -10,7 +10,7 @@ const NONE: ReadonlySet<string> = new Set();
  * it touches become selected. Esc, a click on empty canvas, or a Shift+click without a drag
  * clears the selection. `selected` holds workspace node IDs.
  */
-export function useBoxSelect(nodes: Node[]) {
+export function useBoxSelect<N extends Node>(nodes: N[]) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(NONE);
   // The box being drawn, in client coordinates.
   const [box, setBox] = useState<Omit<Box, "id">>();
@@ -21,8 +21,8 @@ export function useBoxSelect(nodes: Node[]) {
   const onMouseDownCapture = useCallback(
     (e: React.MouseEvent) => {
       if (!e.shiftKey || e.button !== 0) return;
-      const target = e.target as Element;
-      if (!target.closest(".react-flow__pane")) return;
+      const { target } = e;
+      if (!(target instanceof Element) || !target.closest(".react-flow__pane")) return;
       const node = target.closest(".react-flow__node");
       if (node && !node.classList.contains("react-flow__node-group-box")) return;
       // Keeps React Flow from starting a pan or a repo-box drag.

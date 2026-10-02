@@ -16,6 +16,7 @@ import {
   type ProbeRef,
   type Roots,
 } from "../probe/usage.ts";
+import type { JsonValue } from "./fixtures.ts";
 
 function tempDir() {
   return mkdtempSync(join(tmpdir(), "herdr-map-screen-"));
@@ -98,12 +99,12 @@ test("transcriptText reads only the tail and drops the line it cuts", () => {
 });
 
 test("matchScreen accepts one candidate with two or more lines, or the only one with any", () => {
-  const texts: Record<string, string> = { a: "one two", b: "two", c: "three" };
-  const read = (p: string) => texts[p];
+  const texts = new Map([["a", "one two"], ["b", "two"], ["c", "three"]]);
+  const read = (p: string) => texts.get(p) ?? assert.fail(`no text for ${p}`);
   assert.equal(matchScreen(["one", "two"], ["a", "b", "c"], read), "a", "only a has two");
   assert.equal(matchScreen(["three", "four"], ["a", "b", "c"], read), "c", "only c has any");
   assert.equal(matchScreen(["two"], ["a", "b"], read), undefined, "two candidates, one line each");
-  texts.b = "one two";
+  texts.set("b", "one two");
   assert.equal(matchScreen(["one", "two"], ["a", "b", "c"], read), undefined, "two candidates with two lines");
   assert.equal(matchScreen([], ["a"], read), undefined);
   assert.equal(matchScreen(["one"], ["missing", "a"], (p) => (p === "missing" ? assert.fail("unreadable") : read(p))), "a");
@@ -145,7 +146,7 @@ function unlinkedFixture() {
   const project = join(roots.claude, "projects", slug(main));
   mkdirSync(project, { recursive: true });
   mkdirSync(join(roots.claude, "sessions"), { recursive: true });
-  const entry = (pid: number, o: object) => writeFileSync(join(roots.claude, "sessions", `${pid}.json`), JSON.stringify({ pid, ...o }));
+  const entry = (pid: number, o: Record<string, JsonValue>) => writeFileSync(join(roots.claude, "sessions", `${pid}.json`), JSON.stringify({ pid, ...o }));
   entry(100, { sessionId: STALE, kind: "interactive", cwd: wt, parkedJobId: "d00dfeed" });
   entry(200, { sessionId: JOB, kind: "bg", jobId: "b0b0cafe", cwd: main });
   const job = join(project, `${JOB}.jsonl`);

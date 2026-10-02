@@ -5,10 +5,17 @@ import { toast } from "sonner";
 import type { AutomationState, Schedule, ScheduleTiming } from "../shared/automation.ts";
 import type { Endpoint, LinkKind } from "../shared/layout-types.ts";
 import type { Located } from "./state.ts";
+import { errorMessage } from "../shared/errors.ts";
 
 const POLL_MS = 2000;
 
-async function call<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+type RequestBody =
+  | { paused: boolean }
+  | { target: string; text: string }
+  | { from: Endpoint; to: Endpoint; kind: LinkKind }
+  | Partial<ScheduleFields>;
+
+async function call<T = unknown>(method: string, path: string, body?: RequestBody): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: { "content-type": "application/json" },
@@ -16,6 +23,7 @@ async function call<T = unknown>(method: string, path: string, body?: unknown): 
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? res.statusText);
+  // SAFETY: each caller names the type its route responds with.
   return json as T;
 }
 
@@ -48,11 +56,11 @@ export function useAutomationState() {
 
   /** Runs a request, shows its error as a toast, and refreshes. Resolves to the result, or undefined on failure. */
   const run = useCallback(
-    async <T,>(failure: string, method: string, path: string, body?: unknown): Promise<T | undefined> => {
+    async <T,>(failure: string, method: string, path: string, body?: RequestBody): Promise<T | undefined> => {
       try {
         return await call<T>(method, path, body);
       } catch (err) {
-        toast.error(failure, { description: (err as Error).message });
+        toast.error(failure, { description: errorMessage(err) });
         return undefined;
       } finally {
         void refresh();

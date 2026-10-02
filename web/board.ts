@@ -15,9 +15,13 @@ export const COLUMN_TITLES: Record<ColumnId, string> = {
 
 const ORDER: ColumnId[] = ["needs", "working", "done", "idle", "unknown"];
 
+export type AgentPane = FleetPane & { agent: FleetAgent };
+
+export const isAgentPane = (pane: FleetPane): pane is AgentPane => !!pane.agent;
+
 /** An agent card on the board: a Located agent pane with its repo's label. */
 export interface BoardCard {
-  pane: FleetPane;
+  pane: AgentPane;
   tabId: string;
   tabLabel: string;
   workspace: FleetWorkspace;
@@ -38,7 +42,7 @@ export function boardCards(fleet: Fleet | undefined): BoardCard[] {
     for (const ws of g.workspaces)
       for (const tab of ws.tabs)
         for (const pane of tab.panes)
-          if (pane.agent) out.push({ pane, tabId: tab.id, tabLabel: tab.label, workspace: ws, repo: g.label });
+          if (isAgentPane(pane)) out.push({ pane, tabId: tab.id, tabLabel: tab.label, workspace: ws, repo: g.label });
   return out;
 }
 
@@ -73,19 +77,20 @@ export function boardColumns(cards: BoardCard[], { unread, isStarred, shown }: C
   const byColumn = new Map<ColumnId, BoardCard[]>(ORDER.map((id) => [id, []]));
   const present = new Set<ColumnId>();
   for (const card of cards) {
-    const id = columnFor(card.pane.agent!, unread(card.pane.id));
+    const id = columnFor(card.pane.agent, unread(card.pane.id));
     present.add(id);
     if (shown(card)) byColumn.get(id)!.push(card);
   }
-  return ORDER.filter((id) => id !== "unknown" || present.has(id)).map((id) => {
+  return ORDER.flatMap((id) => {
+    if (id === "unknown" && !present.has(id)) return [];
     const oldestFirst = id === "needs" || id === "done";
     const sorted = byColumn.get(id)!.sort((a, b) => {
       const star = Number(isStarred(b.pane.id)) - Number(isStarred(a.pane.id));
       if (star) return star;
-      const diff = sinceFor(id, a.pane.agent!) - sinceFor(id, b.pane.agent!);
+      const diff = sinceFor(id, a.pane.agent) - sinceFor(id, b.pane.agent);
       return (oldestFirst ? diff : -diff) || a.pane.id.localeCompare(b.pane.id);
     });
-    return { id, title: COLUMN_TITLES[id], cards: sorted };
+    return [{ id, title: COLUMN_TITLES[id], cards: sorted }];
   });
 }
 

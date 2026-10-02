@@ -101,6 +101,7 @@ export function runSchedules(queue: Queue, panes: Map<string, PaneInfo>, now = D
         },
         now,
       );
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- enqueue returns the new item or why it refused
       s.lastResult = typeof item === "string" ? `Not queued: ${item}` : "Queued";
     }
   }

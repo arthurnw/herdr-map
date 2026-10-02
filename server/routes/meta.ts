@@ -15,14 +15,11 @@ import {
   type WorkspacePatch,
 } from "../../shared/organize.ts";
 import type { LayoutStore } from "../../shared/layout-types.ts";
+import { isObject } from "../../shared/parse.ts";
 
 const MAX_IDS = 500;
 const MAX_KEY_LENGTH = 512;
 const COLOR_ERROR = `color must be null or one of ${COLORS.join(", ")}`;
-
-type Obj = Record<string, unknown>;
-
-const isObject = (value: unknown): value is Obj => value !== null && typeof value === "object" && !Array.isArray(value);
 
 /** A workspace id or repo box key: usable as a record key and of a sane length. */
 function isKey(value: unknown): value is string {

@@ -3,7 +3,7 @@ import { useReactFlow, type Node } from "@xyflow/react";
 import type { Located } from "../state.ts";
 
 /** The hovered and pinned (selected) panes, and the map nodes with the selection outlined. */
-export function useSelection(panes: Map<string, Located>, nodes: Node[]) {
+export function useSelection<N extends Node>(panes: Map<string, Located>, nodes: N[]) {
   const [hovered, setHovered] = useState<string>();
   const [pinned, setPinned] = useState<string>();
   const { getInternalNode, getZoom, setCenter } = useReactFlow();

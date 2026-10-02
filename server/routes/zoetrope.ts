@@ -1,4 +1,5 @@
 import { fleetPanes } from "../../shared/model.ts";
+import { isObject } from "../../shared/parse.ts";
 import { hasZoetropeSession, ZOETROPE_PLUGIN } from "../../shared/zoetrope.ts";
 import type { Context } from "../context.ts";
 import { activateApp, assertId, focus, invokePluginAction, pluginEnabled } from "../herdr.ts";
@@ -22,8 +23,8 @@ export function zoetropeRoutes(ctx: Context): Route[] {
       method: "POST",
       path: "/api/zoetrope",
       handle: async (req, res) => {
-        const body = (await readBody(req)) as { pane?: unknown };
-        const pane = assertId(typeof body.pane === "string" ? body.pane : "");
+        const body = await readBody(req);
+        const pane = assertId(isObject(body) && typeof body.pane === "string" ? body.pane : "");
         const agent = fleetPanes(ctx.poller.state().fleet).find((p) => p.id === pane)?.agent;
         if (!hasZoetropeSession(agent)) {
           return sendJson(res, 400, { error: "herdr doesn't know this agent's Claude Code or Codex session." });

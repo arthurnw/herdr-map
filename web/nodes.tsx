@@ -15,10 +15,10 @@ import { WorkspaceActions } from "./workspace-actions.ts";
 import { DoneMarker, StuckMarker } from "./attention.tsx";
 import { agentAge } from "./format.ts";
 import { useStarsContext } from "./stars.tsx";
-import type { GroupData, PaneData, TabData, WorkspaceData } from "./layout.ts";
+import type { LayoutNodeOf, WorkspaceData } from "./layout.ts";
 import { LinkHandles } from "./links.tsx";
-import type { FleetAgent, FleetPane } from "../shared/model.ts";
-import { KIND_LABEL } from "./status.tsx";
+import { isAgentPane, type AgentPane } from "./board.ts";
+import { kindLabel } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
 import { AgentActivity } from "./activity.tsx";
 import { ColorItems, GroupColorMenu, StatusCounts, TagChips, TagInput, TagMenuItems, tintClass } from "./organize.tsx";
@@ -29,8 +29,8 @@ export const NowContext = createContext(Date.now());
 
 export { agentAge, formatAge } from "./format.ts";
 
-export const GroupNode = memo(({ data }: NodeProps) => {
-  const { group, color } = data as GroupData;
+export const GroupNode = memo(({ data }: NodeProps<LayoutNodeOf<"group-box">>) => {
+  const { group, color } = data;
   return (
     <div className={`group-box ${tintClass(color)}`} title="Drag to move this repo's workspaces">
       <div className="group-header">
@@ -41,8 +41,8 @@ export const GroupNode = memo(({ data }: NodeProps) => {
   );
 });
 
-export const WorkspaceNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, groupLabel, detached, dropHint, collapsed, color, tags } = data as WorkspaceData;
+export const WorkspaceNode = memo(({ data }: NodeProps<LayoutNodeOf<"workspace">>) => {
+  const { workspace: ws, groupLabel, detached, dropHint, collapsed, color, tags } = data;
   const [addingTag, setAddingTag] = useState(false);
   const actions = useContext(WorkspaceActions);
   const classes = ["workspace", ws.focused && "focused", dropHint && `drop-${dropHint}`, collapsed && "collapsed", tintClass(color)]
@@ -72,7 +72,7 @@ export const WorkspaceNode = memo(({ data }: NodeProps) => {
         <DoneMarker workspace={ws} />
         {collapsed && <StatusCounts workspace={ws} />}
         <span className="ws-count">{ws.agentCount ? `${ws.agentCount} agent${ws.agentCount > 1 ? "s" : ""}` : ""}</span>
-        <WorkspaceMenu data={data as WorkspaceData} onAddTag={() => setAddingTag(true)} />
+        <WorkspaceMenu data={data} onAddTag={() => setAddingTag(true)} />
       </div>
     </div>
   );
@@ -153,8 +153,8 @@ function WorkspaceMenu({ data, onAddTag }: { data: WorkspaceData; onAddTag: () =
   );
 }
 
-export const WorkspaceLabelNode = memo(({ data }: NodeProps) => {
-  const { workspace: ws, detached, groupLabel, collapsed } = data as WorkspaceData;
+export const WorkspaceLabelNode = memo(({ data }: NodeProps<LayoutNodeOf<"ws-label">>) => {
+  const { workspace: ws, detached, groupLabel, collapsed } = data;
   return (
     <div className="ws-label-float">
       <span className="ws-number">{ws.number}</span> {detached && <span className="ws-label-repo">{groupLabel} / </span>}
@@ -165,8 +165,8 @@ export const WorkspaceLabelNode = memo(({ data }: NodeProps) => {
   );
 });
 
-export const TabNode = memo(({ data }: NodeProps) => {
-  const { tab } = data as TabData;
+export const TabNode = memo(({ data }: NodeProps<LayoutNodeOf<"tab">>) => {
+  const { tab } = data;
   return (
     <div className={`tab${tab.focused ? " focused" : ""}`}>
       <div className="tab-header" title="Focus tab">
@@ -175,8 +175,6 @@ export const TabNode = memo(({ data }: NodeProps) => {
     </div>
   );
 });
-
-export type AgentPane = FleetPane & { agent: FleetAgent };
 
 /** Classes for an agent card, shared by the canvas and the board: its status tint, focus, and stuck outline. */
 export function agentCardClass(pane: AgentPane): string {
@@ -191,7 +189,7 @@ export function AgentCardBody({ pane, location }: { pane: AgentPane; location?: 
   const now = useContext(NowContext);
   const starred = useStarsContext().isStarred(pane.id);
   const { agent } = pane;
-  const kind = KIND_LABEL[agent.kind] ?? agent.kind;
+  const kind = kindLabel(agent.kind);
   return (
     <>
       <div className="agent-line">
@@ -212,15 +210,15 @@ export function AgentCardBody({ pane, location }: { pane: AgentPane; location?: 
   );
 }
 
-export const PaneNode = memo(({ data }: NodeProps) => {
-  const { pane } = data as PaneData;
+export const PaneNode = memo(({ data }: NodeProps<LayoutNodeOf<"pane">>) => {
+  const { pane } = data;
   const handles = (
     <>
       <Handle type="target" position={Position.Top} isConnectable={false} />
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </>
   );
-  if (!pane.agent) {
+  if (!isAgentPane(pane)) {
     return (
       <div className={`pane tool${pane.focused ? " focused" : ""}`} title={pane.title}>
         {handles}
@@ -229,10 +227,10 @@ export const PaneNode = memo(({ data }: NodeProps) => {
     );
   }
   return (
-    <div className={agentCardClass(pane as AgentPane)}>
+    <div className={agentCardClass(pane)}>
       {handles}
       <LinkHandles />
-      <AgentCardBody pane={pane as AgentPane} />
+      <AgentCardBody pane={pane} />
     </div>
   );
 });

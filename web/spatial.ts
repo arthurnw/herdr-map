@@ -71,7 +71,7 @@ export function rectFromPoints(a: { x: number; y: number }, b: { x: number; y: n
 
 /** The IDs of the boxes that `rect` overlaps at all. */
 export function boxesTouching(rect: Omit<Box, "id">, boxes: Box[]): string[] {
-  return boxes
-    .filter((b) => b.x < rect.x + rect.w && b.x + b.w > rect.x && b.y < rect.y + rect.h && b.y + b.h > rect.y)
-    .map((b) => b.id);
+  return boxes.flatMap((b) =>
+    b.x < rect.x + rect.w && b.x + b.w > rect.x && b.y < rect.y + rect.h && b.y + b.h > rect.y ? [b.id] : [],
+  );
 }

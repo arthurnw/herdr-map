@@ -33,6 +33,7 @@ const UNIT = { k: 1024, m: 1024 ** 2, g: 1024 ** 3 } as const;
 export function parseMemoryThreshold(value: string): MemoryThreshold | undefined {
   const m = /^(>=?|<=?)?(\d+(?:\.\d+)?|\.\d+)(?:([kmg])b?)?$/.exec(value.toLowerCase());
   if (!m) return undefined;
+  // SAFETY: the pattern captures only these operators and units.
   return { op: (m[1] ?? ">=") as MemoryOp, bytes: Number(m[2]) * UNIT[(m[3] ?? "m") as keyof typeof UNIT] };
 }
 
@@ -77,6 +78,8 @@ const PREFIXES = {
 
 export type PrefixName = keyof typeof PREFIXES;
 
+const isPrefixName = (name: string): name is PrefixName => Object.hasOwn(PREFIXES, name);
+
 /** The prefixes and what they narrow by, in the order the palette lists them. */
 export const PREFIX_HINTS: { prefix: string; hint: string; values?: string }[] = [
   ...Object.entries(PREFIXES).map(([name, p]: [string, Prefix<any>]) => ({ prefix: `${name}:`, hint: p.hint, values: p.values })),
@@ -103,11 +106,11 @@ export function parseQuery(input: string): PaletteQuery {
       if (m[2] && "memory".startsWith(m[2])) q.sort = "mem";
       continue;
     }
-    if (!m || !Object.hasOwn(PREFIXES, m[1])) {
+    if (!m || !isPrefixName(m[1])) {
       q.text.push(word);
       continue;
     }
-    const name = m[1] as PrefixName;
+    const name = m[1];
     const p: Prefix<unknown> = PREFIXES[name];
     // A bare prefix, or a value still being typed, doesn't filter yet.
     const value = m[2] && (p.parse ? p.parse(m[2]) : m[2]);
@@ -116,10 +119,11 @@ export function parseQuery(input: string): PaletteQuery {
   return q;
 }
 
+// SAFETY: parseQuery adds filters only under PREFIXES names.
 const filterEntries = (q: PaletteQuery) => Object.entries(q.filters) as [PrefixName, unknown[]][];
 const hasFilters = (q: PaletteQuery) => filterEntries(q).length > 0;
 
-const matchValues = (p: Prefix<unknown>, values: unknown[], test: (v: unknown) => boolean) =>
+const matchValues = <T,>(p: Prefix<T>, values: T[], test: (v: T) => boolean) =>
   p.every ? values.every(test) : values.some(test);
 
 const includesAll = (haystack: (string | undefined)[], words: string[]) => {
@@ -182,21 +186,21 @@ export function toggleMemorySort(search: string): string {
   return sorted ? kept.join(" ") : [...kept, "sort:mem"].join(" ") + " ";
 }
 
-const KEY_NAMES: Record<string, string> = {
-  Enter: "↵",
-  Escape: "Esc",
-  ArrowLeft: "←",
-  ArrowRight: "→",
-  ArrowUp: "↑",
-  ArrowDown: "↓",
-  " ": "Space",
-};
+const KEY_NAMES = new Map([
+  ["Enter", "↵"],
+  ["Escape", "Esc"],
+  ["ArrowLeft", "←"],
+  ["ArrowRight", "→"],
+  ["ArrowUp", "↑"],
+  ["ArrowDown", "↓"],
+  [" ", "Space"],
+]);
 
 /** A short label for a binding, such as `⌘K`, `⇧N`, or `↵`. */
 export function shortcutLabel(binding: Pick<Shortcut, "key" | "meta" | "ctrl" | "alt" | "shift">): string {
   const { key } = binding;
   const shiftedLetter = key.length === 1 && key !== key.toLowerCase();
   const mods = [binding.ctrl && "⌃", binding.alt && "⌥", (binding.shift || shiftedLetter) && "⇧", binding.meta && "⌘"];
-  const name = KEY_NAMES[key] ?? (key.length === 1 ? (shiftedLetter || mods.some(Boolean) ? key.toUpperCase() : key) : key);
+  const name = KEY_NAMES.get(key) ?? (key.length === 1 ? (shiftedLetter || mods.some(Boolean) ? key.toUpperCase() : key) : key);
   return mods.filter(Boolean).join("") + name;
 }

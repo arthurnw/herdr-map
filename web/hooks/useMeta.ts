@@ -7,10 +7,11 @@ import {
   type MetaState,
   type WorkspacePatch,
 } from "../../shared/organize.ts";
+import { errorMessage } from "../../shared/errors.ts";
 
 const EMPTY: MetaState = { workspaces: {}, groups: {} };
 
-async function post(path: string, body: unknown) {
+async function post(path: string, body: WorkspacePatch | GroupPatch) {
   const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
 }
@@ -33,7 +34,7 @@ export function useMeta() {
   useEffect(load, [load]);
 
   const send = useCallback(
-    async (path: string, body: unknown, apply: (m: MetaState) => void) => {
+    async (path: string, body: WorkspacePatch | GroupPatch, apply: (m: MetaState) => void) => {
       setMeta((prev) => {
         const next = { workspaces: { ...prev?.workspaces }, groups: { ...prev?.groups } };
         apply(next);
@@ -42,7 +43,7 @@ export function useMeta() {
       try {
         await post(path, body);
       } catch (err) {
-        toast.error("Couldn't save the change", { description: (err as Error).message });
+        toast.error("Couldn't save the change", { description: errorMessage(err) });
         load();
       }
     },

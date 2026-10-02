@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { MAX_LINKS, textHash } from "../../shared/automation.ts";
 import type { Endpoint, LayoutStore, Link } from "../../shared/layout-types.ts";
+import { isObject } from "../../shared/parse.ts";
 import { indexPanes, paneLabel } from "../agents.ts";
 import type { Context } from "../context.ts";
 import { readBody, sendJson } from "../http.ts";
 import { loadStore, updateStore } from "../layout-store.ts";
 import { contextPrompt, notePrompt } from "../prompts.ts";
 import type { Route } from "../router.ts";
-import { agentPane, isObject } from "./queue.ts";
+import { agentPane } from "./queue.ts";
 
 function parseEndpoint(v: unknown): Endpoint | undefined {
   if (!isObject(v) || (v.kind !== "pane" && v.kind !== "note") || typeof v.id !== "string" || !v.id) return undefined;

@@ -3,9 +3,8 @@ import { MemoryStick } from "lucide-react";
 import type { AgentMemory, Fleet, FleetAgent } from "../shared/model.ts";
 import { cn } from "@/lib/utils";
 import { fleetMemoryTitle, formatBytes, highMemory, machineShare, memoryTitle, topEntry } from "./memory-format.ts";
-import { KIND_LABEL } from "./status.tsx";
+import { kindLabel } from "./status.tsx";
 
-const kindLabel = (kind: string) => KIND_LABEL[kind] ?? kind;
 
 export function MemoryChip({ memory }: { memory: AgentMemory }) {
   return (

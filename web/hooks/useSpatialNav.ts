@@ -1,6 +1,6 @@
-import { useReactFlow, useStoreApi, type Node } from "@xyflow/react";
+import { useReactFlow, useStoreApi } from "@xyflow/react";
 import { moveOnBoard } from "../board.ts";
-import type { PaneData } from "../layout.ts";
+import type { LayoutNode } from "../layout.ts";
 import { nearestInDirection, nearestToPoint, type Box, type Direction } from "../spatial.ts";
 import { useShortcut } from "./useShortcut.ts";
 
@@ -18,14 +18,14 @@ function useArrowKeys(enabled: boolean, move: (dir: Direction) => void) {
  * Arrow keys move the selection to the nearest agent card in that direction. With nothing
  * selected, the first press selects the card nearest the middle of the view.
  */
-export function useSpatialNav(nodes: Node[], selectedId: string | undefined, select: Select, active = true) {
+export function useSpatialNav(nodes: LayoutNode[], selectedId: string | undefined, select: Select, active = true) {
   const { getInternalNode } = useReactFlow();
   const store = useStoreApi();
 
   // Agents the status filter fades out are skipped, as they are in Needs you cycling.
-  const agentIds = nodes
-    .filter((n) => n.type === "pane" && (n.data as PaneData).pane.agent && !n.className?.includes("status-filtered"))
-    .map((n) => n.id);
+  const agentIds = nodes.flatMap((n) =>
+    n.type === "pane" && n.data.pane.agent && !n.className?.includes("status-filtered") ? [n.id] : [],
+  );
 
   const move = (dir: Direction) => {
     const cards: Box[] = [];

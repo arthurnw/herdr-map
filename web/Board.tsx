@@ -4,7 +4,7 @@ import type { AgentStatus } from "../shared/model.ts";
 import { Badge } from "@/components/ui/badge";
 import type { BoardCard, BoardColumn, ColumnId } from "./board.ts";
 import { GitBadge } from "./git.tsx";
-import { AgentCardBody, agentCardClass, type AgentPane } from "./nodes.tsx";
+import { AgentCardBody, agentCardClass } from "./nodes.tsx";
 import { StatusDot } from "./status.tsx";
 import "./board.css";
 
@@ -75,8 +75,7 @@ export function Board({ columns, selectedId, onSelect, onTogglePin, onOpen, onHo
 }
 
 function Card({ card, selected, onSelect, onTogglePin, onOpen, onHover }: { card: BoardCard; selected: boolean } & Omit<Props, "columns" | "selectedId">) {
-  const pane = card.pane as AgentPane;
-  const { workspace: ws, repo } = card;
+  const { pane, workspace: ws, repo } = card;
   const location = (
     <div className="board-where">
       <span className="board-where-label">{repo === ws.label ? ws.label : `${repo} · ${ws.label}`}</span>

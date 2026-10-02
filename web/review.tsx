@@ -22,6 +22,7 @@ import { formatAge } from "./format.ts";
 import { NowContext } from "./nodes.tsx";
 import { safeStorage, type Located } from "./state.ts";
 import "./review.css";
+import { errorMessage } from "../shared/errors.ts";
 
 const SEEN_KEY = "herdr-map.hunk-seen";
 // Note IDs are unique per note, so old ones only take space.
@@ -89,7 +90,9 @@ export function useHunkView(fleet: Fleet | undefined): HunkView {
   }, [byAgent, seenList, markSeen, plugin]);
 }
 
-async function post(path: string, body: object): Promise<unknown> {
+type HunkBody = { session: string; note: string; text?: string } | { pane: string; action: HunkAction };
+
+async function post(path: string, body: HunkBody): Promise<void> {
   const res = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -97,7 +100,6 @@ async function post(path: string, body: object): Promise<unknown> {
   });
   const out = await res.json();
   if (!res.ok) throw new Error(out.error ?? res.statusText);
-  return out;
 }
 
 function Counts({ unsent, notes, unread = 0 }: { unsent: number; notes: number; unread?: number }) {
@@ -169,7 +171,7 @@ function NoteRow({
 
   const open = () =>
     void post("/api/hunk/navigate", { session: review.session, note: note.id }).catch((err) =>
-      toast.error("Couldn't show the note in hunk", { description: (err as Error).message }),
+      toast.error("Couldn't show the note in hunk", { description: errorMessage(err) }),
     );
 
   const send = async () => {
@@ -181,14 +183,14 @@ function NoteRow({
       setText("");
       setReplying(false);
     } catch (err) {
-      toast.error("Couldn't post the reply", { description: (err as Error).message });
+      toast.error("Couldn't post the reply", { description: errorMessage(err) });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <li className="hunk-note" style={{ "--depth": depth } as React.CSSProperties} data-note={note.id}>
+    <li className="hunk-note" style={{ "--depth": depth }} data-note={note.id}>
       <div className="hunk-note-row">
         <button
           type="button"
@@ -254,7 +256,7 @@ async function runAction(pane: string, action: HunkAction, what: string) {
   try {
     await post("/api/hunk/action", { pane, action });
   } catch (err) {
-    toast.error(`Couldn't ${what}`, { description: (err as Error).message });
+    toast.error(`Couldn't ${what}`, { description: errorMessage(err) });
   }
 }
 

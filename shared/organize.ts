@@ -7,7 +7,7 @@ export const COLORS = ["red", "orange", "yellow", "green", "teal", "blue", "purp
 export type TintColor = (typeof COLORS)[number];
 
 export function isColor(value: unknown): value is TintColor {
-  return COLORS.includes(value as TintColor);
+  return COLORS.some((c) => c === value);
 }
 
 export const MAX_TAGS = 12;

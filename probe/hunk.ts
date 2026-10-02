@@ -50,19 +50,19 @@ export function indexPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(state, "herdr", "plugins", "jhochenbaum.hunkdiff", "review-index.json");
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const trimSlash = (p: string) => (p.length > 1 ? p.replace(/\/+$/, "") : p);
 
 /** One of hunk's review notes (`comment list --type all`, or a session's `reviewNotes`). */
-export function toNote(raw: unknown, sent: Set<string>): HunkNote | undefined {
-  if (!raw || typeof raw !== "object") return undefined;
-  const r = raw as Record<string, unknown>;
+export function toNote(r: unknown, sent: Set<string>): HunkNote | undefined {
+  if (!isObject(r)) return undefined;
   const id = str(r.noteId);
   const file = str(r.filePath);
   if (!id || !file || typeof r.body !== "string") return undefined;
-  const range = (Array.isArray(r.newRange) ? r.newRange : Array.isArray(r.oldRange) ? r.oldRange : undefined) as unknown[] | undefined;
-  const line = typeof range?.[0] === "number" ? range[0] : undefined;
+  const start: unknown = (Array.isArray(r.newRange) ? r.newRange : Array.isArray(r.oldRange) ? r.oldRange : undefined)?.[0];
+  const line = typeof start === "number" ? start : undefined;
   const [first, ...rest] = r.body.trim().split("\n");
   const detail = rest.join("\n").trim();
   const createdAt = typeof r.createdAt === "string" ? Date.parse(r.createdAt) : NaN;
@@ -101,10 +101,9 @@ export function parseIndex(text: string): Map<string, IndexRecord> {
   } catch {
     return out;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return out;
-  for (const value of Object.values(parsed)) {
-    if (!value || typeof value !== "object") continue;
-    const v = value as Record<string, unknown>;
+  if (!isObject(parsed) || Array.isArray(parsed)) return out;
+  for (const v of Object.values(parsed)) {
+    if (!isObject(v)) continue;
     const worktree = str(v.worktree);
     if (!worktree) continue;
     const entry: HunkIndexEntry = {
@@ -143,6 +142,7 @@ function runHunk(bin: string, args: string[]): RunResult {
     env: { ...process.env, NO_COLOR: "1" },
   });
   if (r.error) {
+    // SAFETY: spawnSync sets `error` only for system errors, which carry a `code`.
     const code = (r.error as NodeJS.ErrnoException).code;
     return { ok: false, out: "", err: code === "ETIMEDOUT" ? `timed out after ${HUNK_TIMEOUT_MS / 1000}s` : r.error.message, missing: code === "ENOENT" };
   }
@@ -155,7 +155,7 @@ const NO_SESSIONS = /no active hunk sessions/i;
 function parseJson(text: string): Record<string, unknown> | undefined {
   try {
     const v = JSON.parse(text);
-    return v && typeof v === "object" ? v : undefined;
+    return isObject(v) ? v : undefined;
   } catch {
     return undefined;
   }
@@ -166,8 +166,8 @@ function parseJson(text: string): Record<string, unknown> | undefined {
  * on stdout and nothing on stderr, e.g. when an upgrade left an older daemon running.
  */
 export function failure(r: RunResult): string {
-  const e = parseJson(r.out)?.error as { message?: unknown; recommendedAction?: unknown } | undefined;
-  if (typeof e?.message === "string") {
+  const e = parseJson(r.out)?.error;
+  if (isObject(e) && typeof e.message === "string") {
     return e.recommendedAction === "restart-daemon" ? `${e.message} Run \`hunk daemon restart\`.` : e.message;
   }
   return firstLine(r.err) || "failed";
@@ -189,13 +189,14 @@ export function hunkProbe(req: HunkRequest): HunkOutput {
   const index = readIndex();
   const sessions: HunkSession[] = [];
   const entries: HunkIndexEntry[] = [];
-  for (const s of parsed.sessions as Record<string, unknown>[]) {
-    const id = str(s?.sessionId);
-    const repo = str(s?.repoRoot) ?? str(s?.cwd);
+  for (const s of parsed.sessions) {
+    if (!isObject(s)) continue;
+    const id = str(s.sessionId);
+    const repo = str(s.repoRoot) ?? str(s.cwd);
     if (!id || !repo) continue;
     const record = index.get(trimSlash(repo));
     const sent = record?.sent ?? new Set<string>();
-    const state = (s.snapshot as { state?: Record<string, unknown> } | undefined)?.state;
+    const state = isObject(s.snapshot) && isObject(s.snapshot.state) ? s.snapshot.state : undefined;
     let notes: HunkNote[];
     if (Array.isArray(state?.reviewNotes)) notes = toNotes(state.reviewNotes, sent);
     else {

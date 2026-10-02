@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildFleet, StatusClock } from "../shared/model.ts";
-import { isDetachedDrop, layoutFleet, snapCard, WS_HEADER, type LayoutOptions } from "../web/layout.ts";
+import { isDetachedDrop, layoutFleet, snapCard, WS_HEADER, type LayoutNode, type LayoutNodeOf, type LayoutOptions } from "../web/layout.ts";
 import { fleetWith, snapshotFixture } from "./fixtures.ts";
 
 function fleet() {
   const snap = snapshotFixture();
   return buildFleet(snap, new StatusClock().observe(snap.agents, 1000));
+}
+
+/** The node with `id`, checked to be of `type`. */
+function nodeOf<T extends LayoutNode["type"]>(nodes: LayoutNode[], id: string, type: T): LayoutNodeOf<T> {
+  const n = nodes.find((x): x is LayoutNodeOf<T> => x.id === id && x.type === type);
+  assert.ok(n, `no ${type} node ${id}`);
+  return n;
 }
 
 test("agentsOnly hides workspaces without agents", () => {
@@ -47,8 +54,8 @@ test("a detached workspace leaves its group box", () => {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const group = byId.get("group:/r/api/.git")!;
   assert.ok(group.position.x + group.width! < 5000);
-  assert.deepEqual((group.data as { memberIds: string[] }).memberIds, ["w1"]);
-  assert.equal((byId.get("ws:w2")!.data as { detached: boolean }).detached, true);
+  assert.deepEqual(nodeOf(nodes, "group:/r/api/.git", "group-box").data.memberIds, ["w1"]);
+  assert.equal(nodeOf(nodes, "ws:w2", "workspace").data.detached, true);
 });
 
 test("a new workspace in a saved layout goes to the right of its group", () => {
@@ -111,18 +118,18 @@ test("while dragging, the repo box ignores the dragged workspace and the drag ge
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const group = byId.get("group:/r/api/.git")!;
   assert.ok(group.position.x + group.width! < 4000, "the box should not stretch to the dragged workspace");
-  assert.equal((byId.get("ws:w2")!.data as { dropHint?: string }).dropHint, "detach");
+  assert.equal(nodeOf(nodes, "ws:w2", "workspace").data.dropHint, "detach");
   // Dropped back next to w1, the hint says it stays in (no hint for an attached workspace).
   const near = layoutFleet(fleet(), { agentsOnly: true, dragging: new Set(["w2"]) }, { w1: { x: 0, y: 100 }, w2: { x: 340, y: 100 } });
-  assert.equal((near.nodes.find((n) => n.id === "ws:w2")!.data as { dropHint?: string }).dropHint, undefined);
+  assert.equal(nodeOf(near.nodes, "ws:w2", "workspace").data.dropHint, undefined);
   // A detached workspace dragged back over the box gets the rejoin hint.
   const back = layoutFleet(fleet(), { agentsOnly: true, dragging: new Set(["w2"]) }, { w1: { x: 0, y: 100 }, w2: { x: 340, y: 100, detached: true } });
-  assert.equal((back.nodes.find((n) => n.id === "ws:w2")!.data as { dropHint?: string }).dropHint, "rejoin");
+  assert.equal(nodeOf(back.nodes, "ws:w2", "workspace").data.dropHint, "rejoin");
 });
 
 test("workspaces know how many others share their repo box", () => {
   const { nodes } = layoutFleet(fleet(), { agentsOnly: true }, {});
-  const mates = (id: string) => (nodes.find((n) => n.id === id)!.data as { groupMates: number }).groupMates;
+  const mates = (id: string) => nodeOf(nodes, id, "workspace").data.groupMates;
   assert.equal(mates("ws:w1"), 1);
   assert.equal(mates("ws:w2"), 1);
 });
@@ -133,7 +140,7 @@ test("a collapsed workspace is drawn as its header, and its repo box shrinks", (
   const closed = layoutFleet(fleet(), { agentsOnly: true, workspaceMeta: { w2: { collapsed: true } } }, saved);
   const find = (nodes: typeof open.nodes, id: string) => nodes.find((n) => n.id === id)!;
   assert.equal(find(closed.nodes, "ws:w2").height, WS_HEADER);
-  assert.equal((find(closed.nodes, "ws:w2").data as { collapsed: boolean }).collapsed, true);
+  assert.equal(nodeOf(closed.nodes, "ws:w2", "workspace").data.collapsed, true);
   assert.ok(!closed.nodes.some((n) => n.parentId === "ws:w2" && n.type === "tab"), "no tabs for a collapsed workspace");
   assert.ok(!closed.nodes.some((n) => n.id === "w2:p1"), "no panes for a collapsed workspace");
   assert.ok(closed.nodes.some((n) => n.id === "label:w2"), "the zoomed-out label stays");
@@ -199,11 +206,11 @@ test("the full layout ignores saved card positions and keeps panes fixed", () =>
   assert.deepEqual(node(full.nodes, "w1:p2").position, node(plain.nodes, "w1:p2").position);
   assert.equal(node(full.nodes, "tab:w1:t1").width, node(plain.nodes, "tab:w1:t1").width);
   assert.equal(node(full.nodes, "w1:p2").draggable, false);
-  assert.equal((node(full.nodes, "ws:w1").data as { arrangedTabs?: unknown }).arrangedTabs, undefined);
+  assert.equal(nodeOf(full.nodes, "ws:w1", "workspace").data.arrangedTabs, undefined);
 });
 
 test("a workspace lists the tabs whose cards were moved", () => {
-  const arranged = (opts: Partial<LayoutOptions>) => (node(cardsView(opts).nodes, "ws:w1").data as { arrangedTabs?: unknown }).arrangedTabs;
+  const arranged = (opts: Partial<LayoutOptions>) => nodeOf(cardsView(opts).nodes, "ws:w1", "workspace").data.arrangedTabs;
   assert.deepEqual(arranged({}), []);
   assert.deepEqual(arranged({ cards: { "w1:p2": { x: 290, y: 24 } } }), [{ id: "w1:t1", label: "1" }]);
   // Positions of panes elsewhere don't count.

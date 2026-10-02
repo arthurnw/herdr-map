@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { agentNameError } from "../shared/names.ts";
 import type { Located } from "./state.ts";
-import { KIND_LABEL } from "./status.tsx";
+import { kindLabel } from "./status.tsx";
+import { errorMessage } from "../shared/errors.ts";
 
 /** Live agents' names by pane ID. */
 export function agentNames(panes: Map<string, Located>): Map<string, string> {
@@ -33,11 +34,11 @@ interface Props {
 export function AgentName({ located, names }: Props) {
   const { pane } = located;
   const agent = pane.agent!;
-  const label = agent.name ?? KIND_LABEL[agent.kind] ?? agent.kind;
+  const label = agent.name ?? kindLabel(agent.kind);
   const [draft, setDraft] = useState<string>();
   const [saving, setSaving] = useState(false);
 
-  const taken = [...names].filter(([id]) => id !== pane.id).map(([, name]) => name);
+  const taken = [...names].flatMap(([id, name]) => (id !== pane.id ? [name] : []));
   const error = draft !== undefined && draft !== agent.name ? agentNameError(draft, taken) : undefined;
 
   const save = async () => {
@@ -48,7 +49,7 @@ export function AgentName({ located, names }: Props) {
       await requestRename(pane.id, draft);
       setDraft(undefined);
     } catch (err) {
-      toast.error("herdr couldn't rename the agent", { description: (err as Error).message });
+      toast.error("herdr couldn't rename the agent", { description: errorMessage(err) });
     } finally {
       setSaving(false);
     }

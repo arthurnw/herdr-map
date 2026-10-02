@@ -35,13 +35,19 @@ export interface Registration {
 // Typing in a field or moving through an open menu should never trigger a shortcut.
 const IGNORED_TARGETS = "input, textarea, select, [contenteditable], [role=menu]";
 
+/** Element targets have `closest`; window and document don't. */
+function hasClosest(target: unknown): target is { closest(selectors: string): object | null } {
+  return typeof target === "object" && target !== null && "closest" in target && typeof target.closest === "function";
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- targets include window and document, and this module avoids DOM types
 export function isIgnoredTarget(target: unknown): boolean {
-  const el = target as { closest?: (selector: string) => unknown } | null;
-  return typeof el?.closest === "function" && !!el.closest(IGNORED_TARGETS);
+  return hasClosest(target) && !!target.closest(IGNORED_TARGETS);
 }
 
 export function isEnabled(binding: Shortcut): boolean {
   const { enabled = true } = binding;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- tells apart the two forms of a typed boolean-or-getter option
   return typeof enabled === "function" ? enabled() : enabled;
 }
 

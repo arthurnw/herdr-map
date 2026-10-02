@@ -7,11 +7,19 @@ import { Kbd } from "@/components/ui/kbd";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Located } from "./state.ts";
+import { errorMessage } from "../shared/errors.ts";
 
 /** Fired by the `r` shortcut to move focus into the reply box. */
 export const FOCUS_REPLY_EVENT = "herdr-map:focus-reply";
 
-async function post(path: string, body: object) {
+interface InputBody {
+  pane: string;
+  text?: string;
+  keys?: string[];
+  expect?: { key: string; label: string };
+}
+
+async function post(path: string, body: InputBody) {
   const res = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -53,7 +61,7 @@ export function ReplyBox({ located, screen, onSent }: Props) {
     try {
       await fn();
     } catch (err) {
-      toast.error(`Couldn't send ${what}`, { description: (err as Error).message });
+      toast.error(`Couldn't send ${what}`, { description: errorMessage(err) });
     } finally {
       setBusy(false);
       // Re-read the screen either way, so a refused answer shows the dialog that replaced it.

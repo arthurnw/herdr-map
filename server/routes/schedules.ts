@@ -2,10 +2,11 @@ import { isTiming } from "../../shared/automation.ts";
 import { paneLabel } from "../agents.ts";
 import type { Context } from "../context.ts";
 import { readBody, sendJson } from "../http.ts";
-import { checkText } from "../queue.ts";
+import { isPromptText } from "../queue.ts";
 import type { Route } from "../router.ts";
 import { addSchedule, editSchedule, removeSchedule, setArmed, type ScheduleInput } from "../schedules.ts";
-import { agentPane, isObject } from "./queue.ts";
+import { isObject } from "../../shared/parse.ts";
+import { agentPane } from "./queue.ts";
 
 /** Checks a schedule body; every field is required when creating. Returns the fields or an error message. */
 function parseInput(ctx: Context, body: unknown, creating: boolean): Partial<ScheduleInput> | string {
@@ -18,9 +19,8 @@ function parseInput(ctx: Context, body: unknown, creating: boolean): Partial<Sch
     out.targetLabel = paneLabel(target, target.paneId);
   }
   if (body.text !== undefined || creating) {
-    const text = checkText(body.text);
-    if (!text) return "text must not be empty";
-    out.text = text;
+    if (!isPromptText(body.text)) return "text must not be empty";
+    out.text = body.text;
   }
   if (body.timing !== undefined || creating) {
     if (!isTiming(body.timing)) return "timing must be every 1 minute to 7 days, or daily at HH:MM";
@@ -38,6 +38,7 @@ export function schedulesRoutes(ctx: Context): Route[] {
       handle: async (req, res) => {
         const input = parseInput(ctx, await readBody(req), true);
         if (typeof input === "string") return sendJson(res, 400, { error: input });
+        // SAFETY: parseInput sets every field when creating.
         const schedule = addSchedule(queue, input as ScheduleInput);
         if (typeof schedule === "string") return sendJson(res, 409, { error: schedule });
         return sendJson(res, 201, schedule);

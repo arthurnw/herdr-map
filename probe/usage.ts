@@ -244,6 +244,12 @@ export function locate(ref: ProbeRef, roots: Roots): string {
 }
 
 export type Json = Record<string, any>;
+export type JsonValue = Json | string | number | boolean | null;
+
+/** The message of a caught error. */
+export function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 export function readJson(path: string): Json | undefined {
   try {
@@ -280,6 +286,7 @@ export function herdrCaller(bin: string): HerdrCall {
     try {
       return execFileSync(bin, args, { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
     } catch (err) {
+      // SAFETY: execFileSync throws Errors; spawn failures and timeouts carry a `code`.
       const code = (err as NodeJS.ErrnoException).code;
       if (code === "ENOENT" || code === "EACCES" || code === "ETIMEDOUT") broken = true;
       return undefined;
@@ -294,7 +301,7 @@ export interface ProcessInfo {
   foreground: PaneProcess[];
 }
 
-const validPid = (pid: unknown): pid is number => Number.isSafeInteger(pid) && (pid as number) > 0;
+const validPid = (pid: unknown): pid is number => typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0;
 
 export function parseProcessInfo(out: string): ProcessInfo | undefined {
   try {
@@ -658,7 +665,14 @@ function piLine(o: Json, t: Tally) {
   t.provider = o.message.provider;
 }
 
-const READERS: Record<string, { marker: string[]; read: (o: Json, t: Tally) => void; history: boolean }> = {
+export interface TranscriptReader {
+  marker: string[];
+  read: (o: Json, t: Tally) => void;
+  history: boolean;
+}
+
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- looked up by any agent kind string
+const READERS: Record<string, TranscriptReader> = {
   claude: {
     marker: ['"usage"', '"toolUseResult"', "<task-notification>"],
     read: (o, t) => (claudeLine(o, t), claudeActivity(o, t)),
@@ -804,11 +818,16 @@ export function summarize(kind: string, tally: Tally, piWindow: () => ReturnType
   };
 }
 
+export interface CursorLookup {
+  cursor?: Cursor;
+  error?: string;
+}
+
 /**
  * Each ref's transcript: its cursor's, or the one its session names, or for a Claude Code pane
  * the one its process is on or its screen matches. A cursor with an empty path found nothing.
  */
-export function findCursors(input: ProbeInput, roots: Roots, now: number, deps: ProbeDeps = {}): { cursor?: Cursor; error?: string }[] {
+export function findCursors(input: ProbeInput, roots: Roots, now: number, deps: ProbeDeps = {}): CursorLookup[] {
   const bin = input.herdr ?? "herdr";
   let call: HerdrCall | undefined;
   let processes = deps.processes;
@@ -817,7 +836,7 @@ export function findCursors(input: ProbeInput, roots: Roots, now: number, deps: 
   const paneScreen = (pane: string) => (screen ??= herdrScreen(bin, (call ??= herdrCaller(bin))))(pane);
   const isClaude = (ref: ProbeRef) => ref.kind === "claude" && ref.sessionKind === "id";
 
-  const found = input.refs.map((ref): { cursor?: Cursor; error?: string } => {
+  const found = input.refs.map((ref): CursorLookup => {
     try {
       if (isClaude(ref)) return { cursor: claudeCursor(ref, roots, now, paneProcesses) };
       let cursor = ref.cursor;
@@ -825,7 +844,7 @@ export function findCursors(input: ProbeInput, roots: Roots, now: number, deps: 
       if (!cursor || moved || !existsSync(cursor.path)) cursor = { path: locate(ref, roots), offset: 0, tally: {} };
       return { cursor };
     } catch (err) {
-      return { error: (err as Error).message };
+      return { error: errorMessage(err) };
     }
   });
 
@@ -842,7 +861,7 @@ export function findCursors(input: ProbeInput, roots: Roots, now: number, deps: 
     try {
       found[i].cursor = screenCursor(ref, ctx);
     } catch (err) {
-      found[i].error = (err as Error).message;
+      found[i].error = errorMessage(err);
     }
   });
   return found;
@@ -866,7 +885,7 @@ export function probe(input: ProbeInput, deps: ProbeDeps = {}): ProbeOutput {
       bytesRead += advance(cursor, ref.kind, maxBytes - bytesRead, tailBytes, maxBytes);
       return { pane: ref.pane, cursor, usage: cursor.caughtUp ? summarize(ref.kind, cursor.tally, piWindow) : undefined };
     } catch (err) {
-      return { pane: ref.pane, error: (err as Error).message };
+      return { pane: ref.pane, error: errorMessage(err) };
     }
   });
 

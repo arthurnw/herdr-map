@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { WorkspaceMeta } from "../shared/layout-types.ts";
-import { applyWorkspacePatch, isColor, MAX_TAGS, normalizeTag } from "../shared/organize.ts";
+import { applyWorkspacePatch, isColor, MAX_TAGS, normalizeTag, type MetaState } from "../shared/organize.ts";
 
 test("normalizeTag cleans typed text or rejects it", () => {
   assert.equal(normalizeTag("  #Infra "), "infra");
@@ -20,7 +19,7 @@ test("isColor allows only the palette", () => {
 });
 
 test("applyWorkspacePatch merges fields and caps tags", () => {
-  const meta: Record<string, WorkspaceMeta> = { w1: { color: "red", tags: ["a"] } };
+  const meta: MetaState["workspaces"] = { w1: { color: "red", tags: ["a"] } };
   applyWorkspacePatch(meta, { ids: ["w1", "w2"], collapsed: true, addTags: ["b"] });
   assert.deepEqual(meta, { w1: { color: "red", tags: ["a", "b"], collapsed: true }, w2: { collapsed: true, tags: ["b"] } });
   applyWorkspacePatch(meta, { ids: ["w2"], collapsed: false, removeTags: ["b"] });

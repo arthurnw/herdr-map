@@ -4,7 +4,7 @@
 // differ from theirs.
 import { isAbsolute } from "node:path";
 import { historyLine, renderLines } from "./subagents.ts";
-import { defaultRoots, findCursors, tailText, type Json, type ProbeDeps, type ProbeInput, type ProbeRef } from "./usage.ts";
+import { defaultRoots, errorMessage, findCursors, tailText, type Json, type ProbeDeps, type ProbeInput, type ProbeRef } from "./usage.ts";
 
 export interface ReplyRequest extends Pick<ProbeInput, "roots" | "herdr" | "claimed"> {
   ref: ProbeRef;
@@ -95,10 +95,16 @@ function piReply(o: Json, s: ReplyState) {
   else if (m?.role === "assistant") setReply(s, textBlocks(m.content, "text"));
 }
 
+// oxlint-disable-next-line anti-slop/no-known-value-widening -- looked up by any agent kind string
 const REPLY_READERS: Record<string, (o: Json, s: ReplyState) => void> = { claude: claudeReply, codex: codexReply, pi: piReply };
 
+export interface TrimmedReply {
+  text: string;
+  trimmed?: boolean;
+}
+
 /** Keeps the last `REPLY_CHARS` characters, dropping a partial first word. */
-export function trimReply(text: string): { text: string; trimmed?: boolean } {
+export function trimReply(text: string): TrimmedReply {
   if (text.length <= REPLY_CHARS) return { text };
   const tail = text.slice(-REPLY_CHARS);
   const cut = /^\S{0,80}\s+/.exec(tail);
@@ -145,7 +151,7 @@ export function finalReply(req: ReplyRequest, deps: ProbeDeps = {}): ReplyOutput
     const text = replyText(req.ref.kind, tailText(path, req.bytes ?? REPLY_BYTES).text);
     return text ? { ...trimReply(text), path } : { path };
   } catch (err) {
-    return { error: (err as Error).message };
+    return { error: errorMessage(err) };
   }
 }
 
@@ -163,8 +169,13 @@ export interface HistoryOutput {
 export const HISTORY_BYTES = 4 * 1024 * 1024;
 export const HISTORY_CHARS = 60_000;
 
+export interface KeptEnd {
+  text: string;
+  cut: boolean;
+}
+
 /** The last entries that fit in `max` characters joined; a single longer entry keeps its end. */
-export function keepEnd(entries: string[], max: number): { text: string; cut: boolean } {
+export function keepEnd(entries: string[], max: number): KeptEnd {
   let i = entries.length;
   let size = -2;
   while (i > 0 && size + entries[i - 1].length + 2 <= max) size += entries[--i].length + 2;
@@ -182,6 +193,6 @@ export function agentHistory(req: ReplyRequest, deps: ProbeDeps = {}): HistoryOu
     const { text, cut } = keepEnd(renderLines(tail.text, (o) => historyLine(kind, o)), HISTORY_CHARS);
     return { text, truncated: tail.truncated || cut, path };
   } catch (err) {
-    return { error: (err as Error).message };
+    return { error: errorMessage(err) };
   }
 }

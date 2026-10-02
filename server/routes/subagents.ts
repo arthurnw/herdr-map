@@ -1,3 +1,4 @@
+import { errorMessage } from "../../shared/errors.ts";
 import type { Context } from "../context.ts";
 import { sendJson } from "../http.ts";
 import type { Route } from "../router.ts";
@@ -13,7 +14,7 @@ export function subagentRoutes(ctx: Context): Route[] {
         try {
           return sendJson(res, 200, await ctx.poller.subagentTranscript(pane, id));
         } catch (err) {
-          return sendJson(res, 404, { error: (err as Error).message });
+          return sendJson(res, 404, { error: errorMessage(err) });
         }
       },
     },

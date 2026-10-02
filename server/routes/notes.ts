@@ -14,12 +14,9 @@ import {
   NOTE_TEXT_MAX,
   type NotePatch,
 } from "../../shared/organize.ts";
+import { isFiniteNumber, isObject } from "../../shared/parse.ts";
 
-type Obj = Record<string, unknown>;
-
-const isObject = (value: unknown): value is Obj => value !== null && typeof value === "object" && !Array.isArray(value);
-
-const inRange = (v: unknown, min: number, max: number): v is number => Number.isFinite(v) && (v as number) >= min && (v as number) <= max;
+const inRange = (v: unknown, min: number, max: number): v is number => isFiniteNumber(v) && v >= min && v <= max;
 
 /** Checks note fields; `x` and `y` are required when creating. Returns the patch or an error message. */
 export function parseNotePatch(body: unknown, creating: boolean): NotePatch | string {

@@ -12,9 +12,12 @@ import {
   type DeliveredItem,
   type QueueItem,
   type QueueSource,
+  type QueueSourceKind,
   type Schedule,
 } from "../shared/automation.ts";
+import { errorMessage } from "../shared/errors.ts";
 import type { Fleet } from "../shared/model.ts";
+import { isFiniteNumber, isNonEmptyString, isObject } from "../shared/parse.ts";
 import { indexPanes, isFree } from "./agents.ts";
 import { herdrMessage } from "./herdr.ts";
 
@@ -46,22 +49,22 @@ export const GONE_KEEP_MS = 60 * 60_000;
 export const COOLDOWN_MS = 5_000;
 const MAX_TEXT = 20_000;
 
-type Obj = Record<string, unknown>;
-const isObject = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
-const isStr = (v: unknown): v is string => typeof v === "string" && v.length > 0;
-const isNum = (v: unknown): v is number => Number.isFinite(v);
-const SOURCE_KINDS = ["handoff", "context", "note", "schedule", "manual"];
+const SOURCE_KINDS = ["handoff", "context", "note", "schedule", "manual"] satisfies QueueSourceKind[];
 
+// The parsers below read the queue file, which can hold anything.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 function parseSource(v: unknown): QueueSource | undefined {
-  if (!isObject(v) || !SOURCE_KINDS.includes(v.kind as string) || typeof v.label !== "string") return undefined;
-  const s: QueueSource = { kind: v.kind as QueueSource["kind"], label: v.label };
-  if (isStr(v.linkId)) s.linkId = v.linkId;
-  if (isStr(v.scheduleId)) s.scheduleId = v.scheduleId;
+  if (!isObject(v) || typeof v.label !== "string") return undefined;
+  const kind = SOURCE_KINDS.find((k) => k === v.kind);
+  if (!kind) return undefined;
+  const s: QueueSource = { kind, label: v.label };
+  if (isNonEmptyString(v.linkId)) s.linkId = v.linkId;
+  if (isNonEmptyString(v.scheduleId)) s.scheduleId = v.scheduleId;
   return s;
 }
 
 function parseItem(v: unknown): QueueItem | undefined {
-  if (!isObject(v) || !isStr(v.id) || !isStr(v.target) || !isStr(v.text) || !isNum(v.createdAt)) return undefined;
+  if (!isObject(v) || !isNonEmptyString(v.id) || !isNonEmptyString(v.target) || !isNonEmptyString(v.text) || !isFiniteNumber(v.createdAt)) return undefined;
   const source = parseSource(v.source);
   if (!source) return undefined;
   const state = v.state === "failed" || v.state === "gone" ? v.state : "pending";
@@ -72,39 +75,39 @@ function parseItem(v: unknown): QueueItem | undefined {
     text: v.text,
     source,
     createdAt: v.createdAt,
-    attempts: isNum(v.attempts) ? v.attempts : 0,
+    attempts: isFiniteNumber(v.attempts) ? v.attempts : 0,
     state,
   };
-  if (isNum(v.notBefore)) item.notBefore = v.notBefore;
+  if (isFiniteNumber(v.notBefore)) item.notBefore = v.notBefore;
   if (typeof v.lastError === "string") item.lastError = v.lastError;
   if (v.sendNow === true) item.sendNow = true;
-  if (isNum(v.goneAt)) item.goneAt = v.goneAt;
+  if (isFiniteNumber(v.goneAt)) item.goneAt = v.goneAt;
   return item;
 }
 
 function parseDelivered(v: unknown): DeliveredItem | undefined {
-  if (!isObject(v) || !isStr(v.id) || !isStr(v.target) || typeof v.text !== "string") return undefined;
+  if (!isObject(v) || !isNonEmptyString(v.id) || !isNonEmptyString(v.target) || typeof v.text !== "string") return undefined;
   const source = parseSource(v.source);
-  if (!source || !isNum(v.createdAt) || !isNum(v.deliveredAt)) return undefined;
+  if (!source || !isFiniteNumber(v.createdAt) || !isFiniteNumber(v.deliveredAt)) return undefined;
   const targetLabel = typeof v.targetLabel === "string" ? v.targetLabel : v.target;
   return { id: v.id, target: v.target, targetLabel, text: v.text, source, createdAt: v.createdAt, deliveredAt: v.deliveredAt };
 }
 
 function parseSchedule(v: unknown): Schedule | undefined {
-  if (!isObject(v) || !isStr(v.id) || !isStr(v.target) || !isStr(v.text) || !isTiming(v.timing)) return undefined;
-  if (!isNum(v.createdAt) || !isNum(v.updatedAt)) return undefined;
+  if (!isObject(v) || !isNonEmptyString(v.id) || !isNonEmptyString(v.target) || !isNonEmptyString(v.text) || !isTiming(v.timing)) return undefined;
+  if (!isFiniteNumber(v.createdAt) || !isFiniteNumber(v.updatedAt)) return undefined;
   const s: Schedule = {
     id: v.id,
     target: v.target,
     targetLabel: typeof v.targetLabel === "string" ? v.targetLabel : v.target,
     text: v.text,
     timing: v.timing,
-    armed: v.armed === true && isNum(v.nextRunAt),
+    armed: v.armed === true && isFiniteNumber(v.nextRunAt),
     createdAt: v.createdAt,
     updatedAt: v.updatedAt,
   };
-  if (s.armed) s.nextRunAt = v.nextRunAt as number;
-  if (isNum(v.lastRunAt)) s.lastRunAt = v.lastRunAt;
+  if (s.armed && isFiniteNumber(v.nextRunAt)) s.nextRunAt = v.nextRunAt;
+  if (isFiniteNumber(v.lastRunAt)) s.lastRunAt = v.lastRunAt;
   if (typeof v.lastResult === "string") s.lastResult = v.lastResult;
   return s;
 }
@@ -122,6 +125,8 @@ function parseList<T extends { id: string }>(v: unknown, parse: (e: unknown) => 
   }
   return out;
 }
+
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
 /** Reads the queue file, keeping each valid entry. A missing or unreadable file starts empty. */
 export async function loadQueueFile(path: string): Promise<QueueFile> {
@@ -151,14 +156,14 @@ function createWriter(path: string) {
       await writeFile(tmp, JSON.stringify(data, null, 2) + "\n");
       await rename(tmp, path);
     });
-    chain = run.catch((err) => console.error(`herdr-map: couldn't save ${path}: ${(err as Error).message}`));
+    chain = run.catch((err) => console.error(`herdr-map: couldn't save ${path}: ${errorMessage(err)}`));
     return run;
   };
 }
 
 /** Prompt text typed by the user: not blank, and within the limit. */
-export function checkText(text: unknown): string | undefined {
-  return typeof text === "string" && text.trim().length > 0 && text.length <= PROMPT_TEXT_MAX ? text : undefined;
+export function isPromptText(text: unknown): text is string {
+  return typeof text === "string" && text.trim().length > 0 && text.length <= PROMPT_TEXT_MAX;
 }
 
 export interface FleetView {
@@ -282,7 +287,7 @@ export function createQueue(deps: QueueDeps, data: QueueFile) {
       await deps.send(item.target, item.text);
     } catch (err) {
       item.attempts++;
-      item.lastError = herdrMessage(err as Error);
+      item.lastError = herdrMessage(err);
       if (item.attempts >= MAX_ATTEMPTS) {
         item.state = "failed";
         delete item.notBefore;

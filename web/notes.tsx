@@ -9,8 +9,13 @@ import type { Note } from "../shared/layout-types.ts";
 import { isColor, NOTE_DEFAULT, NOTE_MAX, NOTE_MIN, NOTE_TEXT_MAX, type NotePatch } from "../shared/organize.ts";
 import { NoteLinkHandle, NoteLinks } from "./links.tsx";
 import { ColorItems, stop, tintClass } from "./organize.tsx";
+import type { LayoutNode } from "./layout.ts";
+import { errorMessage } from "../shared/errors.ts";
 
 export type NoteData = { note: Note; autoFocus: boolean };
+export type NoteFlowNode = Node<NoteData, "note">;
+/** Every node on the canvas: the laid-out fleet and the notes. */
+export type CanvasNode = LayoutNode | NoteFlowNode;
 
 interface NoteActionsValue {
   /** Changes a note on screen and saves it, after `delay` ms of quiet when set. */
@@ -34,7 +39,7 @@ function applyLocal(note: Note, patch: NotePatch): Note {
   return next;
 }
 
-async function send(path: string, method: string, body?: unknown, keepalive = false) {
+async function send(path: string, method: string, body?: NotePatch, keepalive = false) {
   const res = await fetch(path, {
     method,
     headers: { "content-type": "application/json" },
@@ -47,10 +52,18 @@ async function send(path: string, method: string, body?: unknown, keepalive = fa
 
 const notePath = (id: string) => `/api/notes/${encodeURIComponent(id)}`;
 
+type LayoutDrag = (event: MouseEvent | TouchEvent, node: LayoutNode) => void;
+
 interface LayoutHandlers {
   onNodesChange: (changes: NodeChange[]) => void;
-  onNodeDragStart: OnNodeDrag;
-  onNodeDragStop: OnNodeDrag;
+  onNodeDragStart: LayoutDrag;
+  onNodeDragStop: LayoutDrag;
+}
+
+interface CanvasHandlers {
+  onNodesChange: (changes: NodeChange[]) => void;
+  onNodeDragStart: OnNodeDrag<CanvasNode>;
+  onNodeDragStop: OnNodeDrag<CanvasNode>;
 }
 
 /** The notes as canvas nodes, the actions their components call, and ways to add one. */
@@ -95,7 +108,7 @@ export function useNotes() {
   // Text typed just before the page closes would otherwise wait on a timer that never fires.
   useEffect(() => {
     const onHide = () => {
-      for (const id of [...pending.current.keys()]) flush(id, true);
+      for (const id of pending.current.keys()) flush(id, true);
     };
     window.addEventListener("pagehide", onHide);
     return () => window.removeEventListener("pagehide", onHide);
@@ -114,7 +127,7 @@ export function useNotes() {
       setNotes((prev) => [...prev, note]);
       setCreated(note.id);
     } catch (err) {
-      toast.error("Couldn't add a note", { description: (err as Error).message });
+      toast.error("Couldn't add a note", { description: errorMessage(err) });
     }
   }, []);
 
@@ -159,7 +172,7 @@ export function useNotes() {
 
   const nodes = useMemo(
     () =>
-      notes.map((n): Node => {
+      notes.map((n): NoteFlowNode => {
         const w = n.w ?? NOTE_DEFAULT.w;
         const h = n.h ?? NOTE_DEFAULT.h;
         return {
@@ -191,8 +204,8 @@ export function useNotes() {
   /** Double-clicking empty canvas adds a note there. */
   const onCanvasDoubleClick = useCallback(
     (e: React.MouseEvent) => {
-      const target = e.target as Element;
-      if (!target.closest(".react-flow__pane") || target.closest(".react-flow__node")) return;
+      const { target } = e;
+      if (!(target instanceof Element) || !target.closest(".react-flow__pane") || target.closest(".react-flow__node")) return;
       const p = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       void create({ x: p.x - 24, y: p.y - 14 });
     },
@@ -200,35 +213,37 @@ export function useNotes() {
   );
 
   /** Wraps the workspace drag handlers so note moves and resizes go to the notes instead. */
-  const withNotes = (layout: LayoutHandlers): LayoutHandlers => ({
+  const withNotes = (layout: LayoutHandlers): CanvasHandlers => ({
     onNodesChange: (changes) => {
       const mine = changes.filter(isNoteChange);
       if (mine.length > 0) {
         setNotes((prev) =>
           prev.map((n) => {
-            let next = n;
+            const patch: Partial<Note> = {};
             for (const c of mine) {
               if (c.type === "position" && c.id === NODE_PREFIX + n.id && c.position) {
-                next = { ...next, x: c.position.x, y: c.position.y };
+                patch.x = c.position.x;
+                patch.y = c.position.y;
               }
               // Only resizer changes; React Flow's own measurements report the size we set.
               if (c.type === "dimensions" && c.id === NODE_PREFIX + n.id && c.dimensions && c.resizing !== undefined) {
-                next = { ...next, w: c.dimensions.width, h: c.dimensions.height };
+                patch.w = c.dimensions.width;
+                patch.h = c.dimensions.height;
               }
             }
-            return next;
+            return Object.keys(patch).length > 0 ? { ...n, ...patch } : n;
           }),
         );
       }
       const rest = changes.filter((c) => !isNoteChange(c));
       if (rest.length > 0) layout.onNodesChange(rest);
     },
-    onNodeDragStart: (event, node, dragged) => {
-      if (node.type !== "note") layout.onNodeDragStart(event, node, dragged);
+    onNodeDragStart: (event, node) => {
+      if (node.type !== "note") layout.onNodeDragStart(event, node);
     },
-    onNodeDragStop: (event, node, dragged) => {
-      if (node.type !== "note") return layout.onNodeDragStop(event, node, dragged);
-      const { note } = node.data as NoteData;
+    onNodeDragStop: (event, node) => {
+      if (node.type !== "note") return layout.onNodeDragStop(event, node);
+      const { note } = node.data;
       edit(note.id, { x: Math.round(node.position.x), y: Math.round(node.position.y) });
     },
   });
@@ -236,8 +251,8 @@ export function useNotes() {
   return { nodes, actions, createInView, onCanvasDoubleClick, withNotes, lastDeletedAt, undoDelete };
 }
 
-export const NoteNode = memo(({ data }: NodeProps) => {
-  const { note, autoFocus } = data as NoteData;
+export const NoteNode = memo(({ data }: NodeProps<NoteFlowNode>) => {
+  const { note, autoFocus } = data;
   const actions = useContext(NoteActions);
   const text = useRef<HTMLTextAreaElement>(null);
 

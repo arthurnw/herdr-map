@@ -108,6 +108,7 @@ async function scheduleSetup() {
   const queue = await openQueue(deps);
   const panes = indexPanes(fleetWith({ "w1:p1": "idle" }));
   const s = addSchedule(queue, { target: "w1:p1", targetLabel: "lead", text: "status?", timing: { kind: "interval", minutes: 5 } }, 0);
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- addSchedule returns the schedule or an error message
   assert.ok(typeof s !== "string");
   return { queue, panes, s, deps };
 }

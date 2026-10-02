@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { GitOutput, GitRepo, GitRequest } from "../probe/git.ts";
+import { errorMessage } from "../shared/errors.ts";
 import type { PullRequest, WorkspaceGit } from "../shared/git.ts";
 import type { Fleet, Snapshot } from "../shared/model.ts";
 import { bundleProbe, runScript, type ProbeOptions } from "./probe.ts";
@@ -99,7 +100,7 @@ export function createGitWatcher(opts: GitWatcherOptions) {
     log(`git probe: ${message}`);
   }
 
-  function fresh(t: number): Record<string, string> {
+  function fresh(t: number) {
     const out: Record<string, string> = {};
     for (const [root, e] of prs) if (t - e.at < prTtl(e.pr)) out[root] = e.key;
     return out;
@@ -147,7 +148,7 @@ export function createGitWatcher(opts: GitWatcherOptions) {
         for (const root of prs.keys()) if (!repos.has(root)) prs.delete(root);
         out.errors.forEach(report);
       } catch (err) {
-        report((err as Error).message);
+        report(errorMessage(err));
       }
     }
     const next = JSON.stringify([...workspaces(byWorkspace)]);

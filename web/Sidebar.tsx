@@ -9,7 +9,7 @@ import { StuckBadge } from "./attention.tsx";
 import { agentAge } from "./format.ts";
 import { PaneDetail } from "./PaneDetail.tsx";
 import type { Located } from "./state.ts";
-import { KIND_LABEL, StatusDot } from "./status.tsx";
+import { kindLabel, StatusDot } from "./status.tsx";
 import { SubagentDetail } from "./SubagentDetail.tsx";
 import { SubagentViewContext } from "./subagents.tsx";
 import { HunkContext } from "./review.tsx";
@@ -137,7 +137,7 @@ function AgentRow({ located: l, selected, now, onFocus, onHover, onSelect }: Row
             {unread} note{unread === 1 ? "" : "s"}
           </Badge>
         )}
-        <span className="text-xs text-muted-foreground">{KIND_LABEL[agent.kind] ?? agent.kind}</span>
+        <span className="text-xs text-muted-foreground">{kindLabel(agent.kind)}</span>
         <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{agentAge(agent, now)}</span>
       </button>
       <Button

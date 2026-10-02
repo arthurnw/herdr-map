@@ -28,7 +28,8 @@ import {
 } from "./palette.ts";
 import { isEnabled } from "./shortcuts.ts";
 import { indexPanes, type FocusTarget, type Located } from "./state.ts";
-import { KIND_LABEL, StatusDot } from "./status.tsx";
+import { kindLabel, StatusDot } from "./status.tsx";
+import { errorMessage } from "../shared/errors.ts";
 
 const OPEN_EVENT = "herdr-map:open-palette";
 const noTags = () => [];
@@ -165,7 +166,7 @@ export function CommandPalette(props: Props) {
       layoutMenu.onApply(emptyLayout());
       toast.success("Reset to the automatic layout");
     } catch (err) {
-      toast.error("Layout change failed", { description: (err as Error).message });
+      toast.error("Layout change failed", { description: errorMessage(err) });
     }
   };
 
@@ -285,7 +286,7 @@ export function CommandPalette(props: Props) {
               <CommandGroup heading="Agents">
                 {agents.map((l) => {
                   const agent = l.pane.agent!;
-                  const kind = KIND_LABEL[agent.kind] ?? agent.kind;
+                  const kind = kindLabel(agent.kind);
                   return (
                     <CommandItem key={l.pane.id} value={`agent:${l.pane.id}`} onSelect={() => choose(() => onSelect(l.pane.id))}>
                       <StatusDot status={agent.status} />

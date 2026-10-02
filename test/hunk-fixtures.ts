@@ -1,5 +1,6 @@
 // Output shapes captured from hunk 0.22.0 and the jhochenbaum.hunkdiff plugin 0.2.0 against a
 // scratch repo, with synthetic paths, IDs, and note text.
+import type { JsonValue } from "./fixtures.ts";
 
 export const REPO = "/work/sandbox";
 export const SESSION = "e156d44b-8974-4962-b15d-f782539872bb";
@@ -56,7 +57,7 @@ export const COMMENTS = {
 };
 
 /** `hunk session list --json`: each session carries its notes in `snapshot.state.reviewNotes`. */
-export function sessionList(notes: unknown[] | null = COMMENTS.comments) {
+export function sessionList(notes: JsonValue[] | null = COMMENTS.comments) {
   return {
     sessions: [
       {

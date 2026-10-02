@@ -1,13 +1,12 @@
 import type { AutomationState } from "../../shared/automation.ts";
+import { isObject } from "../../shared/parse.ts";
 import { indexPanes, paneLabel } from "../agents.ts";
 import type { Context } from "../context.ts";
 import { readBody, sendJson } from "../http.ts";
 import { loadStore } from "../layout-store.ts";
-import { checkText } from "../queue.ts";
+import { isPromptText } from "../queue.ts";
 import type { Route } from "../router.ts";
 
-type Obj = Record<string, unknown>;
-export const isObject = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 
 /** The pane if it's an agent in the current fleet. */
 export function agentPane(ctx: Context, id: unknown) {
@@ -47,8 +46,8 @@ export function queueRoutes(ctx: Context): Route[] {
         if (!isObject(body)) return sendJson(res, 400, { error: "expected an object" });
         const target = agentPane(ctx, body.target);
         if (!target) return sendJson(res, 400, { error: "target must be an agent pane" });
-        const text = checkText(body.text);
-        if (!text) return sendJson(res, 400, { error: "text must not be empty" });
+        const { text } = body;
+        if (!isPromptText(text)) return sendJson(res, 400, { error: "text must not be empty" });
         const item = queue.enqueue({
           target: target.paneId,
           targetLabel: paneLabel(target, target.paneId),

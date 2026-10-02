@@ -42,11 +42,16 @@ export const isVertical = (side: Side) => side === "top" || side === "bottom";
 const onSide = (r: Rect, side: Side, at: number): Anchor =>
   isVertical(side) ? { x: at, y: edgeOf(r, side), side } : { x: edgeOf(r, side), y: at, side };
 
+export interface EdgeAnchors {
+  source: Anchor;
+  target: Anchor;
+}
+
 /**
  * The start and end points of an edge that leaves `source` from `from` and enters `target`
  * at `to`. Parallel sides line up where their spans overlap; other pairs use each side's middle.
  */
-export function anchorsFor(source: Rect, target: Rect, [from, to]: [Side, Side]): { source: Anchor; target: Anchor } {
+export function anchorsFor(source: Rect, target: Rect, [from, to]: [Side, Side]): EdgeAnchors {
   const spanOf = (r: Rect, side: Side): [number, number] => (isVertical(side) ? [r.x, r.x + r.w] : [r.y, r.y + r.h]);
   const [s0, s1] = spanOf(source, from);
   const [t0, t1] = spanOf(target, to);
@@ -55,11 +60,11 @@ export function anchorsFor(source: Rect, target: Rect, [from, to]: [Side, Side])
 }
 
 /** The start and end points of an edge from `source` to `target`. */
-export function attachEdge(source: Rect, target: Rect): { source: Anchor; target: Anchor } {
+export function attachEdge(source: Rect, target: Rect): EdgeAnchors {
   return anchorsFor(source, target, facingSides(source, target));
 }
 
 /** The start and end points of an edge from `source` to a bare point, such as the pointer while a link is drawn. */
-export function attachToPoint(source: Rect, point: { x: number; y: number }): { source: Anchor; target: Anchor } {
+export function attachToPoint(source: Rect, point: { x: number; y: number }): EdgeAnchors {
   return attachEdge(source, { x: point.x, y: point.y, w: 0, h: 0 });
 }

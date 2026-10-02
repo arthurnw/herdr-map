@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test, type TestContext } from "node:test";
 import { failure, hunkProbe, indexPath, parseIndex, toNote, toNotes, type HunkOutput } from "../probe/hunk.ts";
 import { hunkCounts, noteLocation, REPLY_AUTHOR, threadNotes, unreadNotes, type HunkNote, type HunkReview } from "../shared/hunk.ts";
 import { buildFleet, fleetPanes, StatusClock, type Snapshot } from "../shared/model.ts";
-import type { Context } from "../server/context.ts";
 import {
   assertReply,
   createHunkWatcher,
@@ -20,10 +17,10 @@ import {
   replyArgs,
   runHunkProbe,
 } from "../server/hunk.ts";
-import { createRouter } from "../server/router.ts";
 import { hunkRoutes } from "../server/routes/hunk.ts";
-import { snapshotFixture } from "./fixtures.ts";
+import { snapshotFixture, type JsonValue } from "./fixtures.ts";
 import { COMMENTS, INDEX, REPO, SESSION, sessionList } from "./hunk-fixtures.ts";
+import { routeContext, serveRoutes } from "./http.ts";
 
 const [USER_OLD, AGENT_REPLY, AGENT_NOTE, USER_SENT] = COMMENTS.comments.map((c) => c.noteId);
 
@@ -31,7 +28,7 @@ const dir = mkdtempSync(join(tmpdir(), "herdr-map-hunk-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 /** A fake hunk that prints `list` for `session list` and COMMENTS for `session comment list`, and logs its arguments. */
-function fakeHunk(name: string, list: unknown, status = 0): string {
+function fakeHunk(name: string, list: JsonValue, status = 0): string {
   const bin = join(dir, name);
   writeFileSync(join(dir, `${name}.list.json`), JSON.stringify(list));
   writeFileSync(join(dir, `${name}.comments.json`), JSON.stringify(COMMENTS));
@@ -269,19 +266,14 @@ async function serve(t: TestContext, runnerOut: (tool: string, args: string[]) =
       refreshed++;
     },
   };
-  const ctx = { herdr: { bin: "herdr" }, hunk: "hunk", poller } as unknown as Context;
-  const routes = hunkRoutes(ctx, async (tool, args) => {
-    calls.push([tool, ...args].join(" "));
-    return runnerOut(tool, args);
-  });
-  const server = createServer(createRouter(routes, (_req, res) => res.end()));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => server.close());
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-    return { status: res.status, body: (await res.json()) as any };
-  };
+  const ctx = routeContext({ herdr: { bin: "herdr" }, hunk: "hunk", poller });
+  const call = await serveRoutes(
+    t,
+    hunkRoutes(ctx, async (tool, args) => {
+      calls.push([tool, ...args].join(" "));
+      return runnerOut(tool, args);
+    }),
+  );
   return { call, calls, seen, refreshed: () => refreshed };
 }
 
@@ -329,7 +321,7 @@ test("plugin actions run from the agent's pane, and comment steps then focus the
 
 test("requests naming anything the probe didn't report are refused before any command runs", async (t) => {
   const { call, calls } = await serve(t);
-  const bad: [string, object][] = [
+  const bad: [string, JsonValue][] = [
     ["/api/hunk/navigate", { session: "not-live", note: AGENT_NOTE }],
     ["/api/hunk/navigate", { session: "a;b", note: AGENT_NOTE }],
     ["/api/hunk/navigate", { session: SESSION, note: "mcp:gone" }],

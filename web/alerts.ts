@@ -1,7 +1,7 @@
 // Desktop notifications and sounds when an agent starts needing attention.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { safeStorage, type Located } from "./state.ts";
-import { KIND_LABEL } from "./status.tsx";
+import { kindLabel } from "./status.tsx";
 
 export interface AlertSettings {
   desktop: boolean;
@@ -71,7 +71,7 @@ const TITLE: Record<AlertKind, (who: string, l: Located) => string> = {
 export function showNotification(l: Located, kind: AlertKind, onClick: () => void) {
   if (notificationPermission() !== "granted") return;
   const agent = l.pane.agent!;
-  const who = agent.name ?? `${KIND_LABEL[agent.kind] ?? agent.kind} in ${l.workspace.label}`;
+  const who = agent.name ?? `${kindLabel(agent.kind)} in ${l.workspace.label}`;
   const n = new Notification(TITLE[kind](who, l), {
     body: [l.workspace.label, agent.summary].filter(Boolean).join(" · "),
     tag: l.pane.id,

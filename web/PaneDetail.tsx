@@ -13,7 +13,7 @@ import { ReplyBox } from "./ReplyBox.tsx";
 import { AgentAutomation } from "./AgentAutomation.tsx";
 import { hasDialogHint } from "../shared/dialog.ts";
 import type { Located } from "./state.ts";
-import { KIND_LABEL, StatusDot } from "./status.tsx";
+import { kindLabel, StatusDot } from "./status.tsx";
 import { UsageLine } from "./usage.tsx";
 import { MemoryLine } from "./memory.tsx";
 import { TaskLine } from "./activity.tsx";
@@ -209,7 +209,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
               <StarButton paneId={pane.id} />
               <StatusDot status={agent.status} />
               <AgentName key={pane.id} located={located} names={agentNames} />
-              {agent.name && <Badge variant="secondary">{KIND_LABEL[agent.kind] ?? agent.kind}</Badge>}
+              {agent.name && <Badge variant="secondary">{kindLabel(agent.kind)}</Badge>}
               <span className="text-muted-foreground">
                 {agent.status} for {agentAge(agent, now)}
               </span>

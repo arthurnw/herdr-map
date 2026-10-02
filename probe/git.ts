@@ -63,6 +63,7 @@ function runTool(cmd: string, args: string[], cwd: string, timeout: number): Too
     env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1", NO_COLOR: "1" },
   });
   if (r.error) {
+    // SAFETY: spawnSync sets `error` only for system errors, which carry a `code`.
     const code = (r.error as NodeJS.ErrnoException).code;
     return { ok: false, out: "", err: code === "ETIMEDOUT" ? `timed out after ${timeout / 1000}s` : r.error.message, missing: code === "ENOENT" };
   }
@@ -167,8 +168,13 @@ export function toPullRequest(raw: Record<string, unknown>): PullRequest {
 // gh's answers for a branch without a PR, or a repo it can't look PRs up for.
 const NO_PR = /no (open )?pull requests? found|none of the git remotes|no git remotes|not a git repository/i;
 
+export interface PrLookup {
+  pr: PullRequest | null;
+  error?: string;
+}
+
 /** The PR for the branch checked out in `root`. A missing, logged-out, or failing gh gives none, with an error. */
-export function lookupPr(gh: string, root: string, timeoutMs = GH_TIMEOUT_MS): { pr: PullRequest | null; error?: string } {
+export function lookupPr(gh: string, root: string, timeoutMs = GH_TIMEOUT_MS): PrLookup {
   const r = runTool(gh, ["pr", "view", "--json", PR_FIELDS], root, timeoutMs);
   if (r.missing) return { pr: null, error: `${gh} is not installed or not on PATH` };
   if (!r.ok) return NO_PR.test(r.err) ? { pr: null } : { pr: null, error: `gh pr view: ${firstLine(r.err) || "failed"}` };

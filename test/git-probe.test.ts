@@ -7,6 +7,7 @@ import { after, test } from "node:test";
 import { gitProbe, lookupPr, parseStatus, summarizeChecks, toPullRequest } from "../probe/git.ts";
 import { checkText } from "../shared/git.ts";
 import { runGitProbe } from "../server/git.ts";
+import type { JsonValue } from "./fixtures.ts";
 
 // Commits here must not pick up the user's signing or hooks.
 const GIT_ENV = {
@@ -40,7 +41,7 @@ function commit(dir: string, file: string) {
 }
 
 /** A stand-in gh that logs each call's directory and runs `body`. */
-function ghStub(name: string, body: string): { path: string; calls: () => string[] } {
+function ghStub(name: string, body: string) {
   const dir = join(base, `gh-${name}`);
   mkdirSync(dir);
   const path = join(dir, "gh");
@@ -50,7 +51,7 @@ function ghStub(name: string, body: string): { path: string; calls: () => string
   return { path, calls: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
 }
 
-const prJson = (rollup: unknown[], extra: Record<string, unknown> = {}) =>
+const prJson = (rollup: JsonValue[], extra: Record<string, JsonValue> = {}) =>
   JSON.stringify({ number: 42, title: "Add retries", url: "https://github.com/o/r/pull/42", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: rollup, ...extra });
 const run = (name: string, status: string, conclusion = "") => ({ __typename: "CheckRun", name, workflowName: "ci", status, conclusion, startedAt: "2026-09-30T10:00:00Z" });
 
@@ -189,7 +190,7 @@ test("no gh lookups start once the budget is spent", () => {
 test("gh: each check state, no PR, not logged in, and not installed", () => {
   const dir = repo("gh");
   git(dir, "checkout", "-q", "-b", "topic");
-  const cases: [string, unknown[], string][] = [
+  const cases: [string, JsonValue[], string][] = [
     ["pass", [run("a", "COMPLETED", "SUCCESS")], "pass"],
     ["fail", [run("a", "COMPLETED", "SUCCESS"), run("b", "COMPLETED", "FAILURE")], "fail"],
     ["pending", [run("a", "IN_PROGRESS")], "pending"],

@@ -1,34 +1,20 @@
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import type { Context } from "../server/context.ts";
 import { loadStore } from "../server/layout-store.ts";
-import { createRouter } from "../server/router.ts";
 import { historyRoutes } from "../server/routes/history.ts";
 import { layoutRoutes } from "../server/routes/layout.ts";
 import { metaRoutes } from "../server/routes/meta.ts";
 import { notesRoutes } from "../server/routes/notes.ts";
+import { routeContext, serveRoutes } from "./http.ts";
 
 /** Serves the organize routes over a fresh layout file. */
 async function serve(t: TestContext) {
   const layoutPath = join(await mkdtemp(join(tmpdir(), "herdr-map-")), "layout.json");
-  const ctx = { layoutPath } as Context;
-  const server = createServer(createRouter([...layoutRoutes(ctx), ...historyRoutes(ctx), ...metaRoutes(ctx), ...notesRoutes(ctx)], (_req, res) => res.end()));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => server.close());
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(base + path, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    return { status: res.status, body: (await res.json()) as any };
-  };
+  const ctx = routeContext({ layoutPath });
+  const call = await serveRoutes(t, [...layoutRoutes(ctx), ...historyRoutes(ctx), ...metaRoutes(ctx), ...notesRoutes(ctx)]);
   return { call, store: () => loadStore(layoutPath) };
 }
 
@@ -101,6 +87,7 @@ test("creates, edits, and deletes notes", async (t) => {
   const created = await call("POST", "/api/notes", { x: 10, y: -20, text: "remember", color: "yellow", w: 200, h: 120 });
   assert.equal(created.status, 201);
   const { id, createdAt } = created.body;
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- checks the reply's JSON type
   assert.equal(typeof id, "string");
   assert.deepEqual((await call("GET", "/api/notes")).body, [created.body]);
 

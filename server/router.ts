@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { errorMessage } from "../shared/errors.ts";
 import { sendJson } from "./http.ts";
 
-export type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => unknown;
+export type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => void | Promise<void>;
 
 export interface Route {
   /** Omit to match any method. */
@@ -31,7 +32,7 @@ export function createRouter(routes: Route[], fallback: Handler) {
       if (url.pathname.startsWith("/api/")) return sendJson(res, 404, { error: "not found" });
       return await fallback(req, res, url);
     } catch (err) {
-      return sendJson(res, 500, { error: (err as Error).message });
+      return sendJson(res, 500, { error: errorMessage(err) });
     }
   };
 }

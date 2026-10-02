@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { emptyLayout, type SavedLayout } from "./layout.ts";
 import { formatAge } from "./nodes.tsx";
+import { errorMessage } from "../shared/errors.ts";
 
 export interface NamedLayout {
   savedAt: number;
@@ -45,7 +46,7 @@ export function LayoutMenu({ currentPositions, isCustom, onApply }: LayoutMenuPr
       if (!res.ok) throw new Error("the server doesn't support saved layouts yet; restart it");
       setNamed(await res.json());
     } catch (err) {
-      toast.error("Couldn't load layouts", { description: (err as Error).message });
+      toast.error("Couldn't load layouts", { description: errorMessage(err) });
     }
   }, []);
 
@@ -59,7 +60,7 @@ export function LayoutMenu({ currentPositions, isCustom, onApply }: LayoutMenuPr
       await refresh();
       if (success) toast.success(success);
     } catch (err) {
-      toast.error("Layout change failed", { description: (err as Error).message });
+      toast.error("Layout change failed", { description: errorMessage(err) });
     }
   };
 

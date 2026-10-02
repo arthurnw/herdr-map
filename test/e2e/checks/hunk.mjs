@@ -42,7 +42,7 @@ const sessions = () => ({
 const INDEX = { [GIT_DIRS.w1]: { worktree: GIT_DIRS.w1, agentName: "claude", agentPaneId: "w1:p1", paneId: "w1:p2", sent: ["user:e2e-2"] } };
 const PLUGINS = { result: { plugins: [{ plugin_id: "jhochenbaum.hunkdiff", enabled: true }] } };
 
-export default function hunkChecks({ test, assert, openPage, card, needsYouRow, actions, clearActions, stubDir }) {
+export default function hunkChecks({ test, assert, card, needsYouRow, actions, clearActions, stubDir }) {
   const header = (page, id) => page.locator(`.react-flow__node-workspace[data-id="ws:${id}"] .ws-header`);
   const review = (page) => page.locator("aside section[aria-label='Review']");
   const row = (page, id) => review(page).locator(`li[data-note="${id}"]`);

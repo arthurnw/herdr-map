@@ -1,5 +1,7 @@
 import { fleetPanes } from "../../shared/model.ts";
+import { errorMessage } from "../../shared/errors.ts";
 import { agentNameError } from "../../shared/names.ts";
+import { isObject } from "../../shared/parse.ts";
 import type { Context } from "../context.ts";
 import { assertId, renameAgent } from "../herdr.ts";
 import { readBody, sendJson } from "../http.ts";
@@ -15,14 +17,16 @@ export function renameRoutes(ctx: Context): Route[] {
       method: "POST",
       path: "/api/rename",
       handle: async (req, res) => {
-        const body = (await readBody(req)) as { pane?: unknown; name?: unknown };
-        const pane = assertId(typeof body.pane === "string" ? body.pane : "");
-        const invalid = agentNameError(body.name, otherNames(ctx, pane));
+        const body = await readBody(req);
+        const { pane: paneId, name } = isObject(body) ? body : {};
+        const pane = assertId(typeof paneId === "string" ? paneId : "");
+        const invalid = agentNameError(name, otherNames(ctx, pane));
         if (invalid) return sendJson(res, 400, { error: invalid });
         try {
-          await renameAgent(ctx.herdr, pane, body.name as string);
+          // SAFETY: agentNameError accepts only a string.
+          await renameAgent(ctx.herdr, pane, name as string);
         } catch (err) {
-          return sendJson(res, 502, { error: (err as Error).message });
+          return sendJson(res, 502, { error: errorMessage(err) });
         }
         void ctx.poller.poll();
         return sendJson(res, 200, { ok: true });

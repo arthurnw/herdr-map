@@ -22,6 +22,7 @@ import {
   type ProbeRef,
   type Roots,
 } from "../probe/usage.ts";
+import type { JsonValue } from "./fixtures.ts";
 
 // Synthetic transcript lines, shaped like each agent's own records.
 const claude = (input: number, cacheRead: number, cacheWrite: number, model = "claude-opus-5-5", extra = {}) =>
@@ -244,7 +245,7 @@ test("probe withholds a Pi agent's numbers until its whole transcript is read, w
 });
 
 // Claude Code's `sessions/<pid>.json`, as an interactive process and a background job write it.
-function claudeSessions(root: string, entries: Record<number, object>) {
+function claudeSessions(root: string, entries: Record<number, Record<string, JsonValue>>) {
   mkdirSync(join(root, "sessions"), { recursive: true });
   for (const [pid, o] of Object.entries(entries)) writeFileSync(join(root, "sessions", `${pid}.json`), JSON.stringify({ pid: Number(pid), ...o }));
 }

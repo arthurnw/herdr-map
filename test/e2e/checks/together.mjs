@@ -2,11 +2,9 @@
 // and schedules that wait to be armed.
 export default function togetherChecks({ test, assert, card, actions, clearActions, writeSnapshot, snapshot, setStatus, base }) {
   const api = async (method, path, body) => {
-    const res = await fetch(base + path, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    const init = { method, headers: { "content-type": "application/json" } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const res = await fetch(base + path, init);
     return res.json();
   };
 

@@ -1,16 +1,15 @@
 // Actions for the box-selected workspaces, shown over the canvas while any are selected.
 import { useContext, useState } from "react";
-import type { Node } from "@xyflow/react";
 import { ChevronsDownUp, ChevronsUpDown, Group, Tag, Ungroup, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { WorkspaceData } from "./layout.ts";
+import type { LayoutNode } from "./layout.ts";
 import { TagInput } from "./organize.tsx";
 import { WorkspaceActions } from "./workspace-actions.ts";
 
-export function BulkBar({ nodes, selected, onClear }: { nodes: Node[]; selected: ReadonlySet<string>; onClear: () => void }) {
+export function BulkBar({ nodes, selected, onClear }: { nodes: LayoutNode[]; selected: ReadonlySet<string>; onClear: () => void }) {
   const actions = useContext(WorkspaceActions);
   const [tagging, setTagging] = useState(false);
-  const workspaces = nodes.filter((n) => n.type === "workspace").map((n) => ({ nodeId: n.id, ...(n.data as WorkspaceData) }));
+  const workspaces = nodes.flatMap((n) => (n.type === "workspace" ? [{ nodeId: n.id, ...n.data }] : []));
   const chosen = workspaces.filter((w) => selected.has(w.nodeId));
   if (!actions || chosen.length === 0) return null;
 

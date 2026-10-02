@@ -1,5 +1,8 @@
 import type { AgentStatus, Fleet, FleetPane, Snapshot } from "../shared/model.ts";
 
+/** Any value JSON.stringify writes; undefined fields are left out. */
+export type JsonValue = string | number | boolean | null | undefined | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
 // A two-repo session: one agent tab with a hunk split, one spawned child agent,
 // and a shell-only workspace.
 export function snapshotFixture(): Snapshot {

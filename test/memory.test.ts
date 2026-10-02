@@ -83,16 +83,16 @@ test("missing pids and a parent loop are skipped", () => {
 });
 
 test("memoryUse measures each pane, totals each process once, and reports panes it can't measure", () => {
-  const infos: Record<string, ProcessInfo> = {
-    "w1:p1": info(100, [101, "claude"]),
-    "w2:p1": info(200, [202, "codex"]),
+  const infos = new Map([
+    ["w1:p1", info(100, [101, "claude"])],
+    ["w2:p1", info(200, [202, "codex"])],
     // Shares a process with w1:p1, as when the same tree is reported for two panes.
-    "w3:p1": info(undefined, [102, "node"]),
-    "w4:p1": info(900),
-  };
+    ["w3:p1", info(undefined, [102, "node"])],
+    ["w4:p1", info(900)],
+  ]);
   const out = memoryUse(
     { panes: ["w1:p1", "w2:p1", "w3:p1", "w4:p1", "w5:p1"], top: 2 },
-    { ps: () => PS, processInfo: (p) => infos[p], totalmem: () => 16 * 1024 * MB },
+    { ps: () => PS, processInfo: (p) => infos.get(p), totalmem: () => 16 * 1024 * MB },
   );
   assert.deepEqual(
     out.panes.map((p) => [p.pane, p.bytes / MB, p.processes, p.top.length]),

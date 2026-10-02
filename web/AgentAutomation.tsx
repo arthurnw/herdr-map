@@ -226,6 +226,7 @@ function ScheduleForm({
           className="h-7 rounded-md border bg-background px-1.5 text-xs"
           aria-label="Repeat"
           value={draft.unit}
+          // SAFETY: the options below are the only values the select can take.
           onChange={(e) => set({ unit: e.target.value as Unit })}
         >
           <option value="minutes">minutes</option>

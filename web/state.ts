@@ -31,7 +31,7 @@ export function paneTarget(pane: FleetPane, tabId: string): FocusTarget {
   return pane.agent ? { kind: "agent", id: pane.id } : { kind: "tab", id: tabId };
 }
 
-let layoutWrite: Promise<unknown> = Promise.resolve();
+let layoutWrite: Promise<Response | undefined> = Promise.resolve(undefined);
 let layoutWriteAt = 0;
 
 /** When this tab last saved a layout change; ⌘Z compares it with note deletions. */
@@ -51,7 +51,7 @@ export async function putLayout(layout: SavedLayout) {
 }
 
 /** Settles once the last layout write has; undo waits on it so it can't overtake a save. */
-export function layoutWritten(): Promise<unknown> {
+export function layoutWritten(): Promise<Response | undefined> {
   return layoutWrite;
 }
 

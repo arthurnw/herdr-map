@@ -11,7 +11,6 @@ import {
   type ConnectionLineComponentProps,
   type Edge,
   type EdgeProps,
-  type FinalConnectionState,
   type IsValidConnection,
 } from "@xyflow/react";
 import { BookOpen, Forward, StickyNote, Trash2, Undo2 } from "lucide-react";
@@ -74,6 +73,7 @@ export function NoteLinkHandle() {
 }
 
 export type LinkEdgeData = { link: Link };
+export type LinkFlowEdge = Edge<LinkEdgeData, "link">;
 
 type Flavor = "handoff" | "context" | "note";
 const flavorOf = (link: Link): Flavor => (link.from.kind === "note" ? "note" : link.kind);
@@ -86,7 +86,7 @@ const FLAVOR = {
 const nodeId = (e: Endpoint) => (e.kind === "note" ? NOTE_PREFIX + e.id : e.id);
 
 /** Edges for the stored links whose two ends are both on the map; the rest stay stored and unseen. */
-export function linkEdges(links: Link[] | undefined, nodeIds: ReadonlySet<string>): Edge[] {
+export function linkEdges(links: Link[] | undefined, nodeIds: ReadonlySet<string>): LinkFlowEdge[] {
   return (links ?? [])
     .filter((l) => nodeIds.has(nodeId(l.from)) && nodeIds.has(nodeId(l.to)))
     .map((link) => ({
@@ -137,13 +137,13 @@ function Arrowhead({ id, className }: { id: string; className: string }) {
  * A link drawn between the sides of its two cards that face each other, rather than from
  * the handles, which sit on fixed sides, and around other cards in the way.
  */
-export const LinkEdge = memo((props: EdgeProps) => {
+export const LinkEdge = memo((props: EdgeProps<LinkFlowEdge>) => {
   const { id, source, target, data } = props;
   const auto = useAutomation();
   const route = useRoute(source, target);
-  if (!route) return null;
+  if (!route || !data) return null;
   const { path, label: labelAt } = route;
-  const { link } = data as LinkEdgeData;
+  const { link } = data;
   const flavor = flavorOf(link);
   const { icon: Icon, label } = FLAVOR[flavor];
   const markerId = `link-arrow-${link.id}`;
@@ -236,7 +236,7 @@ export function useLinking(panes: Map<string, Located>, actions: AutomationActio
   );
 
   const onConnectEnd = useCallback(
-    (event: MouseEvent | TouchEvent, _state: FinalConnectionState) => {
+    (event: MouseEvent | TouchEvent) => {
       setLinking(false);
       const c = dropped.current;
       dropped.current = undefined;

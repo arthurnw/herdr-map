@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { emptyLayout } from "../shared/layout-types.ts";
+import { isFiniteNumber, isObject, type JsonObject } from "../shared/parse.ts";
 import type {
   CardPositions,
   Endpoint,
@@ -24,12 +25,6 @@ export const HISTORY_LIMIT = 50;
 export function defaultLayoutPath(): string {
   const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return join(configHome, "herdr-map", "layout.json");
-}
-
-type Obj = Record<string, unknown>;
-
-function isObject(value: unknown): value is Obj {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isCardPosition(p: unknown): p is CardPositions[string] {
@@ -62,6 +57,7 @@ export function isLayoutName(name: string): boolean {
     name.trim() === name &&
     name.length > 0 &&
     name.length <= 64 &&
+    // oxlint-disable-next-line no-control-regex -- control characters are what it rejects
     !/[\u0000-\u001f]/.test(name) &&
     !RESERVED_NAMES.has(name)
   );
@@ -82,6 +78,7 @@ export function emptyStore(): LayoutStore {
 
 // The parsers below copy valid entries one by one, so a single bad value costs only
 // that entry rather than the whole file.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- they read the layout file, which can hold anything */
 
 function parseWorkspacePositions(value: unknown): WorkspacePositions {
   const out: WorkspacePositions = {};
@@ -109,12 +106,12 @@ function parseLayout(value: unknown, flat: boolean): SavedLayout {
   return { workspaces: parseWorkspacePositions(value.workspaces), cards: parseCardPositions(value.cards) };
 }
 
-function parseNamed(value: unknown, flat: boolean): Record<string, NamedLayout> {
+function parseNamed(value: unknown, flat: boolean) {
   const out: Record<string, NamedLayout> = {};
   if (!isObject(value)) return out;
   for (const [name, e] of Object.entries(value)) {
-    if (isLayoutName(name) && isObject(e) && Number.isFinite(e.savedAt) && isObject(e.layout)) {
-      out[name] = { savedAt: e.savedAt as number, layout: parseLayout(e.layout, flat) };
+    if (isLayoutName(name) && isObject(e) && isFiniteNumber(e.savedAt) && isObject(e.layout)) {
+      out[name] = { savedAt: e.savedAt, layout: parseLayout(e.layout, flat) };
     }
   }
   return out;
@@ -124,7 +121,7 @@ function parseColor(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function parseWorkspaceMeta(value: Obj): WorkspaceMeta {
+function parseWorkspaceMeta(value: JsonObject): WorkspaceMeta {
   const out: WorkspaceMeta = {};
   if (Array.isArray(value.tags)) out.tags = [...new Set(value.tags.filter(isId))];
   const color = parseColor(value.color);
@@ -133,12 +130,12 @@ function parseWorkspaceMeta(value: Obj): WorkspaceMeta {
   return out;
 }
 
-function parseGroupMeta(value: Obj): GroupMeta {
+function parseGroupMeta(value: JsonObject): GroupMeta {
   const color = parseColor(value.color);
   return color ? { color } : {};
 }
 
-function parseRecord<T>(value: unknown, parse: (entry: Obj) => T): Record<string, T> {
+function parseRecord<T>(value: unknown, parse: (entry: JsonObject) => T) {
   const out: Record<string, T> = {};
   if (!isObject(value)) return out;
   for (const [key, entry] of Object.entries(value)) {
@@ -149,18 +146,11 @@ function parseRecord<T>(value: unknown, parse: (entry: Obj) => T): Record<string
 
 function parseNote(n: unknown): Note | undefined {
   if (!isObject(n) || !isId(n.id) || typeof n.text !== "string") return undefined;
-  if (![n.x, n.y, n.createdAt, n.updatedAt].every(Number.isFinite)) return undefined;
-  const note: Note = {
-    id: n.id,
-    text: n.text,
-    x: n.x as number,
-    y: n.y as number,
-    createdAt: n.createdAt as number,
-    updatedAt: n.updatedAt as number,
-  };
+  if (!isFiniteNumber(n.x) || !isFiniteNumber(n.y) || !isFiniteNumber(n.createdAt) || !isFiniteNumber(n.updatedAt)) return undefined;
+  const note: Note = { id: n.id, text: n.text, x: n.x, y: n.y, createdAt: n.createdAt, updatedAt: n.updatedAt };
   // Bad optional fields fall back to the UI defaults rather than dropping the note.
-  if (Number.isFinite(n.w) && (n.w as number) > 0) note.w = n.w as number;
-  if (Number.isFinite(n.h) && (n.h as number) > 0) note.h = n.h as number;
+  if (isFiniteNumber(n.w) && n.w > 0) note.w = n.w;
+  if (isFiniteNumber(n.h) && n.h > 0) note.h = n.h;
   const color = parseColor(n.color);
   if (color) note.color = color;
   return note;
@@ -175,10 +165,10 @@ function parseLink(l: unknown): Link | undefined {
   if (!isObject(l) || !isId(l.id) || (l.kind !== "context" && l.kind !== "handoff")) return undefined;
   const from = parseEndpoint(l.from);
   const to = parseEndpoint(l.to);
-  if (!from || !to || !Number.isFinite(l.createdAt)) return undefined;
-  const link: Link = { id: l.id, from, to, kind: l.kind, createdAt: l.createdAt as number };
-  if (isObject(l.sent) && Number.isFinite(l.sent.at)) {
-    link.sent = { at: l.sent.at as number };
+  if (!from || !to || !isFiniteNumber(l.createdAt)) return undefined;
+  const link: Link = { id: l.id, from, to, kind: l.kind, createdAt: l.createdAt };
+  if (isObject(l.sent) && isFiniteNumber(l.sent.at)) {
+    link.sent = { at: l.sent.at };
     if (typeof l.sent.hash === "string") link.sent.hash = l.sent.hash;
   }
   return link;
@@ -213,25 +203,24 @@ function parseStore(value: unknown): ReadResult {
   if (!("current" in value) && !("version" in value)) {
     return { store: { ...emptyStore(), current: parseLayout(value, true) }, fileVersion: 1 };
   }
-  const fileVersion = Number.isFinite(value.version) ? (value.version as number) : 1;
+  const fileVersion = isFiniteNumber(value.version) ? value.version : 1;
   const flat = fileVersion < 3;
-  const layouts = (list: unknown[]) => list.filter(isObject).map((l) => parseLayout(l, flat));
-  return {
-    store: {
-      version: 3,
-      current: parseLayout(value.current, flat),
-      named: parseNamed(value.named, flat),
-      workspaces: parseRecord(value.workspaces, parseWorkspaceMeta),
-      groups: parseRecord(value.groups, parseGroupMeta),
-      notes: parseList(value.notes, parseNote),
-      links: parseList(value.links, parseLink),
-      history: Array.isArray(value.history) ? layouts(value.history) : [],
-      // Left out when empty, so files written before redo existed read back unchanged.
-      ...(Array.isArray(value.future) && value.future.length > 0 ? { future: layouts(value.future) } : {}),
-    },
-    fileVersion,
+  const layouts = (list: unknown[]) => list.flatMap((l) => (isObject(l) ? [parseLayout(l, flat)] : []));
+  const store: LayoutStore = {
+    version: 3,
+    current: parseLayout(value.current, flat),
+    named: parseNamed(value.named, flat),
+    workspaces: parseRecord(value.workspaces, parseWorkspaceMeta),
+    groups: parseRecord(value.groups, parseGroupMeta),
+    notes: parseList(value.notes, parseNote),
+    links: parseList(value.links, parseLink),
+    history: Array.isArray(value.history) ? layouts(value.history) : [],
   };
+  // Left out when empty, so files written before redo existed read back unchanged.
+  if (Array.isArray(value.future) && value.future.length > 0) store.future = layouts(value.future);
+  return { store, fileVersion };
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
 async function readStore(path: string): Promise<ReadResult> {
   let raw: string;

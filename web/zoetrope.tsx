@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { hasZoetropeSession } from "../shared/zoetrope.ts";
 import type { Located } from "./state.ts";
+import { errorMessage } from "../shared/errors.ts";
 
 // Checked once per page load; installing the plugin takes a reload to show the button.
 let available: Promise<boolean> | undefined;
@@ -44,7 +45,7 @@ export function ZoetropeButton({ located }: { located: Located }) {
       title="Open this agent's session as a live flow graph in zoetrope, over its pane in herdr"
       onClick={() =>
         void openGraph(located.pane.id).catch((err) =>
-          toast.error("Couldn't open the session graph", { description: (err as Error).message }),
+          toast.error("Couldn't open the session graph", { description: errorMessage(err) }),
         )
       }
     >

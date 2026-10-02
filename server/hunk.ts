@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { HunkOutput, HunkRequest } from "../probe/hunk.ts";
+import { errorMessage } from "../shared/errors.ts";
 import { hunkCounts, type HunkNote, type HunkReview } from "../shared/hunk.ts";
 import { fleetPanes, type Fleet, type Snapshot } from "../shared/model.ts";
 import { bundleProbe, runScript, type ProbeOptions } from "./probe.ts";
@@ -141,7 +142,7 @@ export function createHunkWatcher(opts: HunkWatcherOptions) {
       if (missing) report("hunk is not installed or not on PATH where herdr runs; review notes are off until it is");
       output = missing ? undefined : out;
     } catch (err) {
-      report((err as Error).message);
+      report(errorMessage(err));
     }
     const next = JSON.stringify(output ?? null);
     if (next !== last) {
@@ -190,8 +191,11 @@ const SESSION_ID = /^[A-Za-z0-9-]{1,64}$/;
 const NOTE_ID = /^[A-Za-z0-9:._-]{1,128}$/;
 export const MAX_REPLY = 2000;
 // Newlines and tabs are fine in a note; other control characters aren't.
+// oxlint-disable-next-line no-control-regex -- control characters are what it rejects
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 
+// Request values are checked here, right before they reach hunk's command line.
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 export function assertSessionId(id: unknown): string {
   if (typeof id !== "string" || !SESSION_ID.test(id)) throw new Error("invalid hunk session id");
   return id;
@@ -207,6 +211,7 @@ export function assertReply(text: unknown): string {
   if (!t || t.length > MAX_REPLY || CONTROL.test(t)) throw new Error(`a reply must be 1-${MAX_REPLY} characters of text`);
   return t;
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
 /**
  * Jumps the review to a note. hunk's `--comment` finds only notes added through its CLI, so

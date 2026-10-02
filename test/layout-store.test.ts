@@ -23,6 +23,7 @@ async function tempPath() {
 
 const L = (workspaces: WorkspacePositions = {}, cards: CardPositions = {}): SavedLayout => ({ workspaces, cards });
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- writes any value, valid or not, as the layout file under test
 async function fileWith(contents: unknown) {
   const path = join(await mkdtemp(join(tmpdir(), "herdr-map-")), "layout.json");
   await writeFile(path, JSON.stringify(contents));
@@ -36,8 +37,8 @@ test("accepts only workspace and card maps of finite positions", () => {
   assert.equal(isSavedLayout([]), false);
   assert.equal(isSavedLayout({ w1: { x: 1, y: 2 } }), false, "a flat pre-v3 layout");
   assert.equal(isSavedLayout({ workspaces: {} }), false, "cards are required");
-  assert.equal(isSavedLayout(L({ w1: { x: "1", y: 2 } as never })), false);
-  assert.equal(isSavedLayout(L({ w1: null as never })), false);
+  assert.equal(isSavedLayout({ workspaces: { w1: { x: "1", y: 2 } }, cards: {} }), false);
+  assert.equal(isSavedLayout({ workspaces: { w1: null }, cards: {} }), false);
   assert.equal(isSavedLayout(L({}, { "w1:p1": { x: 1, y: Number.NaN } })), false);
 });
 

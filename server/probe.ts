@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { errorMessage } from "../shared/errors.ts";
 import { fleetPanes, type AgentStatus, type AgentUsage, type Fleet, type FleetAgent, type Snapshot } from "../shared/model.ts";
 import type { MemoryInput, MemoryOutput } from "../probe/memory.ts";
 import type { HistoryOutput, ReplyOutput, ReplyRequest } from "../probe/reply.ts";
@@ -102,6 +103,7 @@ export function runScript<T>(opts: ProbeOptions, script: string, timeoutMs: numb
         return;
       }
       try {
+        // SAFETY: the script prints the JSON of the probe call's result, a T.
         resolve(JSON.parse(out) as T);
       } catch {
         reject(new Error(`probe printed something other than JSON: ${out.slice(0, 200)}`));
@@ -322,7 +324,7 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
           entries.set(res.pane, e);
         }
       } catch (err) {
-        const message = (err as Error).message;
+        const message = errorMessage(err);
         if (message !== lastError) {
           log(`usage probe: ${message}`);
           changed = true;

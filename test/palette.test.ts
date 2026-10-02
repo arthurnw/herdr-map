@@ -36,7 +36,7 @@ const blockedPi = agent("pi", "blocked", "api-auth", { summary: "Pick a deploy t
 const doneCodex = agent("codex", "done", "api-billing", { name: "cache", summary: "Rewrite the token cache" });
 const idleClaude = agent("claude", "idle", "web", { name: "stylist" });
 const all = [blockedPi, doneCodex, idleClaude];
-const hits = (q: string) => all.filter((a) => agentMatches(a, parseQuery(q))).map((a) => a.pane.id);
+const hits = (q: string) => all.flatMap((a) => (agentMatches(a, parseQuery(q)) ? [a.pane.id] : []));
 
 test("parseQuery splits prefixes from free text", () => {
   assert.deepEqual(parseQuery("  S:Blocked a:codex w:api  deploy Target "), {
@@ -93,9 +93,8 @@ test("shortcutLabel names keys and modifiers", () => {
 });
 
 test("t: narrows agents and workspaces by tag prefix, and free text matches tags", () => {
-  const tags: Record<string, string[]> = { "api-auth": ["infra", "urgent"], web: ["design"] };
-  const tagHits = (q: string) =>
-    all.filter((a) => agentMatches(a, parseQuery(q), tags[a.workspace.label])).map((a) => a.pane.id);
+  const tags = new Map([["api-auth", ["infra", "urgent"]], ["web", ["design"]]]);
+  const tagHits = (q: string) => all.flatMap((a) => (agentMatches(a, parseQuery(q), tags.get(a.workspace.label)) ? [a.pane.id] : []));
   assert.deepEqual(tagHits("t:infra"), [blockedPi.pane.id]);
   assert.deepEqual(tagHits("t:inf"), [blockedPi.pane.id]);
   assert.deepEqual(tagHits("t:urgent t:design"), [blockedPi.pane.id, idleClaude.pane.id]);
@@ -141,12 +140,8 @@ const repos = {
   scratch: gitWorkspace("scratch"),
 };
 type Repo = keyof typeof repos;
-const repoNames = Object.keys(repos) as Repo[];
-const repoAgents = repoNames.map((name, i) => {
-  const a = agent("claude", i % 2 ? "idle" : "working", name);
-  return { ...a, workspace: repos[name] };
-});
-const wsHits = (q: string) => repoNames.filter((name) => workspaceItemMatches(repos[name], name, parseQuery(q)));
+const repoAgents = Object.entries(repos).map(([name, workspace], i) => ({ ...agent("claude", i % 2 ? "idle" : "working", name), workspace }));
+const wsHits = (q: string) => Object.entries(repos).flatMap(([name, ws]) => (workspaceItemMatches(ws, name, parseQuery(q)) ? [name] : []));
 const repoAgentHits = (q: string) => repoAgents.filter((a) => agentMatches(a, parseQuery(q))).map((a) => a.workspace.label);
 
 test("pr: narrows by the workspace's PR, with drafts apart from open PRs", () => {

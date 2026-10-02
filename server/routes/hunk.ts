@@ -3,7 +3,9 @@
 // hunk or herdr, and commands run without a shell.
 import type { ServerResponse } from "node:http";
 import { HUNK_ACTIONS, HUNK_PLUGIN, REPLY_AUTHOR, type HunkAction, type HunkReview } from "../../shared/hunk.ts";
+import { errorMessage } from "../../shared/errors.ts";
 import { fleetPanes } from "../../shared/model.ts";
+import { isObject, type JsonObject } from "../../shared/parse.ts";
 import type { Context } from "../context.ts";
 import { activateApp, assertId, runCli } from "../herdr.ts";
 import { assertNoteId, assertReply, assertSessionId, fleetReviews, navigateArgs, replyArgs } from "../hunk.ts";
@@ -22,7 +24,7 @@ function check<T>(fn: () => T): T {
   try {
     return fn();
   } catch (err) {
-    throw new BadRequest((err as Error).message);
+    throw new BadRequest(errorMessage(err));
   }
 }
 
@@ -53,11 +55,11 @@ export function hunkRoutes(ctx: Context, run?: HunkRunner): Route[] {
   }
 
   const handle =
-    (fn: (body: Record<string, unknown>, res: ServerResponse) => Promise<unknown>) =>
+    (fn: (body: JsonObject, res: ServerResponse) => Promise<void>) =>
     async (req: Parameters<Route["handle"]>[0], res: ServerResponse) => {
       try {
-        const body = (await readBody(req)) as Record<string, unknown>;
-        return await fn(body && typeof body === "object" ? body : {}, res);
+        const body = await readBody(req);
+        return await fn(isObject(body) ? body : {}, res);
       } catch (err) {
         if (err instanceof BadRequest) return sendJson(res, 400, { error: err.message });
         throw err;
@@ -111,8 +113,8 @@ export function hunkRoutes(ctx: Context, run?: HunkRunner): Route[] {
       method: "POST",
       path: "/api/hunk/action",
       handle: handle(async (body, res) => {
-        const action = body.action as HunkAction;
-        if (!HUNK_ACTIONS.includes(action)) throw new BadRequest(`action must be one of ${HUNK_ACTIONS.join(", ")}`);
+        const action = HUNK_ACTIONS.find((a) => a === body.action);
+        if (!action) throw new BadRequest(`action must be one of ${HUNK_ACTIONS.join(", ")}`);
         const pane = check(() => assertId(typeof body.pane === "string" ? body.pane : ""));
         const fleet = ctx.poller.state().fleet;
         if (!fleetPanes(fleet).some((p) => p.id === pane && p.agent)) throw new BadRequest("no agent in that pane");

@@ -13,16 +13,16 @@ function branchTitle(git: WorkspaceGit, worktree?: boolean): string {
   return lines.join("\n");
 }
 
-const REVIEW: Record<string, string> = {
-  APPROVED: "approved",
-  CHANGES_REQUESTED: "changes requested",
-  REVIEW_REQUIRED: "review required",
-};
+const REVIEW = new Map([
+  ["APPROVED", "approved"],
+  ["CHANGES_REQUESTED", "changes requested"],
+  ["REVIEW_REQUIRED", "review required"],
+]);
 
 function prTitle(pr: PullRequest): string {
   const lines = [`#${pr.number} ${pr.title}`, `${pr.draft && pr.state === "open" ? "Draft" : pr.state[0].toUpperCase() + pr.state.slice(1)}`];
   lines.push(`Checks: ${checkText(pr.checks)}`);
-  if (pr.review) lines.push(`Review: ${REVIEW[pr.review] ?? pr.review.toLowerCase()}`);
+  if (pr.review) lines.push(`Review: ${REVIEW.get(pr.review) ?? pr.review.toLowerCase()}`);
   lines.push("Click to open on GitHub");
   return lines.join("\n");
 }

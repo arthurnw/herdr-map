@@ -14,19 +14,20 @@ import {
   type SubagentContext,
 } from "../probe/subagents.ts";
 import { advance, probe, readLines, type Cursor, type Roots, type Tally } from "../probe/usage.ts";
+import type { JsonValue } from "./fixtures.ts";
 
 // Synthetic transcript lines, shaped like each agent's own records.
 const NOW = new Date(2026, 8, 30, 12, 0, 0).getTime();
 const iso = (ms: number) => new Date(ms).toISOString();
-const lines = (...ls: unknown[]) => ls.map((l) => `${typeof l === "string" ? l : JSON.stringify(l)}\n`).join("");
+const lines = (...ls: JsonValue[]) => ls.map((l) => `${JSON.stringify(l)}\n`).join("");
 
-const claudeAssistant = (at: number, content: unknown[], usage = { input_tokens: 2, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10, output_tokens: 5 }) => ({
+const claudeAssistant = (at: number, content: JsonValue[], usage = { input_tokens: 2, cache_read_input_tokens: 1000, cache_creation_input_tokens: 10, output_tokens: 5 }) => ({
   type: "assistant",
   isSidechain: false,
   timestamp: iso(at),
   message: { role: "assistant", model: "claude-opus-5-5", content, usage },
 });
-const claudeResult = (at: number, id: string, text: string, toolUseResult?: unknown) => ({
+const claudeResult = (at: number, id: string, text: string, toolUseResult?: JsonValue) => ({
   type: "user",
   isSidechain: false,
   timestamp: iso(at),
@@ -254,7 +255,7 @@ test("Codex: update_plan gives the task list", () => {
 });
 
 /** A Codex rollout in today's folder whose first line names its parent thread. */
-function codexRollout(root: string, id: string, source: unknown, rest: unknown[], lastAt: number, extra = {}) {
+function codexRollout(root: string, id: string, source: JsonValue, rest: JsonValue[], lastAt: number, extra = {}) {
   const d = new Date(NOW);
   const dir = join(root, "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
   mkdirSync(dir, { recursive: true });
@@ -264,7 +265,7 @@ function codexRollout(root: string, id: string, source: unknown, rest: unknown[]
   return path;
 }
 const spawn = (parent: string, path: string, depth = 1) => ({ subagent: { thread_spawn: { parent_thread_id: parent, depth, agent_path: path, agent_nickname: "Noether", agent_role: null } } });
-const ev = (ordinal: number, at: number, payload: unknown) => ({ timestamp: iso(at), ordinal, type: "event_msg", payload });
+const ev = (ordinal: number, at: number, payload: JsonValue) => ({ timestamp: iso(at), ordinal, type: "event_msg", payload });
 const tool = (ordinal: number, at: number, name = "exec") => ({ timestamp: iso(at), ordinal, type: "response_item", payload: { type: "custom_tool_call", name, input: "tools.exec_command({cmd: 'ls'})" } });
 const tokens = (ordinal: number, at: number, total: number) => ev(ordinal, at, { type: "token_count", info: { last_token_usage: { input_tokens: total - 100, output_tokens: 100, total_tokens: total } } });
 
@@ -321,7 +322,7 @@ const piCall = (at: number, id: string, description: string) => ({
   timestamp: iso(at),
   message: { role: "assistant", content: [{ type: "toolCall", id, name: "Agent", arguments: { description, subagent_type: "reviewer", prompt: "Review." } }], usage: { input: 1, output: 1 } },
 });
-const piResult = (at: number, id: string, details: unknown, text = "Agent started in background.") => ({
+const piResult = (at: number, id: string, details: JsonValue, text = "Agent started in background.") => ({
   type: "message",
   timestamp: iso(at),
   message: { role: "toolResult", toolCallId: id, toolName: "Agent", content: [{ type: "text", text }], details },
@@ -333,7 +334,7 @@ const piRecord = (at: number, agentId: string, status: string) => ({
   data: { id: agentId, type: "reviewer", description: "Review the diff", status, result: "", startedAt: NOW - 200_000, completedAt: at },
 });
 
-function piSession(dir: string, ...ls: unknown[]): Cursor {
+function piSession(dir: string, ...ls: JsonValue[]): Cursor {
   const path = join(dir, "session.jsonl");
   writeFileSync(path, lines(...ls));
   const cursor: Cursor = { path, offset: 0, tally: {} };
@@ -348,7 +349,7 @@ test("Pi: a background subagent runs until its record says it finished; its outp
   const tasks = join(dir, "pi-subagents-501", "-repos-w2", "sess", "tasks");
   mkdirSync(tasks, { recursive: true });
   const output = join(tasks, "ag-1.output");
-  const piLine = (type: string, message: unknown, at: number) => JSON.stringify({ isSidechain: true, agentId: "ag-1", type, message, timestamp: iso(at) });
+  const piLine = (type: string, message: JsonValue, at: number) => ({ isSidechain: true, agentId: "ag-1", type, message, timestamp: iso(at) });
   writeFileSync(
     output,
     lines(

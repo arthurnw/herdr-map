@@ -1,3 +1,4 @@
+import { errorMessage } from "../shared/errors.ts";
 import { fleetPanes, type AgentMemory, type Fleet, type FleetMemory } from "../shared/model.ts";
 import type { MemoryInput, MemoryOutput } from "../probe/memory.ts";
 import { readMemory, type ProbeOptions } from "./probe.ts";
@@ -68,7 +69,7 @@ export function createMemoryWatcher(opts: MemoryWatcherOptions) {
       };
     } catch (err) {
       // The last figures stay up until a run succeeds again.
-      lastError = (err as Error).message;
+      lastError = errorMessage(err);
       logOnce(`memory probe: ${lastError}`);
       return;
     }
