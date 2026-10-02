@@ -3,13 +3,12 @@
 // hunk or herdr, and commands run without a shell.
 import type { ServerResponse } from "node:http";
 import { HUNK_ACTIONS, HUNK_PLUGIN, REPLY_AUTHOR, type HunkAction, type HunkReview } from "../../shared/hunk.ts";
-import { errorMessage } from "../../shared/errors.ts";
 import { fleetPanes } from "../../shared/model.ts";
 import { isObject, type JsonObject } from "../../shared/parse.ts";
 import type { Context } from "../context.ts";
 import { activateApp, assertId, runCli } from "../herdr.ts";
 import { assertNoteId, assertReply, assertSessionId, fleetReviews, navigateArgs, replyArgs } from "../hunk.ts";
-import { readBody, sendJson } from "../http.ts";
+import { BadRequest, check, readBody, sendJson } from "../http.ts";
 import type { Route } from "../router.ts";
 
 export type HunkRunner = (tool: "herdr" | "hunk", args: string[]) => Promise<string>;
@@ -17,16 +16,6 @@ export type HunkRunner = (tool: "herdr" | "hunk", args: string[]) => Promise<str
 // The plugin acts after `plugin action invoke` returns, so its changes are read again after this.
 export const AFTER_ACTION_MS = 1500;
 const NAVIGATING: HunkAction[] = ["next-comment", "prev-comment"];
-
-class BadRequest extends Error {}
-
-function check<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (err) {
-    throw new BadRequest(errorMessage(err));
-  }
-}
 
 export function hunkRoutes(ctx: Context, run?: HunkRunner): Route[] {
   const exec: HunkRunner =

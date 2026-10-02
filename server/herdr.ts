@@ -74,7 +74,7 @@ const MAX_TEXT = 20_000;
 
 // Request values are checked here, right before they reach herdr's command line.
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
-function assertText(text: unknown): string {
+export function assertText(text: unknown): string {
   if (typeof text !== "string" || text.length === 0 || text.length > MAX_TEXT) {
     throw new Error(`text must be 1-${MAX_TEXT} characters`);
   }

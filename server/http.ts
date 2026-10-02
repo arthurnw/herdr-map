@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { errorMessage } from "../shared/errors.ts";
 
 const distDir = join(import.meta.dirname, "..", "dist");
 
@@ -10,14 +11,30 @@ export function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+/** A request the server refuses as malformed; the router answers it with a 400. */
+export class BadRequest extends Error {}
+
+/** Runs a validator that throws, reporting its failure as a bad request. */
+export function check<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    throw new BadRequest(errorMessage(err));
+  }
+}
+
 // oxlint-disable-next-line anti-slop/no-unknown-returns -- the body is unparsed; each route checks it
 export async function readBody(req: IncomingMessage): Promise<unknown> {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 1_000_000) throw new Error("request body too large");
+    if (raw.length > 1_000_000) throw new BadRequest("request body too large");
   }
-  return JSON.parse(raw || "{}");
+  try {
+    return JSON.parse(raw || "{}");
+  } catch {
+    throw new BadRequest("request body isn't JSON");
+  }
 }
 
 const MIME = new Map([
