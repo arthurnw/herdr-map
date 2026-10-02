@@ -2,12 +2,12 @@
 export default ({ test, assert }) => {
   test("View menu collapses and expands every workspace", async (page) => {
     const total = await page.locator(".react-flow__node-workspace").count();
-    await page.getByRole("button", { name: "View" }).click();
+    await page.getByRole("button", { name: "View", exact: true }).click();
     await page.getByRole("menuitem", { name: "Collapse all to their headers" }).click();
     await page.waitForTimeout(600);
     const collapsed = await page.locator(".react-flow__node-workspace .workspace.collapsed").count();
     assert(collapsed === total, `expected ${total} collapsed, got ${collapsed}`);
-    await page.getByRole("button", { name: "View" }).click();
+    await page.getByRole("button", { name: "View", exact: true }).click();
     await page.getByRole("menuitem", { name: "Expand all" }).click();
     await page.waitForTimeout(600);
     assert((await page.locator(".workspace.collapsed").count()) === 0, "expand all should expand everything");

@@ -90,8 +90,13 @@ export default function paletteChecks({ test, assert, card }) {
         .filter((e) => e.getAttribute("data-value").startsWith("agent:"))
         .map((e) => [e.getAttribute("data-value"), e.querySelector('[aria-label="Memory"]')?.textContent ?? "-"].join(" ")),
     );
-    const expected = ["agent:w4:p7 2.2 GB", "agent:w5:p9 335 MB", "agent:w2:p3 265 MB", "agent:w2:p4 195 MB", "agent:w1:p1 -", "agent:w3:p5 -"];
-    assert(JSON.stringify(agents) === JSON.stringify(expected), `sorted agents: ${agents}`);
+    const measured = ["agent:w4:p7 2.2 GB", "agent:w5:p9 335 MB", "agent:w2:p3 265 MB", "agent:w2:p4 195 MB"];
+    // Unmeasured agents keep the default order, which depends on statuses earlier checks left behind.
+    const unmeasured = ["agent:w1:p1 -", "agent:w3:p5 -"];
+    const ok =
+      JSON.stringify(agents.slice(0, measured.length)) === JSON.stringify(measured) &&
+      JSON.stringify(agents.slice(measured.length).sort()) === JSON.stringify(unmeasured);
+    assert(ok, `sorted agents: ${agents}`);
     assert((await values(page)).includes("ws:w1"), "sorting doesn't hide workspaces");
     assert((await items(page).first().getAttribute("aria-selected")) === "true", "the heaviest agent should be selected");
     assert((await palette(page).locator("[cmdk-list]").evaluate((e) => e.scrollTop)) === 0, "the list should scroll back to the top");
