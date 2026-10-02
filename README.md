@@ -173,6 +173,7 @@ npm run dev:server   # API on :4747 with --watch
 npm run dev:web      # Vite on :5173, proxying /api
 npm test
 npm run typecheck
+npm run lint         # Oxlint with the vendored anti-slop rules in tools/oxlint/anti-slop
 npm run build && npm run test:e2e   # browser checks against a stand-in herdr (needs Google Chrome)
 ```
 
