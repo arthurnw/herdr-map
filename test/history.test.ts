@@ -213,3 +213,18 @@ test("GET /api/read flags panes whose preview falls back to the screen", async (
   assert.deepEqual((await get("/api/read?pane=w2:p1&source=recent&lines=1000")).body, { text: "pane read w2:p1 --source recent --lines 1000\n" });
   assert.deepEqual((await get("/api/read?pane=w1:p1")).body, { text: "pane read w1:p1 --source visible --lines 60\n" }, "a hover read is never flagged");
 });
+
+test("GET /api/read asks herdr for ANSI only when the format is ansi, keeping the source rule", async (t) => {
+  const { get } = await serve(
+    t,
+    async () => ({}),
+    (panes) => {
+      panes.find((p) => p.pane_id === "w1:p1")!.scroll = { max_offset_from_bottom: 0, offset_from_bottom: 0, viewport_rows: 50 };
+    },
+  );
+  assert.deepEqual((await get("/api/read?pane=w1:p1&source=recent&lines=1000&format=ansi")).body, {
+    text: "pane read w1:p1 --source visible --lines 1000 --format ansi\n",
+    history: true,
+  });
+  assert.deepEqual((await get("/api/read?pane=w1:p1&format=html")).body, { text: "pane read w1:p1 --source visible --lines 60\n" });
+});

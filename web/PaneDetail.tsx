@@ -21,6 +21,8 @@ import { SubagentList } from "./subagents.tsx";
 import { GitBadge } from "./git.tsx";
 import { ReviewSection } from "./review.tsx";
 import { historyParts } from "./history.ts";
+import { TerminalScreen } from "./terminal.tsx";
+import { parseAnsi, runsText } from "../shared/ansi.ts";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
 const PINNED_LINES = 1000;
@@ -31,13 +33,14 @@ const BLOCKED_REFRESH_MS = 2000;
 const HISTORY_REFRESH_MS = 15_000;
 
 interface Screen {
+  /** The screen with its colors, as SGR escape sequences. */
   text: string;
   /** The pane keeps no scrollback, so its history comes from its transcript. */
   history: boolean;
 }
 
 async function readScreen(paneId: string, pinned: boolean): Promise<Screen> {
-  const params = new URLSearchParams({ pane: paneId });
+  const params = new URLSearchParams({ pane: paneId, format: "ansi" });
   if (pinned) {
     params.set("source", "recent");
     params.set("lines", String(PINNED_LINES));
@@ -172,9 +175,12 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
     };
   }, [showHistory, status, loadHistory]);
 
+  const runs = useMemo(() => (screen === undefined ? undefined : parseAnsi(screen)), [screen]);
+  const screenText = useMemo(() => runs && runsText(runs), [runs]);
+
   // A dialog changes as it is answered, so the hover preview stays live while one is up.
   // Codex pickers leave herdr's status at idle, so key hints on screen count too.
-  const blocked = pane.agent?.status === "blocked" || (!!screen && hasDialogHint(screen));
+  const blocked = pane.agent?.status === "blocked" || (!!screenText && hasDialogHint(screenText));
   useEffect(() => {
     if (pinned || !blocked) return;
     const id = setInterval(() => void load().catch(() => undefined), BLOCKED_REFRESH_MS);
@@ -193,6 +199,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
   }, [screen, history]);
 
   const agent = pane.agent;
+  const withHistory = showHistory && !!history;
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <div className="space-y-1.5">
@@ -261,7 +268,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
         )}
       </div>
 
-      {agent && <ReplyBox located={located} screen={screen} onSent={afterSend} />}
+      {agent && <ReplyBox located={located} screen={screenText} onSent={afterSend} />}
       {agent && <AgentAutomation located={located} now={now} />}
 
       {!pinned && (
@@ -273,7 +280,8 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
       <div
         ref={scroller}
         className={cn(
-          "min-h-40 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-[11px] leading-snug",
+          "min-h-40 overflow-auto rounded-lg border font-mono text-[11px] leading-snug",
+          withHistory ? "bg-muted/40 p-3" : "terminal-surface",
           pinned ? "flex-1" : "max-h-[55vh]",
         )}
         aria-label="Screen preview"
@@ -288,8 +296,8 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
           setFollowing(atBottom);
         }}
       >
-        {showHistory && history && <PreviewHistory history={history} />}
-        <pre className="whitespace-pre">{screen ?? <span className="text-muted-foreground">Loading screen…</span>}</pre>
+        {withHistory && <PreviewHistory history={history} />}
+        <TerminalScreen runs={runs} />
       </div>
     </section>
   );

@@ -297,6 +297,19 @@ export const SCREENS = {
   ].join("\n"),
 };
 
+// Screens that `--format ansi` reads return instead of the plain screen.
+const esc = (params) => `\x1b[${params}m`;
+export const WIDE_LINE = `wide:${"=".repeat(400)}:end`;
+export const ANSI_SCREENS = {
+  // A Codex agent's colored screen, with a window title, cursor moves, and a line wider than the sidebar.
+  "w2:p4": [
+    `\x1b]0;codex\x07\x1b[?25l${esc("1;31")}error:${esc("0")} token cache <stale> & expired\r`,
+    `${esc("38;5;208")}orange 256${esc("39")} ${esc("48;2;0;95;135")}truecolor bg${esc("49")} ${esc("7")}inverse${esc("27")}\r`,
+    `${esc("32")}${WIDE_LINE}${esc("0")}\r`,
+    "\x1b[2K$ ",
+  ].join("\n"),
+};
+
 // Screens that checks write on demand, so the default session stays as it is.
 export const RATE_LIMIT_SCREEN = [
   "✻ Refactoring the auth middleware",

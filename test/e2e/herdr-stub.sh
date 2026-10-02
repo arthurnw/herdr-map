@@ -3,8 +3,8 @@
 # screens, records every command that would change something, and refuses the rest,
 # so a test can never reach a real herdr session.
 #
-# Reads from $HERDR_STUB_DIR: snapshot.json, screens/<pane id with : as _>.txt,
-# process-info/<pane id with : as _>.json.
+# Reads from $HERDR_STUB_DIR: snapshot.json, screens/<pane id with : as _>.txt (or .ansi, for a
+# read with --format ansi; the plain screen otherwise), process-info/<pane id with : as _>.json.
 # Appends input commands (focus, prompt, keys, text, rename, plugin actions, plugin pane focus) to $HERDR_STUB_DIR/actions.log,
 # and screen reads to $HERDR_STUB_DIR/reads.log.
 set -eu
@@ -16,7 +16,11 @@ case "$1 ${2:-}" in
     ;;
   "pane read")
     printf '%s\n' "$*" >>"$dir/reads.log"
-    screen="$dir/screens/$(printf '%s' "$3" | tr ':' '_').txt"
+    screen="$dir/screens/$(printf '%s' "$3" | tr ':' '_')"
+    case " $* " in
+      *" --format ansi "*) [ -f "$screen.ansi" ] && screen="$screen.ansi" || screen="$screen.txt" ;;
+      *) screen="$screen.txt" ;;
+    esac
     if [ -f "$screen" ]; then cat "$screen"; else printf 'screen of %s\n$ ' "$3"; fi
     ;;
   "pane process-info")

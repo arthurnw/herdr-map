@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
-import { PROCESS_INFO, PS_OUTPUT, SCREENS, setStatus, snapshot } from "./fixture.mjs";
+import { ANSI_SCREENS, PROCESS_INFO, PS_OUTPUT, SCREENS, setStatus, snapshot } from "./fixture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -37,6 +37,7 @@ chmodSync(hunkStub, 0o755);
 writeFileSync(join(dir, "ps.txt"), `${PS_OUTPUT}\n`);
 mkdirSync(join(dir, "screens"));
 for (const [id, text] of Object.entries(SCREENS)) writeFileSync(join(dir, "screens", `${id.replace(":", "_")}.txt`), text);
+for (const [id, text] of Object.entries(ANSI_SCREENS)) writeFileSync(join(dir, "screens", `${id.replace(":", "_")}.ansi`), text);
 mkdirSync(join(dir, "process-info"));
 for (const [id, info] of Object.entries(PROCESS_INFO)) writeFileSync(join(dir, "process-info", `${id.replace(":", "_")}.json`), JSON.stringify(info));
 const writeSnapshot = (snap) => writeFileSync(join(dir, "snapshot.json"), JSON.stringify(snap));

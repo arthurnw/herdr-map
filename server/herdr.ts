@@ -52,6 +52,8 @@ export async function focus(opts: HerdrOptions, target: FocusTarget): Promise<vo
 }
 
 export type ReadSource = "visible" | "recent";
+/** `ansi` keeps the screen's colors and attributes as SGR escape sequences. */
+export type ReadFormat = "text" | "ansi";
 
 /**
  * The source for a repeated preview read. For an agent with no herdr scrollback (a fullscreen
@@ -65,9 +67,10 @@ export function previewSource(pane: SnapPane | undefined, source: ReadSource): R
 }
 
 /** Reads the visible screen, or `recent` scrollback for a scrollable preview. */
-export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource, lines: number): Promise<string> {
+export function readPane(opts: HerdrOptions, paneId: string, source: ReadSource, lines: number, format: ReadFormat = "text"): Promise<string> {
   const n = Math.min(5000, Math.max(1, Math.floor(lines) || 60));
-  return runCli(opts, ["pane", "read", assertId(paneId), "--source", source, "--lines", String(n)]);
+  const args = ["pane", "read", assertId(paneId), "--source", source, "--lines", String(n)];
+  return runCli(opts, format === "ansi" ? [...args, "--format", "ansi"] : args);
 }
 
 const MAX_TEXT = 20_000;

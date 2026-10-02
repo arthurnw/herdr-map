@@ -1,0 +1,29 @@
+/* The preview's live screen. Programs pick their colors for a dark terminal, so the surface
+   stays dark in the light theme too, and colors are drawn as sent. */
+
+.terminal-surface,
+.terminal-screen {
+  --term-bg: #0c0c0e;
+  --term-fg: #d4d4d8;
+  background: var(--term-bg);
+  color: var(--term-fg);
+  color-scheme: dark;
+}
+.terminal-surface { border-color: #27272a; }
+
+/* Native size: wide lines scroll sideways instead of wrapping or shrinking. */
+.terminal-screen {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  padding: 12px;
+  white-space: pre;
+}
+/* Below a transcript history, the screen is a block of its own inside the preview. */
+.preview-history + .terminal-screen {
+  border: 1px solid #27272a;
+  border-radius: 6px;
+}
+.terminal-screen::selection,
+.terminal-screen ::selection { background: rgb(96 165 250 / 0.4); }
+.terminal-placeholder { color: color-mix(in srgb, var(--term-fg) 60%, transparent); }

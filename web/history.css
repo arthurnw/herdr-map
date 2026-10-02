@@ -1,6 +1,9 @@
 /* A pinned preview's transcript history, above the live screen of an agent with no scrollback. */
 
 .preview-history {
+  /* Stays in view while a wide screen below it is scrolled sideways. */
+  position: sticky;
+  left: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
