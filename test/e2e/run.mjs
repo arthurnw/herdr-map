@@ -73,7 +73,11 @@ async function waitForServer() {
   throw new Error(`server did not start:\n${serverLog}`);
 }
 
-const browser = await chromium.launch({ channel: "chrome" });
+// Chrome 154 on macOS 26 sometimes segfaults in AppKit (-[NSWMWindowCoordinator
+// _sendCompletedTransactions]) while it tears down a closed context's window. The run loop
+// below relaunches it and reruns the interrupted check once.
+let browser = await chromium.launch({ channel: "chrome" });
+const crashes = [];
 
 /** A fresh page with empty browser storage and the default layout. */
 async function openPage({ background = false } = {}) {
@@ -335,27 +339,48 @@ if (existsSync(checksDir)) {
   }
 }
 
+/** Runs one check on a fresh page; resolves to the error it failed with, if any. */
+async function runCheck(t) {
+  let page;
+  try {
+    page = t.fn.length === 0 ? undefined : await openPage();
+    await t.fn(page);
+    if (page?.errors.length) throw new Error(`page errors: ${page.errors.join("; ")}`);
+  } catch (err) {
+    return err;
+  } finally {
+    await page?.context().close();
+  }
+}
+
 let failures = 0;
 try {
   await waitForServer();
   for (const t of tests) {
     if (grep && !t.name.includes(grep)) continue;
-    const page = t.fn.length === 0 ? undefined : await openPage();
-    try {
-      await t.fn(page);
-      if (page?.errors.length) throw new Error(`page errors: ${page.errors.join("; ")}`);
-      console.log(`✔ ${t.name}`);
-    } catch (err) {
+    let err = await runCheck(t);
+    if (err && !browser.isConnected()) {
+      crashes.push(t.name);
+      console.log(`⚠ Chrome exited during "${t.name}" (${err.message.split("\n")[0]}); relaunching it and running the check again`);
+      browser = await chromium.launch({ channel: "chrome" });
+      err = await runCheck(t);
+      if (err && !browser.isConnected()) browser = await chromium.launch({ channel: "chrome" });
+    }
+    if (err) {
       failures++;
       console.log(`✖ ${t.name}\n    ${err.message}`);
-    } finally {
-      await page?.context().close();
+    } else {
+      console.log(`✔ ${t.name}`);
     }
   }
 } finally {
   await browser.close();
   server.kill();
   rmSync(dir, { recursive: true, force: true });
+}
+if (crashes.length) {
+  console.log(`\n⚠ Chrome exited ${crashes.length} time(s) and was relaunched; reran: ${crashes.join("; ")}`);
+  if (process.platform === "darwin") console.log("  Crash reports: /Library/Logs/DiagnosticReports/Google Chrome-*.ips");
 }
 console.log(failures ? `\n${failures} failed` : "\nall passed");
 process.exit(failures ? 1 : 0);
