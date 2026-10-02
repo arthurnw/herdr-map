@@ -1,6 +1,6 @@
 // Branch, changes, and PR badge for a workspace header and the preview.
 import { Check, CircleSmall, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, GitPullRequestDraft, X } from "lucide-react";
-import { checkText, type CheckState, type PullRequest, type WorkspaceGit } from "../shared/git.ts";
+import { checkText, prChecks, prStatus, type CheckState, type PullRequest, type WorkspaceGit } from "../shared/git.ts";
 import { stop } from "./organize.tsx";
 import "./git.css";
 
@@ -32,10 +32,9 @@ const CI_LABEL: Record<CheckState, string> = { pass: "checks passing", fail: "ch
 
 function PrBadge({ pr }: { pr: PullRequest }) {
   const Icon = pr.state === "merged" ? GitMerge : pr.state === "closed" ? GitPullRequestClosed : pr.draft ? GitPullRequestDraft : GitPullRequest;
-  // Checks matter only while the PR is open.
-  const ci = pr.state === "open" ? pr.checks.state : "none";
+  const ci = prChecks(pr);
   const CiIcon = ci === "none" ? undefined : CI_ICON[ci];
-  const status = pr.state === "open" ? (pr.draft ? "draft" : "open") : pr.state;
+  const status = prStatus(pr);
   return (
     <a
       className={`git-pr nodrag nopan pr-${status}`}

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useTheme } from "next-themes";
 import { Check, Folder, SquareArrowRight } from "lucide-react";
@@ -8,12 +8,24 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { STATUSES, type Fleet, type FleetWorkspace } from "../shared/model.ts";
+import type { Fleet, FleetWorkspace } from "../shared/model.ts";
+import { cn } from "@/lib/utils";
 import { activeRegistrations, useShortcut } from "./hooks/useShortcut.ts";
 import { emptyLayout } from "./layout.ts";
 import { PREVIOUS, saveNamed, type LayoutMenuProps } from "./LayoutMenu.tsx";
 import { agentAge, NowContext } from "./nodes.tsx";
-import { agentMatches, commandMatches, parseQuery, shortcutLabel, workspaceItemMatches } from "./palette.ts";
+import { formatBytes, highMemory, memoryTitle } from "./memory-format.ts";
+import {
+  agentMatches,
+  commandMatches,
+  parseQuery,
+  PREFIX_HINTS,
+  shortcutLabel,
+  showsMemory,
+  sortAgents,
+  toggleMemorySort,
+  workspaceItemMatches,
+} from "./palette.ts";
 import { isEnabled } from "./shortcuts.ts";
 import { indexPanes, type FocusTarget, type Located } from "./state.ts";
 import { KIND_LABEL, StatusDot } from "./status.tsx";
@@ -50,6 +62,8 @@ export interface PaletteAction {
   keys?: string[];
   checked?: boolean;
   disabled?: boolean;
+  /** Runs without closing the palette, such as a command that edits the search. */
+  keepOpen?: boolean;
   run: () => void;
 }
 
@@ -108,6 +122,7 @@ export function CommandPalette(props: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [value, setValue] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
   const now = useContext(NowContext);
   const { theme = "system", setTheme } = useTheme();
   const { fitView, getInternalNode } = useReactFlow();
@@ -128,18 +143,11 @@ export function CommandPalette(props: Props) {
   const query = useMemo(() => parseQuery(search), [search]);
   const panes = useMemo(() => indexPanes(fleet), [fleet]);
 
-  // Blocked agents first, then finished ones, then the rest; the longest-waiting first within each.
   const agents = useMemo(
-    () =>
-      [...panes.values()]
-        .filter((l) => agentMatches(l, query, tagsOf(l.workspace.id)))
-        .sort(
-          (a, b) =>
-            STATUSES.indexOf(a.pane.agent!.status) - STATUSES.indexOf(b.pane.agent!.status) ||
-            a.pane.agent!.since - b.pane.agent!.since,
-        ),
+    () => sortAgents([...panes.values()].filter((l) => agentMatches(l, query, tagsOf(l.workspace.id))), query),
     [panes, query, tagsOf],
   );
+  const memoryShown = showsMemory(query);
 
   const workspaces = useMemo(
     () =>
@@ -186,6 +194,13 @@ export function CommandPalette(props: Props) {
           run: () => void fitView({ padding: 0.05, duration: 300 }),
         },
         {
+          value: "sort:mem",
+          label: "Sort agents by memory",
+          checked: query.sort === "mem",
+          keepOpen: true,
+          run: () => setSearch(toggleMemorySort(search)),
+        },
+        {
           value: "layout:reset",
           label: "Reset to automatic layout",
           disabled: !layoutMenu.isCustom,
@@ -204,6 +219,13 @@ export function CommandPalette(props: Props) {
   const choose = (action: () => void) => {
     setOpen(false);
     setTimeout(action, 0);
+  };
+
+  // cmdk selects the first row when the search changes, but scroll anchoring keeps the list on the
+  // command as rows appear above it, so scroll once they have rendered.
+  const runInPlace = (action: () => void) => {
+    action();
+    requestAnimationFrame(() => listRef.current?.scrollTo({ top: 0 }));
   };
 
   const showWorkspace = (ws: FleetWorkspace) => {
@@ -255,9 +277,9 @@ export function CommandPalette(props: Props) {
           <CommandInput
             value={search}
             onValueChange={setSearch}
-            placeholder="Agents, workspaces, commands · s:blocked a:codex w:api t:infra"
+            placeholder="Agents, workspaces, commands · s:blocked a:codex pr:open mem:>1g"
           />
-          <CommandList className="max-h-[min(60vh,480px)]">
+          <CommandList ref={listRef} className="max-h-[min(60vh,480px)]">
             <CommandEmpty>No matches.</CommandEmpty>
             {agents.length > 0 && (
               <CommandGroup heading="Agents">
@@ -271,6 +293,18 @@ export function CommandPalette(props: Props) {
                       {agent.name && <span className="shrink-0 text-xs text-muted-foreground">{kind}</span>}
                       <span className="shrink-0 text-muted-foreground">{l.workspace.label}</span>
                       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{agent.summary}</span>
+                      {memoryShown && agent.memory && (
+                        <span
+                          className={cn(
+                            "shrink-0 text-xs tabular-nums",
+                            highMemory(agent.memory) ? "font-semibold text-(--stuck)" : "text-muted-foreground",
+                          )}
+                          aria-label="Memory"
+                          title={memoryTitle(agent.memory)}
+                        >
+                          {formatBytes(agent.memory.bytes)}
+                        </span>
+                      )}
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                         {agent.status} · {agentAge(agent, now)}
                       </span>
@@ -306,7 +340,7 @@ export function CommandPalette(props: Props) {
                     key={a.value}
                     value={`cmd:${a.value}`}
                     disabled={a.disabled}
-                    onSelect={() => choose(a.run)}
+                    onSelect={() => (a.keepOpen ? runInPlace(a.run) : choose(a.run))}
                   >
                     <Check className={a.checked ? "" : "invisible"} />
                     <span>{a.label}</span>
@@ -329,8 +363,13 @@ export function CommandPalette(props: Props) {
             <span>
               <Kbd>{MOD}↵</Kbd> open in terminal
             </span>
-            <span className="ml-auto">
-              <Kbd>s:</Kbd> status · <Kbd>a:</Kbd> agent kind · <Kbd>w:</Kbd> workspace · <Kbd>t:</Kbd> tag
+            <span className="ml-auto" aria-label="Prefixes">
+              {PREFIX_HINTS.map(({ prefix, hint, values }, i) => (
+                <span key={prefix} title={values}>
+                  {i > 0 && " · "}
+                  <Kbd>{prefix}</Kbd> {hint}
+                </span>
+              ))}
             </span>
           </div>
         </Command>

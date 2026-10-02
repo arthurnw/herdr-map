@@ -43,3 +43,15 @@ export function checkText(c: CheckSummary): string {
   const parts = [c.passed && `${c.passed} passed`, c.failed && `${c.failed} failed`, c.pending && `${c.pending} pending`].filter(Boolean);
   return `${parts.join(", ")}${c.failing?.length ? ` (${c.failing.join(", ")})` : ""}`;
 }
+
+export type PrStatus = "open" | "draft" | "merged" | "closed";
+
+/** A PR's state with drafts split out, as its badge shows it. */
+export function prStatus(pr: PullRequest): PrStatus {
+  return pr.state === "open" ? (pr.draft ? "draft" : "open") : pr.state;
+}
+
+/** Checks matter only while the PR is open. */
+export function prChecks(pr: PullRequest): CheckState {
+  return pr.state === "open" ? pr.checks.state : "none";
+}
