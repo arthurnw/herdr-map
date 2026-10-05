@@ -8,6 +8,7 @@ import { defaultLayoutPath } from "./layout-store.ts";
 import { createPoller } from "./poller.ts";
 import { defaultQueuePath } from "./queue.ts";
 import { createRouter } from "./router.ts";
+import { changesRoutes } from "./routes/changes.ts";
 import { fleetRoutes } from "./routes/fleet.ts";
 import { historyRoutes } from "./routes/history.ts";
 import { hunkRoutes } from "./routes/hunk.ts";
@@ -44,23 +45,23 @@ const { values: args } = parseArgs({
 
 const herdr: HerdrOptions = { ssh: args.ssh, bin: args.herdr! };
 const intervalMs = Number(args.interval);
+// Locally, the probe runs on this server's own Node unless told otherwise.
+const probe = args["no-probe"]
+  ? undefined
+  : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath), herdr: args.herdr, hunk: args.hunk };
 const base = {
   herdr,
   hunk: args.hunk!,
   layoutPath: args.layout!,
   activate: args["no-activate"] ? undefined : args.activate,
-  poller: createPoller(
-    herdr,
-    intervalMs,
-    Number(args["stuck-minutes"]) * 60_000,
-    // Locally, the probe runs on this server's own Node unless told otherwise.
-    args["no-probe"] ? undefined : { ssh: args.ssh, node: args["probe-node"] ?? (args.ssh ? "node" : process.execPath), herdr: args.herdr, hunk: args.hunk },
-  ),
+  probe,
+  poller: createPoller(herdr, intervalMs, Number(args["stuck-minutes"]) * 60_000, probe),
 };
 const queuePath = args.queue ?? defaultQueuePath(base.layoutPath);
 const ctx: Context = { ...base, automation: await createAutomation({ ...base, queuePath }) };
 
 const routes = [
+  ...changesRoutes(ctx),
   ...fleetRoutes(ctx),
   ...inputRoutes(ctx),
   ...layoutRoutes(ctx),

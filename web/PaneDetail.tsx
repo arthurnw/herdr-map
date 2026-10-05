@@ -23,6 +23,8 @@ import { GitBadge } from "./git.tsx";
 import { ReviewSection } from "./review.tsx";
 import { historyParts } from "./history.ts";
 import { copyText, TerminalScreen } from "./terminal.tsx";
+import { ChangesPanel, PreviewTabs, usePreviewTab } from "./changes.tsx";
+import { useShortcut } from "./hooks/useShortcut.ts";
 import { parseAnsi, runsText } from "../shared/ansi.ts";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
@@ -103,6 +105,9 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
   const [history, setHistory] = useState<History>();
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const [tab, setTab] = usePreviewTab();
+  const onScreen = tab === "screen";
+  useShortcut({ key: "c", description: "Switch the preview between Screen and Changes" }, () => setTab(onScreen ? "changes" : "screen"));
 
   const load = useCallback(async () => {
     const read = await readScreen(pane.id, pinned);
@@ -138,9 +143,10 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
   }, [pane.id, pinned]);
 
   // Pinned previews load scrollback and refresh while you're following the bottom.
-  // Scrolling up pauses refreshes so the text doesn't move while you read.
+  // Scrolling up pauses refreshes, and so does the Changes tab unless the reply box needs a dialog's options.
+  const readsScreen = onScreen || pane.agent?.status === "blocked";
   useEffect(() => {
-    if (!pinned) return;
+    if (!pinned || !readsScreen) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
@@ -154,13 +160,13 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
       stopped = true;
       clearTimeout(timer);
     };
-  }, [pinned, load]);
+  }, [pinned, readsScreen, load]);
 
   // Transcripts change by whole turns, so history is read on its own slower schedule.
   const status = pane.agent?.status;
   const showHistory = pinned && wantsHistory;
   useEffect(() => {
-    if (!showHistory) return;
+    if (!showHistory || !onScreen) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
@@ -174,7 +180,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
       stopped = true;
       clearTimeout(timer);
     };
-  }, [showHistory, status, loadHistory]);
+  }, [showHistory, onScreen, status, loadHistory]);
 
   const runs = useMemo(() => (screen === undefined ? undefined : parseAnsi(screen)), [screen]);
   const screenText = useMemo(() => runs && runsText(runs), [runs]);
@@ -197,7 +203,7 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
 
   useLayoutEffect(() => {
     if (scroller.current && stickToBottom.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [screen, history]);
+  }, [screen, history, onScreen]);
 
   // Scrolling back to the bottom, by hand or with Jump to bottom, resumes refreshes right away.
   const resume = useCallback(() => {
@@ -266,23 +272,31 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
             </div>
           </div>
         </div>
-        <CurrentToolLine agent={agent} now={now} />
-        <TaskLine agent={agent} />
-        {agent && <SubagentList pane={pane.id} agent={agent} />}
-        {agent?.summary && <p className="text-sm leading-snug">{agent.summary}</p>}
-        {agent && <ReviewSection located={located} pinned={pinned} />}
+        <PreviewTabs tab={tab} onChange={setTab} />
+        {onScreen && (
+          <>
+            <CurrentToolLine agent={agent} now={now} />
+            <TaskLine agent={agent} />
+            {agent && <SubagentList pane={pane.id} agent={agent} />}
+            {agent?.summary && <p className="text-sm leading-snug">{agent.summary}</p>}
+            {agent && <ReviewSection located={located} pinned={pinned} />}
+          </>
+        )}
       </div>
 
+      {!onScreen && <ChangesPanel key={workspace.id} workspace={workspace} agentPane={agent ? pane.id : undefined} pinned={pinned} />}
+      {/* The reply box keeps its place among the children on both tabs, so a draft survives switching. */}
       {agent && <ReplyBox located={located} screen={screenText} onSent={afterSend} />}
-      {agent && <AgentAutomation located={located} now={now} />}
+      {onScreen && agent && <AgentAutomation located={located} now={now} />}
 
-      {!pinned && (
+      {onScreen && !pinned && (
         <p className="text-xs text-muted-foreground">
           <Kbd>⌥</Kbd> click a pane, or press Pin, to keep this preview and scroll its history.
         </p>
       )}
 
-      <div className={cn("screen-block relative flex min-h-40 flex-col", pinned ? "flex-1" : "max-h-[55vh]")}>
+      {/* Hidden rather than unmounted on the Changes tab, so its screen and history stay loaded. */}
+      <div className={cn("screen-block relative flex min-h-40 flex-col", pinned ? "flex-1" : "max-h-[55vh]", !onScreen && "hidden")}>
         <div className="screen-tools">
           {pinned && (
             <Badge variant="outline" className={cn("gap-1.5 bg-background/90 font-normal", following && "hover-only")}>

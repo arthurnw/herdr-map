@@ -79,6 +79,7 @@ test("summarizeChecks buckets check runs and commit statuses like gh pr checks",
     passed: 1,
     failed: 0,
     pending: 2,
+    pendingNames: ["test", "deploy"],
   });
   assert.deepEqual(summarizeChecks([run("lint", "COMPLETED", "FAILURE"), run("test", "QUEUED"), { __typename: "StatusContext", context: "ci/x", state: "ERROR" }]), {
     state: "fail",
@@ -86,6 +87,7 @@ test("summarizeChecks buckets check runs and commit statuses like gh pr checks",
     failed: 2,
     pending: 1,
     failing: ["lint", "ci/x"],
+    pendingNames: ["test"],
   });
 });
 

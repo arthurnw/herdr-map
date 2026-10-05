@@ -19,15 +19,18 @@ const REVIEW = new Map([
   ["REVIEW_REQUIRED", "review required"],
 ]);
 
+/** GitHub's review decision in words, like "changes requested". */
+export const reviewText = (review: string) => REVIEW.get(review) ?? review.toLowerCase().replaceAll("_", " ");
+
 function prTitle(pr: PullRequest): string {
   const lines = [`#${pr.number} ${pr.title}`, `${pr.draft && pr.state === "open" ? "Draft" : pr.state[0].toUpperCase() + pr.state.slice(1)}`];
   lines.push(`Checks: ${checkText(pr.checks)}`);
-  if (pr.review) lines.push(`Review: ${REVIEW.get(pr.review) ?? pr.review.toLowerCase()}`);
+  if (pr.review) lines.push(`Review: ${reviewText(pr.review)}`);
   lines.push("Click to open on GitHub");
   return lines.join("\n");
 }
 
-const CI_ICON: Record<Exclude<CheckState, "none">, typeof Check> = { pass: Check, fail: X, pending: CircleSmall };
+export const CI_ICON: Record<Exclude<CheckState, "none">, typeof Check> = { pass: Check, fail: X, pending: CircleSmall };
 const CI_LABEL: Record<CheckState, string> = { pass: "checks passing", fail: "checks failing", pending: "checks pending", none: "no checks" };
 
 function PrBadge({ pr }: { pr: PullRequest }) {

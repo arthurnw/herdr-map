@@ -46,14 +46,16 @@ const GH_TIMEOUT_MS = 15_000;
 const GH_BUDGET_MS = 20_000;
 const PR_FIELDS = "number,title,url,state,isDraft,reviewDecision,statusCheckRollup";
 
-interface ToolResult {
+export interface ToolResult {
   ok: boolean;
   out: string;
   err: string;
   missing?: boolean;
+  /** Output passed the buffer limit; `out` has what was read before it. */
+  overflow?: boolean;
 }
 
-function runTool(cmd: string, args: string[], cwd: string, timeout: number): ToolResult {
+export function runTool(cmd: string, args: string[], cwd: string, timeout: number): ToolResult {
   const r = spawnSync(cmd, args, {
     cwd,
     encoding: "utf8",
@@ -65,12 +67,13 @@ function runTool(cmd: string, args: string[], cwd: string, timeout: number): Too
   if (r.error) {
     // SAFETY: spawnSync sets `error` only for system errors, which carry a `code`.
     const code = (r.error as NodeJS.ErrnoException).code;
-    return { ok: false, out: "", err: code === "ETIMEDOUT" ? `timed out after ${timeout / 1000}s` : r.error.message, missing: code === "ENOENT" };
+    const err = code === "ETIMEDOUT" ? `timed out after ${timeout / 1000}s` : r.error.message;
+    return { ok: false, out: r.stdout ?? "", err, missing: code === "ENOENT", overflow: code === "ENOBUFS" };
   }
   return { ok: r.status === 0, out: r.stdout, err: r.stderr.trim() };
 }
 
-const firstLine = (s: string) => s.split("\n").find((l) => l.trim())?.trim() ?? "";
+export const firstLine = (s: string) => s.split("\n").find((l) => l.trim())?.trim() ?? "";
 
 function isDir(path: string): boolean {
   try {
@@ -125,7 +128,7 @@ interface RollupItem {
 // The same buckets as `gh pr checks`; anything else (queued, in progress, expected) is pending.
 const FAILING = new Set(["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const PASSING = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
-const MAX_FAILING_NAMES = 5;
+const MAX_CHECK_NAMES = 5;
 
 /** Sums up a PR's `statusCheckRollup`: check runs have a status and conclusion, commit statuses a state. */
 export function summarizeChecks(items: RollupItem[]): CheckSummary {
@@ -139,16 +142,22 @@ export function summarizeChecks(items: RollupItem[]): CheckSummary {
   });
   const sum: CheckSummary = { state: "none", passed: 0, failed: 0, pending: 0 };
   const failing: string[] = [];
+  const pending: string[] = [];
   for (const c of latest.values()) {
     const state = (c.state ?? (c.status === "COMPLETED" ? c.conclusion : c.status) ?? "").toUpperCase();
+    const name = c.name ?? c.context ?? "check";
     if (FAILING.has(state)) {
       sum.failed++;
-      if (failing.length < MAX_FAILING_NAMES) failing.push(c.name ?? c.context ?? "check");
+      if (failing.length < MAX_CHECK_NAMES) failing.push(name);
     } else if (PASSING.has(state)) sum.passed++;
-    else sum.pending++;
+    else {
+      sum.pending++;
+      if (pending.length < MAX_CHECK_NAMES) pending.push(name);
+    }
   }
   sum.state = sum.failed ? "fail" : sum.pending ? "pending" : sum.passed ? "pass" : "none";
   if (failing.length) sum.failing = failing;
+  if (pending.length) sum.pendingNames = pending;
   return sum;
 }
 

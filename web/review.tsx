@@ -252,7 +252,8 @@ function NoteRow({
   );
 }
 
-async function runAction(pane: string, action: HunkAction, what: string) {
+/** Runs one of the hunk plugin's actions from an agent's pane, as the Review section's buttons do. */
+export async function runAction(pane: string, action: HunkAction, what: string) {
   try {
     await post("/api/hunk/action", { pane, action });
   } catch (err) {

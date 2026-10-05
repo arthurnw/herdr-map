@@ -9,6 +9,8 @@ export interface CheckSummary {
   pending: number;
   /** Names of failing checks, up to a few. */
   failing?: string[];
+  /** Names of pending checks, up to a few. */
+  pendingNames?: string[];
 }
 
 export interface PullRequest {
