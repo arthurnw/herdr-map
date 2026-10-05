@@ -69,6 +69,7 @@ const TITLE: Record<AlertKind, (who: string, l: Located) => string> = {
 };
 
 const NOTIFICATION_ICON = "/icon-192.png?v=2";
+const isInstalledApp = () => window.matchMedia("(display-mode: standalone)").matches;
 
 export function showNotification(l: Located, kind: AlertKind, onClick: () => void) {
   if (notificationPermission() !== "granted") return;
@@ -77,9 +78,9 @@ export function showNotification(l: Located, kind: AlertKind, onClick: () => voi
   const n = new Notification(TITLE[kind](who, l), {
     body: [l.workspace.label, agent.summary].filter(Boolean).join(" · "),
     tag: l.pane.id,
-    // macOS shows the sending app's icon, which is Chrome's unless the installed app sent it;
-    // this adds herdr-map's icon to the notification either way.
-    icon: NOTIFICATION_ICON,
+    // macOS shows the sending app's icon: the installed app's own, or Chrome's from a tab.
+    // A tab adds herdr-map's icon beside the text.
+    ...(!isInstalledApp() && { icon: NOTIFICATION_ICON }),
   });
   n.onclick = () => {
     window.focus();

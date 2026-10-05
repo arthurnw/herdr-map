@@ -72,7 +72,7 @@ herdr-map is a Progressive Web App, so it can run in its own window with its own
 - **Chrome or Edge:** click the install icon at the right of the address bar, or open the ⋮ menu and choose **Cast, save, and share → Install page as app**.
 - **Safari:** choose **File → Add to Dock**.
 
-The app window keeps all the keyboard shortcuts, and desktop notifications come from it. An installed app is tied to the exact address it was installed from, so `127.0.0.1:4747` and `localhost:4747` are separate apps with separate saved settings.
+The app window keeps all the keyboard shortcuts, and desktop notifications come from it. On macOS, Chrome may still show its own icon on the app's notifications; enabling the notification attribution flag in `chrome://flags` and restarting Chrome makes them show herdr-map's icon. Notifications sent from a browser tab include herdr-map's icon beside the text. An installed app is tied to the exact address it was installed from, so `127.0.0.1:4747` and `localhost:4747` are separate apps with separate saved settings.
 
 ### Run as a background service (macOS)
 
