@@ -39,10 +39,11 @@ export function ZoetropeButton({ located }: { located: Located }) {
   if (!installed || !hasZoetropeSession(located.pane.agent)) return null;
   return (
     <Button
-      variant="outline"
-      size="sm"
-      className="gap-1.5"
-      title="Open this agent's session as a live flow graph in zoetrope, over its pane in herdr"
+      variant="ghost"
+      size="icon"
+      className="size-7"
+      aria-label="Session graph"
+      title="Session graph: open this agent's session as a live flow graph in zoetrope, over its pane in herdr"
       onClick={() =>
         void openGraph(located.pane.id).catch((err) =>
           toast.error("Couldn't open the session graph", { description: errorMessage(err) }),
@@ -50,7 +51,6 @@ export function ZoetropeButton({ located }: { located: Located }) {
       }
     >
       <Workflow className="size-3.5" />
-      Session graph
     </Button>
   );
 }

@@ -118,7 +118,8 @@ const chip = (page, status) =>
   page.getByRole("group", { name: "Filter agents by status" }).getByRole("button", { name: new RegExp(`\\b${status}\\b`) });
 const card = (page, paneId) => page.locator(`.react-flow__node-pane[data-id="${paneId}"]`);
 const needsYouRow = (page, text) => page.locator("aside li", { hasText: text }).locator("button").first();
-const detailTitle = (page) => page.locator("aside h2").nth(1);
+// The preview's header: kind, name, status, and a line with the workspace, branch, and usage.
+const detailTitle = (page) => page.locator('aside [aria-label="Preview header"]');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

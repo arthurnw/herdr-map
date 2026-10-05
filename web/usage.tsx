@@ -62,30 +62,24 @@ export function workspaceCost(ws: FleetWorkspace): { usd: number; agents: number
   return agents ? { usd, agents } : undefined;
 }
 
-/** The preview's usage line: context tokens and window, cost, model, and the workspace's total cost. */
-export function UsageLine({ located }: { located: Located }) {
+/** The preview's context and cost, compact. Tokens, window, and model are in the context figure's title. */
+export function UsageMeta({ located }: { located: Located }) {
   const u = located.pane.agent?.usage;
-  if (!u) return null;
+  if (!u || (!u.contextTokens && u.costUsd === undefined)) return null;
   const pct = contextPercent(u);
   const total = workspaceCost(located.workspace);
-  const parts: string[] = [];
-  if (u.contextTokens) {
-    parts.push(
-      u.contextWindow
-        ? `${formatTokens(u.contextTokens)} of ${formatTokens(u.contextWindow)} context (${pct}%)`
-        : `${formatTokens(u.contextTokens)} context tokens`,
-    );
-  }
-  if (u.costUsd !== undefined) parts.push(`${formatCost(u.costUsd)} spent`);
-  if (u.model) parts.push(u.model);
+  const costTitle = [
+    u.costUsd !== undefined && `${formatCost(u.costUsd)} spent in this session`,
+    total && total.agents > 1 && `${formatCost(total.usd)} across ${total.agents} agents in ${located.workspace.label}`,
+  ].filter(Boolean);
   return (
-    <div className="space-y-0.5 text-xs text-muted-foreground" aria-label="Usage">
-      {parts.length > 0 && <p className="usage-line tabular-nums">{parts.join(" · ")}</p>}
-      {total && total.agents > 1 && (
-        <p className="tabular-nums">
-          {formatCost(total.usd)} across {total.agents} agents in {located.workspace.label}
-        </p>
+    <span className="meta-group tabular-nums" aria-label="Usage">
+      {!!u.contextTokens && (
+        <span className={pct !== undefined && pct >= HIGH_PERCENT ? "font-semibold text-(--stuck)" : undefined} title={[contextTitle(u), u.model].filter(Boolean).join("\n")}>
+          {pct !== undefined ? `${pct}%` : formatTokens(u.contextTokens)} ctx
+        </span>
       )}
-    </div>
+      {u.costUsd !== undefined && <span title={costTitle.join("\n")}>{formatCost(u.costUsd)}</span>}
+    </span>
   );
 }

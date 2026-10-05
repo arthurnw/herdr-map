@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import type { BoardCard, BoardColumn, ColumnId } from "./board.ts";
 import { GitBadge } from "./git.tsx";
 import { AgentCardBody, agentCardClass } from "./nodes.tsx";
+import { runningTitle } from "./activity.tsx";
 import { StatusDot } from "./status.tsx";
 import "./board.css";
 
@@ -86,6 +87,7 @@ function Card({ card, selected, onSelect, onTogglePin, onOpen, onHover }: { card
     <div
       className={`${agentCardClass(pane)} board-card${selected ? " selected" : ""}`}
       data-id={pane.id}
+      title={runningTitle(pane.agent)}
       onClick={(e) => (e.altKey ? onTogglePin(pane.id) : onSelect(pane.id))}
       onDoubleClick={() => onOpen(card)}
       onMouseEnter={() => onHover(pane.id)}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Pin, PinOff, RefreshCw, SquareTerminal } from "lucide-react";
+import { ArrowDownToLine, Copy, Pin, PinOff, RefreshCw, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -8,20 +8,21 @@ import { StuckBadge } from "./attention.tsx";
 import { AgentName } from "./rename.tsx";
 import { StarButton } from "./stars.tsx";
 import { ZoetropeButton } from "./zoetrope.tsx";
+import "./preview.css";
 import { agentAge, formatAge } from "./format.ts";
 import { ReplyBox } from "./ReplyBox.tsx";
 import { AgentAutomation } from "./AgentAutomation.tsx";
 import { hasDialogHint } from "../shared/dialog.ts";
 import type { Located } from "./state.ts";
-import { kindLabel, StatusDot } from "./status.tsx";
-import { UsageLine } from "./usage.tsx";
-import { MemoryLine } from "./memory.tsx";
-import { TaskLine } from "./activity.tsx";
+import { KindMark, StatusPill } from "./status.tsx";
+import { UsageMeta } from "./usage.tsx";
+import { MemoryMeta } from "./memory.tsx";
+import { CurrentToolLine, TaskLine } from "./activity.tsx";
 import { SubagentList } from "./subagents.tsx";
 import { GitBadge } from "./git.tsx";
 import { ReviewSection } from "./review.tsx";
 import { historyParts } from "./history.ts";
-import { TerminalScreen } from "./terminal.tsx";
+import { copyText, TerminalScreen } from "./terminal.tsx";
 import { parseAnsi, runsText } from "../shared/ansi.ts";
 
 // Reading scrollback costs herdr about two seconds, so pinned previews refresh slowly.
@@ -198,74 +199,78 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
     if (scroller.current && stickToBottom.current) scroller.current.scrollTop = scroller.current.scrollHeight;
   }, [screen, history]);
 
+  // Scrolling back to the bottom, by hand or with Jump to bottom, resumes refreshes right away.
+  const resume = useCallback(() => {
+    stickToBottom.current = true;
+    setFollowing(true);
+    void load().catch(() => undefined);
+    if (showHistory) void loadHistory().catch(() => undefined);
+  }, [load, loadHistory, showHistory]);
+
   const agent = pane.agent;
   const withHistory = showHistory && !!history;
+  const paused = pinned && !following;
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3 p-4">
       <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          {pinned && <Pin className="size-3.5 shrink-0 text-muted-foreground" />}
-          <h2 className="truncate text-sm font-semibold">
-            {workspace.label}
-            <span className="font-normal text-muted-foreground"> / {tabLabel}</span>
-          </h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          {agent ? (
-            <>
-              <StarButton paneId={pane.id} />
-              <StatusDot status={agent.status} />
-              <AgentName key={pane.id} located={located} names={agentNames} />
-              {agent.name && <Badge variant="secondary">{kindLabel(agent.kind)}</Badge>}
-              <span className="text-muted-foreground">
-                {agent.status} for {agentAge(agent, now)}
-              </span>
-              {agent.stuck && <StuckBadge stuck={agent.stuck} now={now} />}
-            </>
-          ) : (
-            <span className="text-muted-foreground">{pane.title}</span>
-          )}
-        </div>
-        {pane.cwd && (
-          <p className="truncate font-mono text-xs text-muted-foreground" title={pane.cwd}>
-            {pane.cwd}
-          </p>
-        )}
-        {workspace.git && (
-          <div className="git-line">
-            <GitBadge git={workspace.git} worktree={workspace.linkedWorktree} />
+        <div className="space-y-1" aria-label="Preview header">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <KindMark kind={agent?.kind} title={pane.title} />
+            {agent ? (
+              <h2 className="flex min-w-0 flex-wrap items-center text-sm">
+                <AgentName key={pane.id} located={located} names={agentNames} />
+              </h2>
+            ) : (
+              <h2 className="min-w-0 truncate text-sm font-medium" title={pane.title}>
+                {pane.title}
+              </h2>
+            )}
+            {agent && <StatusPill status={agent.status} age={agentAge(agent, now)} />}
+            {agent?.stuck && <StuckBadge stuck={agent.stuck} now={now} />}
+            <div className="ml-auto flex shrink-0 items-center">
+              {agent && <StarButton paneId={pane.id} />}
+              <Button variant="ghost" size="icon" className="size-7" aria-label="Open in terminal" title="Open in terminal (o)" onClick={onOpen}>
+                <SquareTerminal className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                aria-label={pinned ? "Unpin" : "Pin"}
+                title={pinned ? "Unpin this preview" : "Pin this preview (⌥ click a pane)"}
+                aria-pressed={pinned}
+                onClick={onTogglePin}
+              >
+                {pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+              </Button>
+              <ZoetropeButton located={located} />
+              {pinned && (
+                <Button variant="ghost" size="icon" className="size-7" aria-label="Refresh" title="Refresh" onClick={() => void load()}>
+                  <RefreshCw className="size-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
-        )}
-        <UsageLine located={located} />
-        <MemoryLine agent={agent} />
+          <div className="preview-meta" aria-label="Pane details">
+            <div className="preview-meta-items">
+              <span className="meta-ws" title={[`${workspace.label} / ${tabLabel}`, pane.cwd].filter(Boolean).join("\n")}>
+                <span className="truncate">{workspace.label}</span>
+              </span>
+              {workspace.git && (
+                <span className="git-line">
+                  <GitBadge git={workspace.git} worktree={workspace.linkedWorktree} />
+                </span>
+              )}
+              <UsageMeta located={located} />
+              <MemoryMeta agent={agent} />
+            </div>
+          </div>
+        </div>
+        <CurrentToolLine agent={agent} now={now} />
         <TaskLine agent={agent} />
         {agent && <SubagentList pane={pane.id} agent={agent} />}
         {agent?.summary && <p className="text-sm leading-snug">{agent.summary}</p>}
         {agent && <ReviewSection located={located} pinned={pinned} />}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" className="gap-1.5" onClick={onOpen}>
-          <SquareTerminal className="size-3.5" />
-          Open in terminal
-        </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={onTogglePin} aria-pressed={pinned}>
-          {pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
-          {pinned ? "Unpin" : "Pin"}
-        </Button>
-        <ZoetropeButton located={located} />
-        {pinned && (
-          <>
-            <Button variant="ghost" size="icon" className="size-8" aria-label="Refresh" onClick={() => void load()}>
-              <RefreshCw className="size-3.5" />
-            </Button>
-            <Badge variant="outline" className="gap-1.5 font-normal">
-              <span className={cn("size-1.5 rounded-full", following ? "bg-status-done" : "bg-status-idle")} />
-              {following ? "Live" : "Paused"}
-              {readAt ? <span className="text-muted-foreground">· {formatAge(now - readAt)} ago</span> : null}
-            </Badge>
-          </>
-        )}
       </div>
 
       {agent && <ReplyBox located={located} screen={screenText} onSent={afterSend} />}
@@ -277,27 +282,58 @@ export function PaneDetail({ located, agentNames, pinned, now, onOpen, onToggleP
         </p>
       )}
 
-      <div
-        ref={scroller}
-        className={cn(
-          "min-h-40 overflow-auto rounded-lg border font-mono text-[11px] leading-snug",
-          withHistory ? "bg-muted/40 p-3" : "terminal-surface",
-          pinned ? "flex-1" : "max-h-[55vh]",
-        )}
-        aria-label="Screen preview"
-        onScroll={(e) => {
-          if (!pinned) return;
-          const atBottom = isAtBottom(e.currentTarget);
-          // Returning to the bottom resumes live updates right away.
-          if (atBottom && !following) {
-            void load();
-            if (showHistory) void loadHistory().catch(() => undefined);
-          }
-          setFollowing(atBottom);
-        }}
-      >
-        {withHistory && <PreviewHistory history={history} />}
-        <TerminalScreen runs={runs} />
+      <div className={cn("screen-block relative flex min-h-40 flex-col", pinned ? "flex-1" : "max-h-[55vh]")}>
+        <div className="screen-tools">
+          {pinned && (
+            <Badge variant="outline" className={cn("gap-1.5 bg-background/90 font-normal", following && "hover-only")}>
+              <span className={cn("size-1.5 rounded-full", following ? "bg-status-done" : "bg-status-idle")} />
+              {following ? "Live" : "Paused"}
+              {readAt ? <span className="text-muted-foreground">· {formatAge(now - readAt)} ago</span> : null}
+            </Badge>
+          )}
+          {paused && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs"
+              onClick={() => {
+                if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+                resume();
+              }}
+            >
+              <ArrowDownToLine className="size-3" />
+              Jump to bottom
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            size="icon"
+            className="hover-only size-6"
+            aria-label="Copy screen"
+            title="Copy screen as plain text"
+            disabled={!screenText}
+            onClick={() => screenText && void copyText(screenText, "screen")}
+          >
+            <Copy className="size-3" />
+          </Button>
+        </div>
+        <div
+          ref={scroller}
+          className={cn(
+            "min-h-0 flex-1 overflow-auto rounded-lg border font-mono text-[11px] leading-snug",
+            withHistory ? "bg-muted/40 p-3" : "terminal-surface",
+          )}
+          aria-label="Screen preview"
+          onScroll={(e) => {
+            if (!pinned) return;
+            const atBottom = isAtBottom(e.currentTarget);
+            if (atBottom && !following) resume();
+            else setFollowing(atBottom);
+          }}
+        >
+          {withHistory && <PreviewHistory history={history} />}
+          <TerminalScreen runs={runs} />
+        </div>
       </div>
     </section>
   );

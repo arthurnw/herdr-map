@@ -2,7 +2,7 @@
 import { MemoryStick } from "lucide-react";
 import type { AgentMemory, Fleet, FleetAgent } from "../shared/model.ts";
 import { cn } from "@/lib/utils";
-import { fleetMemoryTitle, formatBytes, highMemory, machineShare, memoryTitle, topEntry } from "./memory-format.ts";
+import { fleetMemoryTitle, formatBytes, highMemory, machineShare, memoryTitle } from "./memory-format.ts";
 import { kindLabel } from "./status.tsx";
 
 
@@ -14,16 +14,14 @@ export function MemoryChip({ memory }: { memory: AgentMemory }) {
   );
 }
 
-/** The preview's memory line: the tree's total and its heaviest commands. */
-export function MemoryLine({ agent }: { agent?: FleetAgent }) {
+/** The preview's memory figure; the heaviest commands are in its title. */
+export function MemoryMeta({ agent }: { agent?: FleetAgent }) {
   const m = agent?.memory;
   if (!m) return null;
   return (
-    <p className="text-xs text-muted-foreground tabular-nums" aria-label="Memory">
-      <span className={cn(highMemory(m) && "font-semibold text-(--stuck)")}>{formatBytes(m.bytes)}</span> memory in {m.processes}{" "}
-      process{m.processes === 1 ? "" : "es"}
-      {m.top.map((t) => ` · ${topEntry(t)}`).join("")}
-    </p>
+    <span className={cn("tabular-nums", highMemory(m) && "font-semibold text-(--stuck)")} aria-label="Memory" title={memoryTitle(m)}>
+      {formatBytes(m.bytes)}
+    </span>
   );
 }
 

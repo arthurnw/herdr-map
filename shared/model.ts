@@ -95,6 +95,8 @@ export interface FleetAgent {
   reviews?: { running: number; done: number };
   /** Progress through the agent's own todo list. */
   tasks?: TaskProgress;
+  /** The tool call the agent's main thread is running, from its transcript. */
+  current?: CurrentTool;
   /** Resident memory of the pane's process tree, measured by the memory probe. */
   memory?: AgentMemory;
   /** Counts from the hunk reviews this agent owns; the notes are on its workspace's `hunk`. */
@@ -141,6 +143,14 @@ export interface TaskProgress {
   total: number;
   /** The task in progress. */
   current?: string;
+}
+
+export interface CurrentTool {
+  tool: string;
+  /** Its main argument, such as a command or file path, shortened. */
+  summary?: string;
+  /** Epoch ms when the call was made, from the transcript. */
+  startedAt?: number;
 }
 
 export interface AgentUsage {

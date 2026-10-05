@@ -31,12 +31,13 @@ export default function usageChecks({ test, assert, card, base }) {
     assert(probeError === undefined, `the probe should run cleanly, got ${probeError}`);
   });
 
-  test("the preview shows context, cost, and model for a Pi agent", async (page) => {
+  test("the preview header shows context, cost, and model for a Pi agent", async (page) => {
     await card(page, "w5:p9").click({ modifiers: ["Alt"] });
-    const line = page.locator('aside [aria-label="Usage"]');
-    await waitForText(line, "109k of 272k context (40%)");
-    const text = await line.textContent();
-    assert(text.includes("$1.75 spent") && text.includes("gpt-6-luna"), `unexpected usage line: ${text}`);
+    const line = page.locator('aside [aria-label="Pane details"] [aria-label="Usage"]');
+    await waitForText(line, "40% ctx");
+    const [ctxFigure, cost] = await line.locator(":scope > span").evaluateAll((els) => els.map((e) => ({ text: e.textContent, title: e.title })));
+    assert(ctxFigure.title.includes("109k tokens of context of 272k (40%)") && ctxFigure.title.includes("gpt-6-luna"), `context title: ${ctxFigure.title}`);
+    assert(cost.text === "$1.75" && cost.title.includes("$1.75 spent"), `unexpected cost: ${JSON.stringify(cost)}`);
   });
 
   test("a new turn in a working agent's transcript updates its meter", async (page) => {

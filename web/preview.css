@@ -1,0 +1,32 @@
+/* The preview header's details line: workspace, branch and PR, context, cost, and memory, with a
+   dot between items. It wraps only when the sidebar is too narrow for one line. Every item starts
+   with its dot, and the items are shifted left by one dot and gap into a clipped margin, so the
+   dot before the first item on each line is hidden. */
+.preview-meta {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.preview-meta-items {
+  --dot: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: calc(-1 * var(--dot));
+  row-gap: 2px;
+}
+.preview-meta-items > *,
+.preview-meta .meta-group { display: inline-flex; align-items: center; min-width: 0; }
+.preview-meta-items > *::before,
+.preview-meta .meta-group > * + *::before {
+  content: "·";
+  display: inline-block;
+  flex-shrink: 0;
+  width: var(--dot);
+  text-align: center;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+.preview-meta .git-line { gap: 0; }
+.preview-meta .git-line > * + * { margin-left: 6px; }
+.preview-meta .git-line > * { font-size: 12px; }

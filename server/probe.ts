@@ -167,7 +167,7 @@ export function markUsage(fleet: Fleet, usage: Map<string, AgentUsage>): Fleet {
   return fleet;
 }
 
-/** Sets subagents, reviews, and task progress on agents the probe found them for. */
+/** Sets subagents, reviews, task progress, and the running tool on agents the probe found them for. */
 export function markActivity(fleet: Fleet, activity: Map<string, Activity>): Fleet {
   if (activity.size === 0) return fleet;
   for (const pane of fleetPanes(fleet)) {
@@ -178,11 +178,12 @@ export function markActivity(fleet: Fleet, activity: Map<string, Activity>): Fle
 }
 
 /** The probe's activity as the browser gets it: transcript paths stay on the server. */
-function fleetActivity(a: Activity): Pick<FleetAgent, "subagents" | "reviews" | "tasks"> {
-  const out: Pick<FleetAgent, "subagents" | "reviews" | "tasks"> = {};
+function fleetActivity(a: Activity): Pick<FleetAgent, "subagents" | "reviews" | "tasks" | "current"> {
+  const out: Pick<FleetAgent, "subagents" | "reviews" | "tasks" | "current"> = {};
   if (a.subagents?.length) out.subagents = a.subagents.map(({ path, fromOrdinal, ...s }) => ({ ...s, ...(path && { transcript: true }) }));
   if (a.reviews) out.reviews = a.reviews;
   if (a.tasks) out.tasks = a.tasks;
+  if (a.current) out.current = a.current;
   return out;
 }
 
@@ -315,8 +316,8 @@ export function createUsageWatcher(opts: UsageWatcherOptions) {
             changed = true;
           }
           if (!res.error) {
-            const { subagents, reviews, tasks } = res;
-            const next: Activity | undefined = subagents?.length || reviews || tasks ? { subagents, reviews, tasks } : undefined;
+            const { subagents, reviews, tasks, current } = res;
+            const next: Activity | undefined = subagents?.length || reviews || tasks || current ? { subagents, reviews, tasks, current } : undefined;
             if (JSON.stringify(next) !== JSON.stringify(e.activity)) changed = true;
             e.activity = next;
             e.kind = ref.kind;

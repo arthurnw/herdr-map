@@ -21,12 +21,14 @@ export default function memoryChecks({ test, assert, card, base }) {
     assert((await card(page, "w1:p1").locator(".mem-chip").count()) === 0, "no process info, no figure");
   });
 
-  test("the preview lists memory and the heaviest processes", async (page) => {
+  test("the preview header shows memory, with the heaviest processes in its title", async (page) => {
     await waitFor(card(page, "w4:p7").locator(".mem-chip"));
     await card(page, "w4:p7").click({ modifiers: ["Alt"] });
-    const line = await waitFor(page.locator('aside [aria-label="Memory"]'));
-    const text = await line.textContent();
-    assert(text === "2.2 GB memory in 4 processes · claude 1.4 GB · node ×2 800 MB · zsh 6 MB", `unexpected memory line: ${text}`);
+    const figure = await waitFor(page.locator('aside [aria-label="Pane details"] [aria-label="Memory"]'));
+    const text = await figure.textContent();
+    assert(text === "2.2 GB", `unexpected memory figure: ${text}`);
+    const title = await figure.getAttribute("title");
+    assert(title === "2.2 GB in 4 processes: claude 1.4 GB, node ×2 800 MB, zsh 6 MB", `unexpected memory title: ${title}`);
   });
 
   test("the toolbar totals memory across agents and names the heaviest", async (page) => {

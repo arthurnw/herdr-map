@@ -176,12 +176,16 @@ test("Claude: silent running subagents and long-finished ones are dropped, and a
     lines: subLines(NOW),
     lastAt: NOW - SUBAGENT_ACTIVE_MS - 1000,
   });
-  assert.deepEqual(activity(claudeRef, stale, ctxFor({ claude: root })), {});
+  // The parent's Agent call has no result in these lines, so it's still its current tool.
+  const { current, ...staleRest } = activity(claudeRef, stale, ctxFor({ claude: root }));
+  assert.equal(current?.tool, "Agent");
+  assert.deepEqual(staleRest, {});
 
   const root2 = tempDir();
   const parent = lines(claudeAssistant(NOW - 3_600_000, [agentCall("toolu_1", "x")]), notification(NOW - SUBAGENT_KEEP_MS - 1000, "toolu_1", "completed"));
   const old = claudeSession(root2, parent, { id: "a1", toolUseId: "toolu_1", lines: subLines(NOW), lastAt: NOW - SUBAGENT_KEEP_MS - 2000 });
-  assert.deepEqual(activity(claudeRef, old, ctxFor({ claude: root2 })), {});
+  const { current: _, ...oldRest } = activity(claudeRef, old, ctxFor({ claude: root2 }));
+  assert.deepEqual(oldRest, {});
 
   const root3 = tempDir();
   const resumed = claudeSession(root3, lines(claudeAssistant(NOW - 120_000, [agentCall("toolu_1", "x")]), notification(NOW - 60_000, "toolu_1", "completed")), {

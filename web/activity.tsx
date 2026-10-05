@@ -1,6 +1,8 @@
-// Task progress, running subagents, Codex reviews, and hunk review notes on agent cards, and the current task in the preview.
-import { ShieldCheck } from "lucide-react";
-import type { FleetAgent, TaskProgress } from "../shared/model.ts";
+// Task progress, running subagents, Codex reviews, and hunk review notes on agent cards, and the
+// current task and tool call in the preview.
+import { ShieldCheck, Wrench } from "lucide-react";
+import type { CurrentTool, FleetAgent, TaskProgress } from "../shared/model.ts";
+import { formatAge } from "./format.ts";
 import { MemoryChip } from "./memory.tsx";
 import { AgentReviewChip } from "./review.tsx";
 import { SubagentChip } from "./subagents.tsx";
@@ -73,6 +75,39 @@ export function TaskLine({ agent }: { agent?: FleetAgent }) {
           <span className="text-foreground">{t.current}</span>
         </>
       )}
+    </p>
+  );
+}
+
+/** The tool call a working agent is running. A call left open by an agent that stopped doesn't count. */
+export function runningTool(agent?: FleetAgent): CurrentTool | undefined {
+  return agent?.status === "working" ? agent.current : undefined;
+}
+
+/** "Bash npm test" */
+export function toolText(c: CurrentTool): string {
+  return c.summary ? `${c.tool} ${c.summary}` : c.tool;
+}
+
+/** A card's tooltip while its agent runs a tool. */
+export function runningTitle(agent: FleetAgent): string | undefined {
+  const c = runningTool(agent);
+  return c && `Running ${toolText(c)}`;
+}
+
+/** The preview's line for the tool call a working agent is running, and for how long. */
+export function CurrentToolLine({ agent, now }: { agent?: FleetAgent; now: number }) {
+  const c = runningTool(agent);
+  if (!c) return null;
+  const text = toolText(c);
+  return (
+    <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground" aria-label="Current tool">
+      <Wrench className="size-3 shrink-0" aria-hidden />
+      <span className="shrink-0">Running</span>
+      <code className="min-w-0 truncate rounded bg-muted px-1 py-px font-mono text-[11px] text-foreground" title={text}>
+        {text}
+      </code>
+      {c.startedAt !== undefined && <span className="shrink-0 tabular-nums">· {formatAge(now - c.startedAt)}</span>}
     </p>
   );
 }

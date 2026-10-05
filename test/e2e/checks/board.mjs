@@ -1,5 +1,5 @@
 // The board view: status columns in place of the canvas, with the same filters, selection, and keys.
-export default function boardChecks({ test, assert, chip, needsYouRow, actions, clearActions }) {
+export default function boardChecks({ test, assert, chip, needsYouRow, detailTitle, actions, clearActions }) {
   const toggle = (page, name) => page.getByRole("group", { name: "Map or board" }).getByRole("button", { name });
   const column = (page, id) => page.locator(`.board-column[data-column="${id}"]`);
   const boardCard = (page, id) => page.locator(`.board-card[data-id="${id}"]`);
@@ -85,7 +85,7 @@ export default function boardChecks({ test, assert, chip, needsYouRow, actions, 
     assert((await selected(page)) === "w3:p5", "the clicked card should be outlined");
     await boardCard(page, "w5:p9").hover();
     await page.waitForTimeout(300);
-    assert((await page.locator("aside h2").nth(1).textContent()).includes("api-billing"), "the pinned preview should stay while hovering");
+    assert((await detailTitle(page).textContent()).includes("api-billing"), "the pinned preview should stay while hovering");
 
     await page.keyboard.press("o");
     await page.waitForTimeout(300);

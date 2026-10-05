@@ -11,11 +11,15 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   activity,
   claudeActivity,
+  claudeCurrent,
   codexActivity,
+  codexCurrent,
   piActivity,
+  piCurrent,
   SUBAGENT_READERS,
   type Activity,
   type ChildStats,
+  type OpenCall,
   type SubagentContext,
   type SubagentState,
   type SubLog,
@@ -40,6 +44,8 @@ export interface Tally {
   tasks?: TaskList;
   /** Set in a subagent transcript's tally. */
   child?: ChildStats;
+  /** Tool calls the main thread has made that have no result yet, oldest first. */
+  open?: OpenCall[];
 }
 
 /** Where a transcript is and how far it has been read. Each run returns it; the server sends it back with the next. */
@@ -674,13 +680,22 @@ export interface TranscriptReader {
 // oxlint-disable-next-line anti-slop/no-known-value-widening -- looked up by any agent kind string
 const READERS: Record<string, TranscriptReader> = {
   claude: {
-    marker: ['"usage"', '"toolUseResult"', "<task-notification>"],
-    read: (o, t) => (claudeLine(o, t), claudeActivity(o, t)),
+    marker: ['"usage"', '"toolUseResult"', "<task-notification>", '"tool_use"', '"tool_result"'],
+    read: (o, t) => (claudeLine(o, t), claudeActivity(o, t), claudeCurrent(o, t)),
     history: false,
   },
-  codex: { marker: ['"token_count"', '"turn_context"', '"update_plan"'], read: (o, t) => (codexLine(o, t), codexActivity(o, t)), history: false },
+  codex: {
+    // `_call_output"` matches the outputs of every kind of call.
+    marker: ['"token_count"', '"turn_context"', '"update_plan"', '"function_call"', '"custom_tool_call"', '"local_shell_call"', '_call_output"', '"task_started"', '"task_complete"', '"turn_aborted"'],
+    read: (o, t) => (codexLine(o, t), codexActivity(o, t), codexCurrent(o, t)),
+    history: false,
+  },
   // Pi's cost is a sum over the whole session, so its transcript is read from the start.
-  pi: { marker: ['"usage"', '"Agent"', "subagents:record"], read: (o, t) => (piLine(o, t), piActivity(o, t)), history: true },
+  pi: {
+    marker: ['"usage"', '"Agent"', "subagents:record", '"toolCall"', '"toolResult"', '"role":"user"'],
+    read: (o, t) => (piLine(o, t), piActivity(o, t), piCurrent(o, t)),
+    history: true,
+  },
 };
 
 function readerFor(kind: string) {

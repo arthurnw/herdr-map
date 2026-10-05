@@ -710,6 +710,8 @@ export interface Activity {
   subagents?: Subagent[];
   reviews?: Reviews;
   tasks?: TaskProgress;
+  /** The tool call the agent's main thread is waiting on. */
+  current?: CurrentTool;
 }
 
 /** An agent's subagents and task progress, following subagent transcripts from `cursor.subagents`. */
@@ -722,7 +724,122 @@ export function activity(ref: ProbeRef, cursor: Cursor, ctx: SubagentContext): A
   else if (ref.kind === "codex" && ref.sessionKind === "id") ({ subagents, reviews } = codexSubagents(ref.session, state, ctx));
   if (Object.keys(state.children).length === 0) delete cursor.subagents;
   const tasks = taskProgress(cursor.tally.tasks);
-  return { ...(subagents.length > 0 && { subagents: rank(subagents) }), ...(reviews && { reviews }), ...(tasks && { tasks }) };
+  const current = currentTool(cursor.tally);
+  return { ...(subagents.length > 0 && { subagents: rank(subagents) }), ...(reviews && { reviews }), ...(tasks && { tasks }), ...(current && { current }) };
+}
+
+/** A tool call the agent's main thread made that has no result yet. Kept in the tally. */
+export interface OpenCall {
+  id: string;
+  tool: string;
+  summary?: string;
+  startedAt?: number;
+  /** Claude Code: the ID of the response that made the call. */
+  msg?: string;
+}
+
+/** The tool call an agent is running, as the probe reports it. */
+export interface CurrentTool {
+  tool: string;
+  /** Its main argument, shortened. */
+  summary?: string;
+  /** Epoch ms, from the transcript. */
+  startedAt?: number;
+}
+
+const OPEN_MAX = 16;
+const SUMMARY_MAX = 80;
+
+function openCall(t: Tally, call: OpenCall) {
+  const open = (t.open ??= []);
+  open.push(call);
+  if (open.length > OPEN_MAX) open.splice(0, open.length - OPEN_MAX);
+}
+
+/** Drops the open calls `keep` rejects. */
+function closeCalls(t: Tally, keep: (c: OpenCall) => boolean) {
+  if (!t.open) return;
+  t.open = t.open.filter(keep);
+  if (t.open.length === 0) delete t.open;
+}
+
+/**
+ * Claude Code tool calls and their results, from the main thread. Each content block of a response
+ * is its own line, all with the response's `message.id`; the API needs every call's result before
+ * the next response, so a new response also closes calls a missing result left open (an interrupt).
+ */
+export function claudeCurrent(o: Json, t: Tally) {
+  if (o.isSidechain) return;
+  const content = o.message?.content;
+  if (o.type === "assistant") {
+    const msg = typeof o.message?.id === "string" ? o.message.id : undefined;
+    closeCalls(t, (c) => msg !== undefined && c.msg === msg);
+    if (!Array.isArray(content)) return;
+    for (const b of content) {
+      if (b?.type !== "tool_use" || typeof b.id !== "string") continue;
+      openCall(t, { id: b.id, tool: String(b.name ?? "tool"), summary: preview(b.input, SUMMARY_MAX) || undefined, startedAt: time(o.timestamp), ...(msg && { msg }) });
+    }
+  } else if (o.type === "user" && Array.isArray(content)) {
+    const done = new Set(content.flatMap((b) => (b?.type === "tool_result" ? [b.tool_use_id] : [])));
+    if (done.size > 0) closeCalls(t, (c) => !done.has(c.id));
+  }
+}
+
+const CODEX_CALLS = new Set(["function_call", "custom_tool_call", "local_shell_call"]);
+
+/**
+ * Codex's code-mode `exec` tool takes JavaScript that calls other tools, such as
+ * `tools.exec_command({"cmd": "npm test"})`; the inner tool and its command say more than the code.
+ */
+function codexCall(p: Json): CurrentTool {
+  const args = codexArgs(p.arguments ?? p.input ?? p.action);
+  const tool = String(p.name ?? p.type);
+  if (typeof args === "string") {
+    const inner = /\btools\.(\w+)\(/.exec(args)?.[1];
+    const cmd = /\bcmd["']?\s*:\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/.exec(args)?.[2];
+    let shown = cmd;
+    if (cmd !== undefined) {
+      try {
+        shown = JSON.parse(`"${cmd}"`);
+      } catch {}
+    }
+    if (inner) return { tool: inner, summary: preview(shown ?? args, SUMMARY_MAX) || undefined };
+  }
+  return { tool, summary: preview(args, SUMMARY_MAX) || undefined };
+}
+
+/** Codex tool calls and their outputs, matched by `call_id`. A turn's start or end closes them all. */
+export function codexCurrent(o: Json, t: Tally) {
+  const p = o.payload;
+  if (!p) return;
+  if (o.type === "event_msg") {
+    if (p.type === "task_started" || p.type === "task_complete" || p.type === "turn_aborted") delete t.open;
+    return;
+  }
+  if (o.type !== "response_item" || typeof p.call_id !== "string") return;
+  if (CODEX_CALLS.has(p.type)) openCall(t, { id: p.call_id, ...codexCall(p), startedAt: time(o.timestamp) });
+  else if (typeof p.type === "string" && p.type.endsWith("_output")) closeCalls(t, (c) => c.id !== p.call_id);
+}
+
+/** Pi tool calls and their results. Pi writes whole messages, so a new one closes calls left open. */
+export function piCurrent(o: Json, t: Tally) {
+  const m = o.message;
+  if (o.type !== "message" || !m) return;
+  if (m.role === "toolResult") return closeCalls(t, (c) => c.id !== m.toolCallId);
+  if (m.role !== "user" && m.role !== "assistant") return;
+  delete t.open;
+  if (m.role !== "assistant" || !Array.isArray(m.content)) return;
+  for (const c of m.content) {
+    if (c?.type !== "toolCall" || typeof c.id !== "string") continue;
+    openCall(t, { id: c.id, tool: String(c.name ?? "tool"), summary: preview(c.arguments, SUMMARY_MAX) || undefined, startedAt: time(o.timestamp ?? m.timestamp) });
+  }
+}
+
+/** The most recently started call that has no result yet. */
+export function currentTool(t: Tally): CurrentTool | undefined {
+  const c = t.open?.at(-1);
+  if (!c) return undefined;
+  return { tool: c.tool, ...(c.summary && { summary: c.summary }), ...(c.startedAt !== undefined && { startedAt: c.startedAt }) };
 }
 
 export interface TranscriptRequest {
@@ -744,14 +861,15 @@ export interface TranscriptOutput {
 export const TRANSCRIPT_BYTES = 256 * 1024;
 const MESSAGE_MAX = 4000;
 
-function preview(input: JsonValue | undefined): string {
+/** A tool call's main argument on one line, such as its command or file path. */
+function preview(input: JsonValue | undefined, max = 120): string {
   if (input === undefined || input === null) return "";
   const pick =
     typeof input !== "object"
       ? input
       : (input.command ?? input.cmd ?? input.file_path ?? input.path ?? input.pattern ?? input.query ?? input.url ?? input.description ?? input.prompt ?? JSON.stringify(input));
-  const s = String(pick).replace(/\s+/g, " ").trim();
-  return s.length > 120 ? `${s.slice(0, 119)}…` : s;
+  const s = (Array.isArray(pick) ? pick.join(" ") : String(pick)).replace(/\s+/g, " ").trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 function clip(s: string): string {

@@ -300,12 +300,17 @@ export const SCREENS = {
 // Screens that `--format ansi` reads return instead of the plain screen.
 const esc = (params) => `\x1b[${params}m`;
 export const WIDE_LINE = `wide:${"=".repeat(400)}:end`;
+// A URL whose styles change partway through, and file references among things that only look like them.
+export const SCREEN_URL = "https://example.com/token-cache?v=2";
+export const SCREEN_PATH = "cache.ts:12";
 export const ANSI_SCREENS = {
-  // A Codex agent's colored screen, with a window title, cursor moves, and a line wider than the sidebar.
+  // A Codex agent's colored screen, with a window title, cursor moves, a line wider than the sidebar, and links.
   "w2:p4": [
     `\x1b]0;codex\x07\x1b[?25l${esc("1;31")}error:${esc("0")} token cache <stale> & expired\r`,
     `${esc("38;5;208")}orange 256${esc("39")} ${esc("48;2;0;95;135")}truecolor bg${esc("49")} ${esc("7")}inverse${esc("27")}\r`,
     `${esc("32")}${WIDE_LINE}${esc("0")}\r`,
+    `${esc("36")}docs: https://example.com/${esc("1")}token-cache${esc("22")}?v=2${esc("39")}. Changed ${SCREEN_PATH}\r`,
+    "  at refresh (src/token-cache.ts:42:7) at 12:30, ratio 1:2, v1.2.3:4\r",
     "\x1b[2K$ ",
   ].join("\n"),
 };

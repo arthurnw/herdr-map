@@ -20,7 +20,7 @@ import { LinkHandles } from "./links.tsx";
 import { isAgentPane, type AgentPane } from "./board.ts";
 import { kindLabel } from "./status.tsx";
 import { UsageMeter } from "./usage.tsx";
-import { AgentActivity } from "./activity.tsx";
+import { AgentActivity, runningTitle } from "./activity.tsx";
 import { ColorItems, GroupColorMenu, StatusCounts, TagChips, TagInput, TagMenuItems, tintClass } from "./organize.tsx";
 import { GitBadge } from "./git.tsx";
 import { WorkspaceReviewChip } from "./review.tsx";
@@ -227,7 +227,7 @@ export const PaneNode = memo(({ data }: NodeProps<LayoutNodeOf<"pane">>) => {
     );
   }
   return (
-    <div className={agentCardClass(pane)}>
+    <div className={agentCardClass(pane)} title={runningTitle(pane.agent)}>
       {handles}
       <LinkHandles />
       <AgentCardBody pane={pane} />
